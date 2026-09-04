@@ -9,47 +9,54 @@ struct PluginsSettingsPane: View {
     @State private var detail: DiscoveredPlugin?
     @State private var tick = 0
 
-    var body: some View {
-        Form {
-            Section {
-                Button {
-                    if let url = URL(string: Self.publishDocsURL) {
-                        NSWorkspace.shared.open(url)
-                    }
-                } label: {
-                    Label(L10n.t("plugins.publish"), systemImage: "arrow.up.right.square")
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            } footer: {
-                Text(L10n.t("plugins.publish.help"))
-                    .font(.caption)
-            }
+    private let contentInset: CGFloat = 20
+    private let cardGap: CGFloat = 12
 
-            Section {
-                if plugins.isEmpty {
-                    Text(L10n.t("plugins.empty"))
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(plugins) { plugin in
-                        PluginCardRow(
-                            plugin: plugin,
-                            enabled: isEnabled(plugin),
-                            onToggle: { enabled in
-                                PluginManager.shared.setEnabled(enabled, id: plugin.id)
-                                tick &+= 1
-                            },
-                            onOpen: { detail = plugin }
-                        )
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                publishBlock
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(L10n.t("plugins.catalog"))
+                        .font(.headline)
+
+                    if plugins.isEmpty {
+                        Text(L10n.t("plugins.empty"))
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 8)
+                    } else {
+                        LazyVGrid(
+                            columns: [
+                                GridItem(.flexible(), spacing: cardGap),
+                                GridItem(.flexible(), spacing: cardGap)
+                            ],
+                            spacing: cardGap
+                        ) {
+                            ForEach(plugins) { plugin in
+                                PluginCardRow(
+                                    plugin: plugin,
+                                    enabled: isEnabled(plugin),
+                                    onToggle: { enabled in
+                                        PluginManager.shared.setEnabled(enabled, id: plugin.id)
+                                        tick &+= 1
+                                    },
+                                    onOpen: { detail = plugin }
+                                )
+                            }
+                        }
                     }
+
+                    Text(L10n.t("plugins.footer"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 2)
                 }
-            } header: {
-                Text(L10n.t("plugins.catalog"))
-            } footer: {
-                Text(L10n.t("plugins.footer"))
-                    .font(.caption)
             }
+            .padding(.horizontal, contentInset)
+            .padding(.vertical, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .id(loc.revision)
         .onAppear(perform: reload)
@@ -77,8 +84,33 @@ struct PluginsSettingsPane: View {
         }
     }
 
+    private var publishBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                if let url = URL(string: Self.publishDocsURL) {
+                    NSWorkspace.shared.open(url)
+                }
+            } label: {
+                Label(L10n.t("plugins.publish"), systemImage: "arrow.up.right.square")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.regular)
+
+            Text(L10n.t("plugins.publish.help"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        )
+    }
+
     private static let publishDocsURL =
-        "https://github.com/lokize/ALWM---Tiling-window-manager-for-macOS/blob/main/docs/plugins.md"
+        "https://github.com/lokize/ALWM/blob/main/docs/plugins.md"
 
     private func reload() {
         PluginManager.shared.refreshCatalog()
@@ -109,47 +141,67 @@ private struct PluginCardRow: View {
     var onOpen: () -> Void
 
     var body: some View {
-        HStack(spacing: 14) {
-            previewThumb
-                .frame(width: 72, height: 48)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                previewThumb
+                    .frame(width: 64, height: 44)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    Text(plugin.manifest.name)
-                        .font(.headline)
-                    Text("v\(plugin.manifest.version)")
-                        .font(.caption2.weight(.semibold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.secondary.opacity(0.15))
-                        .clipShape(Capsule())
-                }
-                Text(plugin.manifest.author)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                if !catalogSummary.isEmpty {
-                    Text(catalogSummary)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(plugin.manifest.name)
+                            .font(.system(size: 13, weight: .semibold))
+                            .lineLimit(1)
+                        Text("v\(plugin.manifest.version)")
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Color.secondary.opacity(0.15))
+                            .clipShape(Capsule())
+                    }
+                    Text(plugin.manifest.author)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        .lineLimit(1)
                 }
+                Spacer(minLength: 0)
             }
 
-            Spacer(minLength: 8)
+            if !catalogSummary.isEmpty {
+                Text(catalogSummary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
-            Toggle("", isOn: Binding(
-                get: { enabled },
-                set: { onToggle($0) }
-            ))
-            .toggleStyle(.switch)
-            .labelsHidden()
-            .help(L10n.t("plugins.enable"))
+            HStack(spacing: 10) {
+                Toggle(L10n.t("plugins.enable"), isOn: Binding(
+                    get: { enabled },
+                    set: { onToggle($0) }
+                ))
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .help(L10n.t("plugins.enable"))
 
-            Button(L10n.t("plugins.details")) { onOpen() }
-                .buttonStyle(.bordered)
+                Spacer(minLength: 0)
+
+                Button(L10n.t("plugins.details")) { onOpen() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            }
         }
-        .padding(.vertical, 4)
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 128, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.primary.opacity(0.045))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+        )
         .contentShape(Rectangle())
         .onTapGesture(perform: onOpen)
     }
@@ -170,7 +222,7 @@ private struct PluginCardRow: View {
             ZStack {
                 Color.secondary.opacity(0.12)
                 Image(systemName: "puzzlepiece.extension")
-                    .font(.title2)
+                    .font(.title3)
                     .foregroundStyle(.secondary)
             }
         }

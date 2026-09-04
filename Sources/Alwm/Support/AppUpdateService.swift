@@ -24,6 +24,9 @@ public final class AppUpdateService: ObservableObject {
     @Published public private(set) var latestVersion: String?
     @Published public private(set) var dmgURL: URL?
 
+    /// Flush workspace layouts to disk before the update quit (set by WindowManager).
+    public var onPrepareQuitForUpdate: (() -> Void)?
+
     public var installedVersion: String { AlwmVersion.installed }
 
     public var isUpdateAvailable: Bool {
@@ -375,10 +378,14 @@ public final class AppUpdateService: ObservableObject {
           fi
           sleep 0.15
         done
-        kill -9 "$PID" 2>/dev/null || true
-        # Clear any leftover ALWM instances before replacing the bundle.
-        /usr/bin/pkill -9 -x ALWM 2>/dev/null || true
-        sleep 0.6
+        # Only nudge the original PID — never pkill -x ALWM (that killed the relaunched app
+        # and skipped a graceful persist when terminate was still in flight).
+        if kill -0 "$PID" 2>/dev/null; then
+          kill -TERM "$PID" 2>/dev/null || true
+          sleep 0.8
+          kill -9 "$PID" 2>/dev/null || true
+        fi
+        sleep 0.8
 
         if [[ ! -d "$SRC/Contents/MacOS" ]]; then
           echo "error: staged app missing: $SRC"
@@ -397,7 +404,7 @@ public final class AppUpdateService: ObservableObject {
           echo "open -n -g failed — trying open -n"
           /usr/bin/open -n "$DST" || true
         fi
-        sleep 1
+        sleep 1.2
         if ! /usr/bin/pgrep -x ALWM >/dev/null 2>&1; then
           echo "pgrep miss — launching binary directly"
           nohup "$DST/Contents/MacOS/ALWM" >/dev/null 2>&1 &
@@ -419,6 +426,9 @@ public final class AppUpdateService: ObservableObject {
         try script.write(to: scriptURL, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
 
+        // Persist layouts NOW — exit(0)/SIGKILL used to skip applicationWillTerminate.
+        onPrepareQuitForUpdate?()
+
         // Detach from ALWM's process group so NSApp.terminate does not kill the helper.
         let launcher = Process()
         launcher.executableURL = URL(fileURLWithPath: "/bin/bash")
@@ -432,13 +442,12 @@ public final class AppUpdateService: ObservableObject {
             throw UpdateError.relaunchHelperFailed
         }
 
-        // Give nohup a beat to start waiting on our PID, then quit.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-            NSApp.terminate(nil)
-            // Hard exit if terminate is deferred by a window/sheet.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                exit(0)
+        // Close UI that can defer terminate, then quit gracefully (so stop() can run too).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            for window in NSApp.windows {
+                window.orderOut(nil)
             }
+            NSApp.terminate(nil)
         }
     }
 

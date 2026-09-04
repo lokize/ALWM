@@ -119,6 +119,10 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
     private var resumeRecoveryEligibleUntil = Date.distantPast
     /// True while staggered wake recovery is running — block column eject / disk overwrite.
     private var isResumeRecovering = false
+    /// Update quit already flushed layouts — skip restoreAllOnscreen so we don't scramble frames.
+    private var skipRestoreOnStopForUpdate = false
+    /// After launch/update, avoid dumping unmatched windows onto the active workspace.
+    private var postLaunchLayoutGraceUntil = Date.distantPast
     /// Snapshot frozen at willSleep so wake can restore even if in-memory columns drifted.
     private var preSleepLayoutFingerprint: String?
     /// Cached per visibility pass — layoutExcluded hammered AX and caused relayout storms.
@@ -189,6 +193,8 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         enforceQuakeFloat()
         adoptOrphanWindows(blockingReassign: false)
         isBootstrapping = false
+        // AX + token rematch lag after relaunch/update — don't dump orphans onto active WS yet.
+        postLaunchLayoutGraceUntil = Date().addingTimeInterval(6)
         layoutRecoveryAttempts = 0
         prepareAllActiveWorkspaceLayouts()
         persistRuntimeState()
@@ -218,6 +224,10 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
             self?.refreshChrome()
         }
         PluginManager.shared.reloadFromSettings()
+
+        AppUpdateService.shared.onPrepareQuitForUpdate = { [weak self] in
+            self?.persistRuntimeStateBeforeUpdate()
+        }
 
         bar.onSelectWorkspace = { [weak self] monitorID, workspaceID in
             Task { @MainActor in
@@ -441,8 +451,13 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         resumeRecoveryWorkItems.removeAll()
         quake.hideBlur()
         SleepAssertion.setPreventDisplaySleep(false)
-        let frames = monitors.monitors.map(\.frame)
-        ax.restoreAllOnscreen(monitors: frames)
+        // Update quit already persisted layouts — don't yank every window onscreen
+        // (that raced the replace helper and scrambled the next restore).
+        if !skipRestoreOnStopForUpdate {
+            let frames = monitors.monitors.map(\.frame)
+            ax.restoreAllOnscreen(monitors: frames)
+        }
+        skipRestoreOnStopForUpdate = false
         ax.stop()
         hotkeys.unregisterAll()
         ipc.stop()
@@ -850,6 +865,21 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         syncTokenIndex()
     }
 
+    /// Sync flush before an in-place update quit — must not be skipped by bootstrap/resume guards.
+    private func persistRuntimeStateBeforeUpdate() {
+        let wasBootstrapping = isBootstrapping
+        let wasResume = isResumeRecovering
+        isBootstrapping = false
+        isResumeRecovering = false
+        let all = Set(workspaces.workspaces.keys)
+        persistRuntimeState(forceWorkspaceLayouts: all)
+        isBootstrapping = wasBootstrapping
+        isResumeRecovering = wasResume
+        skipRestoreOnStopForUpdate = true
+        NSLog("ALWM: persisted runtime state before update quit")
+        logMove("update persist layouts before quit ws=\(all.sorted().joined(separator: ","))")
+    }
+
     private func persistRuntimeState(forceWorkspaceLayouts: Set<String> = []) {
         // Never flush partial/empty column maps over a good snapshot during bootstrap.
         if isBootstrapping { return }
@@ -978,6 +1008,20 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         }
     }
 
+    /// Live tracked windows for a bundle (optionally same PID). Soft-missing ghosts excluded.
+    private func liveBundleInstanceCount(_ bundleID: String, pid: pid_t? = nil) -> Int {
+        windowsByID.values.filter { win in
+            guard win.bundleID == bundleID, !win.isIgnored else { return false }
+            if let pid, win.id.pid != pid { return false }
+            return missingScanCounts[win.id] == nil
+        }.count
+    }
+
+    /// True only when both disk and live tracking agree this app has a single window.
+    private func isSingleBundleInstance(_ bundleID: String, pid: pid_t? = nil) -> Bool {
+        savedBundleInstanceCount(bundleID) <= 1 && liveBundleInstanceCount(bundleID, pid: pid) <= 1
+    }
+
     /// Find the workspace a relaunched window belonged to (token churn / late AX ingest).
     private func savedHome(for win: ManagedWindow, id: WindowID) -> String? {
         if let sticky = stickyHome(for: id) { return sticky }
@@ -994,7 +1038,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         }
 
         if let bid = win.bundleID, !bid.isEmpty,
-           savedBundleInstanceCount(bid) == 1,
+           isSingleBundleInstance(bid, pid: id.pid),
            let ws = runtimeState.bundleAssignment(for: bid),
            workspaces.workspaces[ws] != nil {
             return ws
@@ -1025,11 +1069,11 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
             if !rt.isEmpty {
                 if wt == rt { return true }
                 if Self.titlesLooselyMatch(rt, wt) { return true }
-                // Title churn (Discord channels, Safari tabs) — still the same app instance
-                // when only one saved slot exists for this bundle.
-                return savedBundleInstanceCount(bid) == 1
+                // Title churn (Discord channels, Safari tabs) — only when truly one instance.
+                // Disk alone saying "1" used to steal the other live Safari window.
+                return isSingleBundleInstance(bid, pid: win.id.pid)
             }
-            return savedBundleInstanceCount(bid) == 1
+            return isSingleBundleInstance(bid, pid: win.id.pid)
         }
         if !ref.appName.isEmpty, ref.appName == win.appName {
             let rt = Self.normalizedWindowTitle(ref.title)
@@ -1599,8 +1643,8 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         if let home = savedHome(for: win, id: win.id) {
             return home
         }
-        if isBootstrapping {
-            // Never dump orphans into workspace 1 while restore / AX recovery is still pending.
+        if isBootstrapping || isInPostLaunchLayoutGrace() {
+            // Never dump orphans into the active workspace while restore / AX recovery is still pending.
             return nil
         }
         let idx = workspaces.monitorIndex(of: monitor.id, in: monitors.monitors) ?? 0
@@ -2159,12 +2203,15 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
             guard let monitor else { continue }
             let home = windowWorkspace[id]
                 ?? runtimeState.assignment(for: id)
-                ?? resolveTargetWorkspace(for: win, on: monitor)
+                ?? savedHome(for: win, id: id)
+                ?? (isInPostLaunchLayoutGrace() ? nil : resolveTargetWorkspace(for: win, on: monitor))
             guard let home, workspaces.workspaces[home] != nil else { continue }
             if workspaces.workspaceID(containing: id) == nil {
                 assignWindow(id, to: home, on: monitor)
             }
         }
+        // Mass snap of every "added" tile after update relaunch dumps all apps onto the active WS.
+        if isInPostLaunchLayoutGrace() || needsLayoutRecovery(force: false) { return }
         let homes = Set(ids.compactMap { workspaces.workspaceID(containing: $0) })
         for home in homes where isHomeActiveOnAnyMonitor(home) {
             snapWorkspaceTilesAfterColumnChange(home)
@@ -3700,14 +3747,35 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
             restoreWorkspaceLayout(for: id)
             retileAccidentalFloats(forceClearOverrides: false)
             persistRuntimeState()
+        } else {
+            // Switch-back: re-apply saved column order/widths for windows already sticky here.
+            // Without this, a soft-missing Safari column collapses to one full-width stack
+            // (Discord over WhatsApp) until mouse hover forces a relayout.
+            refreshWorkspaceLayoutFromSnapshot(for: id)
+        }
+        // Clear soft-missing before heal so destination tiles aren't ejected from columns.
+        if let ws = workspaces.workspaces[id] {
+            for wid in ws.columns.flatMap(\.windows) {
+                missingScanCounts.removeValue(forKey: wid)
+                if ax.isMinimized(wid) {
+                    ax.setMinimized(false, id: wid)
+                }
+            }
         }
         healStaleColumnEntries()
         // Routine switches keep in-memory columns (merges, move.left/right, widths).
         animator.stop()
         border.hide()
+
+        visibilityForceReveal = true
+        lastVisibilitySignature = nil
         applyWorkspaceVisibility(animated: false)
 
         if let mon = monitors.monitors.first(where: { $0.id == targetMonitorID }) {
+            // Force column frames now — visibility alone can skip via isSettled / stale signature.
+            applyWorkspaceTileLayout(id, on: mon, forceReveal: true, skipHeal: true)
+            scheduleTileFrameEnforcement()
+
             let ws = workspaces.activeWorkspace(for: targetMonitorID)
             // Focus a window that actually belongs to this workspace (skip stale column ghosts).
             let focused: WindowID? = {
@@ -3727,15 +3795,38 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
                 warpCursor(to: CGPoint(x: mon.frame.midX, y: mainH - mon.frame.midY))
             }
         }
-        // After focus, only tuck leaky parked windows — do NOT re-reveal settled ones
-        // (full re-apply was causing open windows to flash close/reopen).
+        // After focus, tuck leaky parked windows and re-assert tiles — Safari/Electron often
+        // ignore the first reveal until a later pass (mouse hover used to be that pass).
         let monitorsSnapshot = monitors.monitors.map(\.frame)
+        let destinationID = id
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 180_000_000)
             guard let self, self.workspaceSwitchGeneration == switchGeneration else { return }
             let activeLater = Set(self.workspaces.activeWorkspaceByMonitor.values)
             self.settleParkedWindows(activeIDs: activeLater, monitors: monitorsSnapshot)
+            if activeLater.contains(destinationID),
+               let mon = self.monitors.monitors.first(where: {
+                   self.workspaces.activeWorkspaceByMonitor[$0.id] == destinationID
+               }) {
+                self.visibilityForceReveal = true
+                self.applyWorkspaceTileLayout(destinationID, on: mon, forceReveal: true, skipHeal: true)
+                self.scheduleTileFrameEnforcement()
+            }
             self.refreshBorder()
+            self.refreshChrome()
+        }
+        // Second retry — same-PID Safari deminiaturize can land after the first pass.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 420_000_000)
+            guard let self, self.workspaceSwitchGeneration == switchGeneration else { return }
+            guard self.workspaces.activeWorkspaceByMonitor.values.contains(destinationID) else { return }
+            if let mon = self.monitors.monitors.first(where: {
+                self.workspaces.activeWorkspaceByMonitor[$0.id] == destinationID
+            }) {
+                self.visibilityForceReveal = true
+                self.applyWorkspaceTileLayout(destinationID, on: mon, forceReveal: true, skipHeal: true)
+                self.scheduleTileFrameEnforcement()
+            }
             self.refreshChrome()
         }
         refreshChrome()
@@ -4106,13 +4197,26 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
     }
 
     private func resolveLiveWindowID(for id: WindowID, preferredWS: String?) -> WindowID? {
-        if windowsByID[id] != nil, ax.currentFrame(of: id) != nil { return id }
+        // Keep the exact token whenever we still track it (incl. parked inactive-WS windows).
+        if windowsByID[id] != nil {
+            if ax.currentFrame(of: id) != nil
+                || workspaces.workspaceID(containing: id) != nil
+                || windowWorkspace[id] != nil {
+                return id
+            }
+        }
 
         if windowsByID[id] == nil {
             ax.scanAll()
             ingest(windows: ax.currentWindows)
         }
-        if windowsByID[id] != nil, ax.currentFrame(of: id) != nil { return id }
+        if windowsByID[id] != nil {
+            if ax.currentFrame(of: id) != nil
+                || workspaces.workspaceID(containing: id) != nil
+                || windowWorkspace[id] != nil {
+                return id
+            }
+        }
 
         let ref = windowRef(for: id)
         let home = preferredWS
@@ -4127,53 +4231,70 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         }
 
         if let bid = ref.bundleID, !bid.isEmpty {
-            if let focused = axFocusedWindowID,
-               let fwin = windowsByID[focused],
-               fwin.bundleID == bid,
-               focused.pid == id.pid {
-                return focused
-            }
             let candidates = windowsByID.values.filter {
-                $0.bundleID == bid && $0.id.pid == id.pid && !$0.isIgnored
+                $0.bundleID == bid
+                    && $0.id.pid == id.pid
+                    && !$0.isIgnored
+                    && missingScanCounts[$0.id] == nil
+            }
+            // Multi-window Safari/Cursor: never steal a sibling via "focused" / "first visible".
+            if candidates.count > 1 {
+                let refTitle = Self.normalizedWindowTitle(ref.title)
+                if !refTitle.isEmpty {
+                    let titleHits = candidates.filter {
+                        let t = Self.normalizedWindowTitle($0.title)
+                        return t == refTitle || Self.titlesLooselyMatch(refTitle, t)
+                    }
+                    if titleHits.count == 1 { return titleHits[0].id }
+                }
+                if let focused = axFocusedWindowID,
+                   candidates.contains(where: { $0.id == focused }) {
+                    return focused
+                }
+                logMove("move resolve ambiguous bundle=\(bid) req=\(id.token) candidates=\(candidates.map(\.id.token).joined(separator: ","))")
+                return nil
             }
             if candidates.count == 1 { return candidates[0].id }
-            if let visible = candidates.first(where: {
-                ax.currentFrame(of: $0.id) != nil && !ax.isMinimized($0.id)
-            }) {
-                return visible.id
-            }
-            if let any = candidates.first { return any.id }
         }
         return windowsByID[id] != nil ? id : nil
     }
 
-    /// Explicit move — pin this live window (and ghost tokens of the *same single instance*) to the destination.
-    /// Multi-window apps (several live Cursor windows) must keep independent homes.
+    /// Explicit move — pin this live window to the destination.
+    /// Multi-window apps (several Safari/Cursor windows) must keep independent homes —
+    /// never rematch siblings just because the disk snapshot still says "1 instance".
     private func applyStickyHomeForMove(_ workspaceID: String, win: ManagedWindow, live: WindowID) {
         windowWorkspace[live] = workspaceID
         runtimeState.setAssignment(workspaceID, for: live)
         guard let bid = win.bundleID, !bid.isEmpty else { return }
-        runtimeState.setBundleAssignment(workspaceID, for: bid)
-        // Only rematch sibling tokens when this app has a single live instance —
-        // otherwise we'd yank every Cursor window into the destination workspace.
+
         let siblingLive = windowsByID.keys.filter {
             $0 != live && $0.pid == live.pid && windowsByID[$0]?.bundleID == bid
                 && missingScanCounts[$0] == nil
         }
-        guard siblingLive.isEmpty || savedBundleInstanceCount(bid) == 1 else { return }
-        for (key, w) in windowsByID where w.bundleID == bid && key.pid == live.pid {
-            windowWorkspace[key] = workspaceID
-            runtimeState.setAssignment(workspaceID, for: key)
+        // Bundle→WS map is only meaningful for single-instance apps.
+        if siblingLive.isEmpty, isSingleBundleInstance(bid, pid: live.pid) {
+            runtimeState.setBundleAssignment(workspaceID, for: bid)
         }
+
+        // Never yank other live windows. Only migrate ghost tokens of the same single instance.
+        guard siblingLive.isEmpty else {
+            logMove(
+                "move sticky keep-siblings live=\(live.token) → ws=\(workspaceID) siblings=\(siblingLive.map(\.token).sorted().joined(separator: ","))"
+            )
+            return
+        }
+        guard isSingleBundleInstance(bid, pid: live.pid) else { return }
+
         for (token, _) in runtimeState.snapshot.windowWorkspace {
             let parts = token.split(separator: ":", maxSplits: 1).map(String.init)
             guard parts.count == 2, Int32(parts[0]) == live.pid else { continue }
             if let wid = windowsByID.keys.first(where: { $0.token == token }),
                windowsByID[wid]?.bundleID == bid {
+                // Skip any live sibling that appeared mid-loop.
+                if wid != live, missingScanCounts[wid] == nil { continue }
                 windowWorkspace[wid] = workspaceID
                 runtimeState.setAssignment(workspaceID, for: wid)
-            } else if savedBundleInstanceCount(bid) == 1,
-                      let winNum = Int(parts[1]) {
+            } else if let winNum = Int(parts[1]) {
                 runtimeState.setAssignment(
                     workspaceID,
                     for: WindowID(pid: live.pid, windowNumber: winNum)
@@ -4439,14 +4560,16 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
     /// Disk snapshot can keep stale tokens after cross-workspace send — clear the source slot.
     private func removePersistedWindowRefs(_ ref: RuntimeStateStore.WindowRef, fromWorkspace wsID: String) {
         guard var layout = runtimeState.workspaceLayout(for: wsID) else { return }
+        let allowBundleWipe = ref.bundleID.map { isSingleBundleInstance($0) } ?? false
         var changed = false
         layout.columns = layout.columns.compactMap { col in
             var copy = col
             let before = copy.windows.count
             copy.windows.removeAll { saved in
                 if saved.token == ref.token { return true }
-                if let bid = ref.bundleID, !bid.isEmpty, saved.bundleID == bid,
-                   savedBundleInstanceCount(bid) == 1 {
+                // Only wipe by bundle when this app truly has one window — otherwise
+                // moving Safari A would erase Safari B's saved slot on the source WS.
+                if allowBundleWipe, let bid = ref.bundleID, !bid.isEmpty, saved.bundleID == bid {
                     return true
                 }
                 return false
@@ -4456,8 +4579,9 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         }
         let floatBefore = layout.floating.count
         layout.floating.removeAll { saved in
-            saved.token == ref.token
-                || (ref.bundleID != nil && saved.bundleID == ref.bundleID && savedBundleInstanceCount(ref.bundleID!) == 1)
+            if saved.token == ref.token { return true }
+            if allowBundleWipe, let bid = ref.bundleID, saved.bundleID == bid { return true }
+            return false
         }
         if layout.floating.count != floatBefore { changed = true }
         if changed {
@@ -4755,6 +4879,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         reapplyAppRulesToAllWindows()
         enforceQuakeFloat()
         isBootstrapping = false
+        postLaunchLayoutGraceUntil = Date().addingTimeInterval(6)
         adoptOrphanWindows(blockingReassign: true)
         prepareAllActiveWorkspaceLayouts()
         visibilityForceReveal = true
@@ -4781,6 +4906,10 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
             live,
             recovered ? "yes" : "no"
         )
+    }
+
+    private func isInPostLaunchLayoutGrace() -> Bool {
+        Date() < postLaunchLayoutGraceUntil
     }
 
     private func primaryMonitor() -> MonitorInfo? {
@@ -5710,8 +5839,8 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
                 continue
             }
 
-            if isBootstrapping {
-                if let sticky = windowWorkspace[id] ?? runtimeState.assignment(for: id),
+            if isBootstrapping || isInPostLaunchLayoutGrace() {
+                if let sticky = windowWorkspace[id] ?? runtimeState.assignment(for: id) ?? savedHome(for: win, id: id),
                    workspaces.workspaces[sticky] != nil {
                     assignWindow(id, to: sticky, on: monitor)
                 }
@@ -5895,10 +6024,16 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
             if !shouldDeferVisibilityRefreshFromIngest() {
                 if !addedTiles.isEmpty {
                     // Snap columns only — a full visibility pass hide/reveals the new tile in a loop.
-                    let homes = Set(addedTiles.compactMap { workspaces.workspaceID(containing: $0) })
-                    for home in homes where isHomeActiveOnAnyMonitor(home) {
-                        logMove("tile new-window snap ws=\(home) ids=\(addedTiles.map(\.token).joined(separator: ","))")
-                        snapWorkspaceTilesAfterColumnChange(home)
+                    // After update/relaunch, a mass "added" set is restore churn — don't flatten onto active WS.
+                    if isInPostLaunchLayoutGrace(), addedTiles.count >= 2 {
+                        restoreWorkspaceLayoutsFromDisk()
+                        prepareAllActiveWorkspaceLayouts()
+                    } else {
+                        let homes = Set(addedTiles.compactMap { workspaces.workspaceID(containing: $0) })
+                        for home in homes where isHomeActiveOnAnyMonitor(home) {
+                            logMove("tile new-window snap ws=\(home) ids=\(addedTiles.map(\.token).joined(separator: ","))")
+                            snapWorkspaceTilesAfterColumnChange(home)
+                        }
                     }
                 } else if !addedFloats.isEmpty {
                     revealActiveFloats(ids: addedFloats)
@@ -6611,6 +6746,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         reapplyAppRulesToAllWindows()
         enforceQuakeFloat()
         isBootstrapping = false
+        postLaunchLayoutGraceUntil = Date().addingTimeInterval(6)
         adoptOrphanWindows(blockingReassign: true)
         prepareAllActiveWorkspaceLayouts()
 
