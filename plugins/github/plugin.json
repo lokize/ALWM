@@ -1,0 +1,10 @@
+{
+  "id": "dev.alwm.github",
+  "name": "GitHub",
+  "author": "ALWM",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "license": "GPL-3.0",
+  "summary": "Unread notifications, open PRs on your repos, review requests, assigned issues, and recent stars — right on the workspace bar.",
+  "defaultPlacement": "afterWorkspaces"
+}

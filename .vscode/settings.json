@@ -1,0 +1,18 @@
+{
+  "git.autoRepositoryDetection": "openRoots",
+  "git.detectSubmodules": false,
+  "git.repositoryScanMaxDepth": 0,
+  "git.repositoryScanIgnoredFolders": [
+    ".build",
+    ".swiftpm",
+    "node_modules",
+    "dist",
+    "checkouts"
+  ],
+  "git.ignoredRepositories": [
+    ".build/checkouts/swift-toml",
+    ".build/repositories/swift-toml-062557c0",
+    "/Users/marcospreviato/Developer/PR/alwm/.build/checkouts/swift-toml",
+    "/Users/marcospreviato/Developer/PR/alwm/.build/repositories/swift-toml-062557c0"
+  ]
+}

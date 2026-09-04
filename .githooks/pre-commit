@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# pre-commit: bump VERSION + What's New a partir do diff staged, e re-stage.
+set -euo pipefail
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+log() { printf 'ALWM pre-commit: %s\n' "$*" >&2; }
+
+# Evitar loop se só mexemos em arquivos de versão
+STAGED="$(git diff --cached --name-only || true)"
+if [[ -z "$STAGED" ]]; then
+  log "nada staged — skip bump"
+  exit 0
+fi
+
+# Se o único staged for bump artifacts de um commit anterior, não rebump
+ONLY_VERSION=1
+while IFS= read -r f; do
+  [[ -z "$f" ]] && continue
+  case "$f" in
+    VERSION|Info.plist|Sources/Alwm/Resources/whatsnew.json|Sources/Alwm/UI/SettingsWindow.swift) ;;
+    *) ONLY_VERSION=0; break ;;
+  esac
+done <<<"$STAGED"
+
+if (( ONLY_VERSION )); then
+  log "só arquivos de versão staged — skip bump"
+  exit 0
+fi
+
+# Só infra (hooks/scripts/CI/docs) — não precisa de bump
+ONLY_INFRA=1
+while IFS= read -r f; do
+  [[ -z "$f" ]] && continue
+  case "$f" in
+    .githooks/*|scripts/*|.cursor/*|.github/*|docs/*|README.md|LICENSE*) ;;
+    *) ONLY_INFRA=0; break ;;
+  esac
+done <<<"$STAGED"
+
+if (( ONLY_INFRA )); then
+  log "só infra staged — skip bump"
+  exit 0
+fi
+
+# VERSION já bumped manualmente neste commit
+if grep -qx VERSION <<<"$STAGED"; then
+  HEAD_VER="$(git show HEAD:VERSION 2>/dev/null | tr -d '[:space:]' || true)"
+  STAGED_VER="$(git show :VERSION 2>/dev/null | tr -d '[:space:]' || true)"
+  if [[ -n "$HEAD_VER" && -n "$STAGED_VER" && "$STAGED_VER" != "$HEAD_VER" ]]; then
+    log "VERSION já bumped ($HEAD_VER → $STAGED_VER) — skip rebump"
+    exit 0
+  fi
+fi
+
+if [[ ! -x "$ROOT/scripts/bump-version.sh" ]]; then
+  chmod +x "$ROOT/scripts/bump-version.sh" || true
+fi
+
+# Flag para o agente passar bullets melhores: ALWM_WHATSNEW_BULLETS=$'a\nb'
+if [[ -n "${ALWM_WHATSNEW_BULLETS:-}" ]]; then
+  ARGS=()
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    ARGS+=("$line")
+  done <<<"$ALWM_WHATSNEW_BULLETS"
+  log "bump com ALWM_WHATSNEW_BULLETS (${#ARGS[@]} bullets)"
+  bash "$ROOT/scripts/bump-version.sh" "${ARGS[@]}"
+else
+  log "bump com --from-diff"
+  bash "$ROOT/scripts/bump-version.sh" --from-diff
+fi
+
+git add VERSION Info.plist Sources/Alwm/Resources/whatsnew.json Sources/Alwm/UI/SettingsWindow.swift
+log "VERSION + What's New re-staged — commit sem --no-verify"
+exit 0

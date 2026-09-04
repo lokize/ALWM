@@ -1,0 +1,204 @@
+{
+  "releases": [
+    {
+      "version": "0.4.6",
+      "items": [
+        "Keep multiple live windows of the same app in a workspace (no longer collapse Cursor siblings)",
+        "Multi-window picker rescans AX on click and lists all live windows for that app"
+      ]
+    },
+    {
+      "version": "0.4.5",
+      "items": [
+        "Fix workspace bar multi-window picker: use PID-based matching to survive token churn; keep assigned windows visible in bar even when temporarily AX-missing"
+      ]
+    },
+    {
+      "version": "0.4.4",
+      "items": [
+        "Fix crash on menu item click: retain NSMenuItem across async Task boundary to prevent use-after-free"
+      ]
+    },
+    {
+      "version": "0.4.3",
+      "items": [
+        "Fix multi-window picker: correctly resolves unassigned/token-churned windows for same app in workspace"
+      ]
+    },
+    {
+      "version": "0.4.2",
+      "items": [
+        "Multi-window picker now resolves live windows via direct WindowManager query, bypassing token churn"
+      ]
+    },
+    {
+      "version": "0.4.1",
+      "items": [
+        "Maintenance and fixes"
+      ]
+    },
+    {
+      "version": "0.4.0",
+      "items": [
+        "Maintenance and fixes"
+      ]
+    },
+    {
+      "version": "0.3.9",
+      "items": [
+        "Maintenance and fixes"
+      ]
+    },
+    {
+      "version": "0.3.8",
+      "items": [
+        "Maintenance and fixes"
+      ]
+    },
+    {
+      "version": "0.3.7",
+      "items": [
+        "Maintenance and fixes"
+      ]
+    },
+    {
+      "version": "0.3.6",
+      "items": [
+        "Maintenance and fixes"
+      ]
+    },
+    {
+      "version": "0.3.5",
+      "items": [
+        "Maintenance and fixes"
+      ]
+    },
+    {
+      "version": "0.3.4",
+      "items": [
+        "release"
+      ]
+    },
+    {
+      "version": "0.3.3",
+      "items": [
+        "Cross-workspace move retiles remaining columns and expands freed space",
+        "Column widths persist after manual resize when switching workspaces",
+        "Stack columns reflow vertically with correct frames after layout changes",
+        "Duplicate workspace-move requests are deduplicated"
+      ]
+    },
+    {
+      "version": "0.3.2",
+      "items": [
+        "Fix plugin catalog localization build on CI"
+      ]
+    },
+    {
+      "version": "0.3.1",
+      "items": [
+        "Reflow tile columns immediately when a window is closed",
+        "Plugin catalog and panels localized in all app languages",
+        "GitHub plugin gallery slider and localized About section",
+        "Plugin l10n verification script for all bundled plugins"
+      ]
+    },
+    {
+      "version": "0.3.0",
+      "items": [
+        "Update .github/workflows/release.yml",
+        "Scripts: ensure-version-bump.sh",
+        "Scripts: install-git-hooks.sh",
+        "Scripts: verify-release-ready.sh"
+      ]
+    },
+    {
+      "version": "0.2.9",
+      "items": [
+        "App rules: pick running apps with workspace, monitor, size, and position",
+        "Auto-fill rule fields when you select an app in the picker",
+        "Keep keyboard focus in Settings and plugin windows",
+        "Plugin bar: slower rotation and clearer GitHub/Steam badges",
+        "Fix windows reopening in a loop when applying workspace rules",
+        "CI fails if app changes ship without a new VERSION"
+      ]
+    },
+    {
+      "version": "0.2.8",
+      "items": [
+        "GitHub plugin: unread notifications, PRs, issues, and stars on the workspace bar",
+        "Plugins follow Settings → Language in all app locales",
+        "Keep Safari windows on their own workspace/monitor when switching",
+        "More reliable keyboard input in Quake Terminal and Notepad",
+        "Status menu toggles update live",
+        "Steam Price Watcher localized like the rest of the app",
+        "Release publish refuses to reuse an existing version tag (use --update to refresh)"
+      ]
+    },
+    {
+      "version": "0.2.7",
+      "items": [
+        "GitHub plugin: unread notifications, PRs, issues, and stars on the workspace bar",
+        "Plugins follow Settings → Language in all app locales",
+        "Keep Safari windows on their own workspace/monitor when switching",
+        "More reliable keyboard input in Quake Terminal and Notepad",
+        "Status menu toggles update live",
+        "Steam Price Watcher localized like the rest of the app"
+      ]
+    },
+    {
+      "version": "0.2.6",
+      "items": [
+        "Initial public release",
+        "Niri-style scrolling columns and multi-monitor workspaces",
+        "Quake terminal, notepad, gestures, and plugin host"
+      ]
+    },
+    {
+      "version": "0.2.5",
+      "items": [
+        "Option-Shift -/= height resize keeps the column fully filled",
+        "Height resize no longer flips stacked tiles into tabbing / empty gaps"
+      ]
+    },
+    {
+      "version": "0.2.3",
+      "items": [
+        "Pre-commit logs What's New bumps clearly",
+        "Package warns when a commit skipped the version bump"
+      ]
+    },
+    {
+      "version": "0.2.2",
+      "items": [
+        "Stacked tiles no longer shrink to half height when a sibling is minimized",
+        "Workspace bar shows each app only on its home workspace",
+        "Windows no longer leak or get stolen into workspace 1 on switch",
+        "Option-Shift arrows move/resize the focused window on the correct monitor",
+        "Focus arrows no longer snap back to the previous window",
+        "Broken overlapping tiles auto-heal back into columns",
+        "Pre-commit bump logs clearly; package warns if a commit skipped What's New"
+      ]
+    },
+    {
+      "version": "0.2.1",
+      "items": [
+        "Quake terminal stays floating — no longer tiles and shrinks other windows",
+        "Trackpad gestures via MultitouchSupport (3-finger scroll, 4-finger workspaces)",
+        "Configurable Quake blur intensity",
+        "Option-Shift -/= resizes tile height in a column",
+        "Workspace bar no longer pushed aside on secondary displays",
+        "More stable tiling when Quake opens — columns no longer stick mid-resize"
+      ]
+    },
+    {
+      "version": "0.2.0",
+      "items": [
+        "Settings sidebar (General, Layout, Appearance, Input)",
+        "Menu bar controls: Focus Follows Mouse, Borders, Workspace Bar",
+        "Quake terminal, command palette, app rules, diagnostics dump",
+        "Workspace bar below the menu bar (no more black overlay)"
+      ]
+    }
+  ]
+}

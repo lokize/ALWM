@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# pre-push: cria commit de bump se faltar; aborta o push para incluir a nova versão.
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+BUMPED=0
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [[ -z "$local_ref" ]] && continue
+  [[ "$local_sha" == "0000000000000000000000000000000000000000" ]] && continue
+
+  branch="${local_ref#refs/heads/}"
+  [[ "$branch" == "main" ]] || continue
+
+  if [[ "$remote_sha" == "0000000000000000000000000000000000000000" ]]; then
+    remote_sha="$(git rev-list --max-parents=0 "$local_sha" | tail -1)"
+  fi
+
+  before="$local_sha"
+  bash "$ROOT/scripts/ensure-version-bump.sh" "$remote_sha" "$before"
+  after="$(git rev-parse HEAD)"
+  if [[ "$before" != "$after" ]]; then
+    BUMPED=1
+  fi
+done
+
+if (( BUMPED )); then
+  printf 'ALWM pre-push: commit de versão criado — rode git push de novo (ou bash scripts/sync-push.sh)\n' >&2
+  exit 1
+fi
+
+exit 0

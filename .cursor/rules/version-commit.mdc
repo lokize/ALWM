@@ -1,0 +1,34 @@
+---
+description: A cada commit, bump de versão e What's New (0.0.1…→0.1.0)
+alwaysApply: true
+---
+
+# Versão e What's New em todo commit
+
+Antes de **cada** `git commit` neste repositório:
+
+1. Rode o bump de versão com bullets claros das mudanças deste commit (em inglês, tom de release notes):
+
+```bash
+bash scripts/bump-version.sh "Short user-facing change" "Another change"
+```
+
+Esquema: `MAJOR.MINOR.PATCH` sobe o **patch** em +1. Quando o patch chegaria a **10**, zera o patch e sobe o **minor** (`0.2.9` → `0.3.0`). Quando o minor chegaria a 10, sobe o **major** (`0.9.9` → `1.0.0`).
+
+2. Inclua no stage os arquivos gerados:
+
+- `VERSION`
+- `Info.plist`
+- `Sources/Alwm/Resources/whatsnew.json`
+- `Sources/Alwm/UI/SettingsWindow.swift` (`AlwmVersion.string`)
+
+3. A mensagem de commit continua em **português (Brasil)** (regra do usuário); os bullets do What's New ficam em inglês (UI atual).
+
+4. Se o hook `.githooks/pre-commit` estiver ativo (`scripts/install-git-hooks.sh`), ele já faz o bump via `--from-diff`. Ainda assim, **prefira** passar bullets explícitos com `ALWM_WHATSNEW_BULLETS` ou pelo script acima, para o What's New ficar legível.
+
+5. Não pule o bump em commits de feature/fix. Só omita em commits que alterem **exclusivamente** os arquivos de versão acima.
+
+6. **Ao sincronizar com o GitHub** (`git push`, enviar commits, PR merge em `main`):
+   - Sempre garanta bump antes do push: `bash scripts/sync-push.sh` (preferido) ou `bash scripts/ensure-version-bump.sh` + `git push`.
+   - Se o usuário pedir para subir/sincronizar commits, **nunca** faça push de código sem bump de `VERSION`.
+   - O hook `pre-push` cria o commit de versão se faltar; o CI falha se `VERSION` não subiu com mudanças de código.
