@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "0.4.7",
+      "items": [
+        "Maintenance and fixes"
+      ]
+    },
+    {
       "version": "0.4.6",
       "items": [
         "Keep multiple live windows of the same app in a workspace (no longer collapse Cursor siblings)",
