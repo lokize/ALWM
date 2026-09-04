@@ -471,14 +471,48 @@ struct SettingsRootView: View {
                     showContributionCount: false
                 )
             }
-            Section {
-                Button(L10n.t("settings.whats_new")) { showWhatsNew = true }
+            Section(L10n.t("settings.whats_new")) {
+                aboutWhatsNewList
             }
         }
         .formStyle(.grouped)
         .onAppear {
             updates.checkForUpdates()
             credits.refreshIfNeeded()
+        }
+    }
+
+    private var aboutWhatsNewList: some View {
+        let releases = AlwmWhatsNew.releases
+        return Group {
+            if releases.isEmpty {
+                Text(L10n.t("about.whats_new.empty"))
+                    .foregroundStyle(.secondary)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 16) {
+                        ForEach(releases, id: \.version) { release in
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(L10n.tf("about.whats_new.version", release.version))
+                                    .font(.subheadline.weight(.semibold))
+                                ForEach(Array(release.items.enumerated()), id: \.offset) { _, line in
+                                    HStack(alignment: .top, spacing: 8) {
+                                        Text("•")
+                                            .foregroundStyle(.secondary)
+                                        Text(line)
+                                            .font(.callout)
+                                            .foregroundStyle(.primary)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                .frame(minHeight: 140, maxHeight: 220)
+            }
         }
     }
 
@@ -1475,7 +1509,7 @@ private struct CreditsAvatarView: View {
 
 enum AlwmVersion {
     /// Kept in sync by `scripts/bump-version.sh`. Prefer `installed` for UI / update checks.
-    static let string = "0.5.3"
+    static let string = "0.5.4"
     static let ctlHint = "~/.local/bin/alwmctl"
     /// Version of the running app (Info.plist), falling back to the embedded constant.
     static var installed: String {
