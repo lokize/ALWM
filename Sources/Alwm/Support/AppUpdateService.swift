@@ -347,42 +347,113 @@ public final class AppUpdateService: ObservableObject {
     }
 
     private func scheduleReplaceAndRelaunch(newApp: URL) throws {
-        let destination = Bundle.main.bundleURL
+        let destination = preferredInstallDestination()
         guard destination.pathExtension == "app" else {
             throw UpdateError.invalidInstallLocation
         }
 
         let pid = ProcessInfo.processInfo.processIdentifier
+        let logPath = FileManager.default.temporaryDirectory
+            .appendingPathComponent("alwm-update.log").path
+        let scriptURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("alwm-update-relaunch-\(UUID().uuidString).sh")
+
         let script = """
         #!/bin/bash
-        set -euo pipefail
+        exec >>\(shellEscape(logPath)) 2>&1
+        set -euxo pipefail
+        echo "ALWM update helper start $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo "PID=\(pid) SRC=\(shellEscape(newApp.path)) DST=\(shellEscape(destination.path))"
         PID=\(pid)
         SRC=\(shellEscape(newApp.path))
         DST=\(shellEscape(destination.path))
-        while kill -0 "$PID" 2>/dev/null; do sleep 0.15; done
-        sleep 0.4
-        rm -rf "$DST"
+
+        # Wait for the running app to exit (parent would kill us if we stayed attached).
+        for _ in $(seq 1 200); do
+          if ! kill -0 "$PID" 2>/dev/null; then
+            break
+          fi
+          sleep 0.15
+        done
+        kill -9 "$PID" 2>/dev/null || true
+        # Clear any leftover ALWM instances before replacing the bundle.
+        /usr/bin/pkill -9 -x ALWM 2>/dev/null || true
+        sleep 0.6
+
+        if [[ ! -d "$SRC/Contents/MacOS" ]]; then
+          echo "error: staged app missing: $SRC"
+          exit 1
+        fi
+
+        /bin/rm -rf "$DST"
         /usr/bin/ditto "$SRC" "$DST"
         /usr/bin/xattr -dr com.apple.quarantine "$DST" 2>/dev/null || true
-        /usr/bin/open "$DST"
-        rm -rf "$SRC"
-        rm -f -- "$0"
+        /bin/chmod -R u+rwX "$DST" || true
+        /bin/chmod +x "$DST/Contents/MacOS/ALWM" 2>/dev/null || true
+
+        echo "Launching $DST"
+        # LSUIElement agent: open -n starts a new instance; -g keeps focus quiet.
+        if ! /usr/bin/open -n -g "$DST"; then
+          echo "open -n -g failed — trying open -n"
+          /usr/bin/open -n "$DST" || true
+        fi
+        sleep 1
+        if ! /usr/bin/pgrep -x ALWM >/dev/null 2>&1; then
+          echo "pgrep miss — launching binary directly"
+          nohup "$DST/Contents/MacOS/ALWM" >/dev/null 2>&1 &
+          disown || true
+          sleep 0.8
+        fi
+        if /usr/bin/pgrep -x ALWM >/dev/null 2>&1; then
+          echo "ALWM is running after update"
+        else
+          echo "error: ALWM failed to relaunch"
+          exit 1
+        fi
+
+        /bin/rm -rf "$SRC"
+        echo "ALWM update helper done $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        /bin/rm -f -- "$0"
         """
 
-        let scriptURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("alwm-update-relaunch-\(UUID().uuidString).sh")
         try script.write(to: scriptURL, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
 
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/bin/bash")
-        proc.arguments = [scriptURL.path]
-        try proc.run()
-
-        // Quit so the helper can replace the bundle and reopen.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            NSApp.terminate(nil)
+        // Detach from ALWM's process group so NSApp.terminate does not kill the helper.
+        let launcher = Process()
+        launcher.executableURL = URL(fileURLWithPath: "/bin/bash")
+        launcher.arguments = [
+            "-c",
+            "(/usr/bin/nohup \(shellEscape(scriptURL.path)) >/dev/null 2>&1 &)"
+        ]
+        try launcher.run()
+        launcher.waitUntilExit()
+        guard launcher.terminationStatus == 0 else {
+            throw UpdateError.relaunchHelperFailed
         }
+
+        // Give nohup a beat to start waiting on our PID, then quit.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            NSApp.terminate(nil)
+            // Hard exit if terminate is deferred by a window/sheet.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                exit(0)
+            }
+        }
+    }
+
+    /// Prefer ~/Applications/ALWM.app when that is the install we manage.
+    private func preferredInstallDestination() -> URL {
+        let running = Bundle.main.bundleURL.resolvingSymlinksInPath()
+        let homeApp = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Applications/ALWM.app")
+        if running.path == homeApp.path { return homeApp }
+        if running.path.hasSuffix("/Applications/ALWM.app") { return running }
+        if FileManager.default.fileExists(atPath: homeApp.path) {
+            // Updates from a stray copy still land in the managed install location.
+            return homeApp
+        }
+        return running
     }
 
     private func shellEscape(_ path: String) -> String {
@@ -418,6 +489,7 @@ public final class AppUpdateService: ObservableObject {
         case copyFailed
         case invalidInstallLocation
         case resignFailed
+        case relaunchHelperFailed
 
         public var errorDescription: String? {
             switch self {
@@ -428,6 +500,7 @@ public final class AppUpdateService: ObservableObject {
             case .copyFailed: return "Could not copy ALWM.app from the DMG"
             case .invalidInstallLocation: return "ALWM is not running from an .app bundle"
             case .resignFailed: return "Could not re-sign the update (permissions may reset)"
+            case .relaunchHelperFailed: return "Could not start the update relaunch helper"
             }
         }
     }
