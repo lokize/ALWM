@@ -1284,7 +1284,7 @@ struct WhatsNewView: View {
 }
 
 enum AlwmVersion {
-    static let string = "0.4.7"
+    static let string = "0.4.8"
     static let ctlHint = "~/.local/bin/alwmctl"
 }
 

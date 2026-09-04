@@ -6,6 +6,7 @@ import SwiftUI
 public final class StatusPopoverController {
     private var popover = NSPopover()
     private let model = StatusMenuModel()
+    private var hostingController: NSHostingController<StatusMenuView>?
 
     public var onToggleFocusFollowsMouse: (() -> Void)?
     public var onToggleBorders: (() -> Void)?
@@ -103,18 +104,33 @@ public final class StatusPopoverController {
             onCloseMenu: { [weak self] in self?.close() }
         )
         let hosting = NSHostingController(rootView: root)
+        hostingController = hosting
         popover.contentViewController = hosting
         resizeToFit()
     }
 
+    /// Cap height to the screen under the cursor so small displays can scroll instead of clipping.
+    /// Always hug content on large screens — never stretch to fill the display.
     private func resizeToFit() {
-        guard let view = popover.contentViewController?.view else { return }
-        view.layoutSubtreeIfNeeded()
-        let fitting = view.fittingSize
+        guard let hosting = hostingController else { return }
+        let maxH = StatusMenuLayout.maxHeight
+        // Propose the screen cap so ScrollView can scroll when needed; fixedSize still hugs content.
+        let ideal = hosting.sizeThatFits(in: NSSize(width: 340, height: maxH))
         popover.contentSize = NSSize(
-            width: max(340, ceil(fitting.width)),
-            height: max(1, ceil(fitting.height))
+            width: max(340, ceil(ideal.width)),
+            height: max(1, min(ceil(ideal.height), maxH))
         )
+    }
+}
+
+private enum StatusMenuLayout {
+    static var maxHeight: CGFloat {
+        let mouse = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
+            ?? NSScreen.main
+            ?? NSScreen.screens.first
+        let visible = screen?.visibleFrame.height ?? 700
+        return max(280, floor(visible - 16))
     }
 }
 
@@ -161,66 +177,79 @@ struct StatusMenuView: View {
     var onCloseMenu: () -> Void = {}
 
     var body: some View {
-        VStack(alignment: .leading, spacing: StatusMenuTheme.sectionGap) {
-            header
+        let maxH = StatusMenuLayout.maxHeight
+        ScrollView(.vertical, showsIndicators: true) {
+            VStack(alignment: .leading, spacing: StatusMenuTheme.sectionGap) {
+                header
 
-            controlsSection
+                controlsSection
 
-            VStack(spacing: 4) {
-                navRow(title: L10n.t("menu.settings"), systemImage: "gearshape", action: onSettings)
-                navRow(title: L10n.t("menu.plugins"), systemImage: "puzzlepiece.extension", action: onPlugins)
-                navRow(title: L10n.t("menu.whats_new"), systemImage: "sparkles", action: onWhatsNew)
-            }
-
-            if model.developerMode {
-                sectionBlock(title: L10n.t("menu.developer")) {
-                    actionRow(title: L10n.t("menu.reset_runtime"), systemImage: "arrow.counterclockwise", action: onReset)
-                    actionRow(title: L10n.t("menu.restart_clearing"), systemImage: "arrow.triangle.2.circlepath", action: onRestart)
+                VStack(spacing: 4) {
+                    navRow(title: L10n.t("menu.settings"), systemImage: "gearshape", action: onSettings)
+                    navRow(title: L10n.t("menu.plugins"), systemImage: "puzzlepiece.extension", action: onPlugins)
+                    navRow(title: L10n.t("menu.whats_new"), systemImage: "sparkles", action: onWhatsNew)
                 }
-            }
 
-            sectionBlock(title: L10n.t("menu.tools")) {
-                if !model.recentNotes.isEmpty {
-                    Text(L10n.t("menu.notepad.recent"))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 4)
-                        .padding(.bottom, 2)
+                if model.developerMode {
+                    sectionBlock(title: L10n.t("menu.developer")) {
+                        actionRow(title: L10n.t("menu.reset_runtime"), systemImage: "arrow.counterclockwise", action: onReset)
+                        actionRow(title: L10n.t("menu.restart_clearing"), systemImage: "arrow.triangle.2.circlepath", action: onRestart)
+                    }
+                }
+
+                sectionBlock(title: L10n.t("menu.tools")) {
+                    if !model.recentNotes.isEmpty {
+                        Text(L10n.t("menu.notepad.recent"))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 4)
+                            .padding(.bottom, 2)
+
+                        LazyVGrid(
+                            columns: [
+                                GridItem(.flexible(), spacing: 6),
+                                GridItem(.flexible(), spacing: 6)
+                            ],
+                            spacing: 6
+                        ) {
+                            ForEach(model.recentNotes.prefix(4)) { note in
+                                notePreviewCard(note)
+                            }
+                        }
+                        .padding(.bottom, 6)
+                    }
 
                     LazyVGrid(
                         columns: [
-                            GridItem(.flexible(), spacing: 8),
-                            GridItem(.flexible(), spacing: 8)
+                            GridItem(.flexible(), spacing: 4),
+                            GridItem(.flexible(), spacing: 4)
                         ],
-                        spacing: 8
+                        spacing: 2
                     ) {
-                        ForEach(model.recentNotes.prefix(4)) { note in
-                            notePreviewCard(note)
-                        }
+                        actionRow(title: L10n.t("menu.command_palette"), systemImage: "command", action: onPalette)
+                        actionRow(title: L10n.t("menu.quake"), systemImage: "terminal", action: onQuake)
+                        actionRow(title: L10n.t("menu.color_palette"), systemImage: "paintpalette", action: onColorPalette)
+                        actionRow(title: L10n.t("menu.notepad"), systemImage: "note.text", action: onNotepad)
+                        actionRow(title: L10n.t("menu.capture.region"), systemImage: "crop", action: onCaptureRegion)
+                        actionRow(title: L10n.t("menu.capture.display"), systemImage: "rectangle.dashed", action: onCaptureDisplay)
+                        actionRow(
+                            title: model.isRecording ? L10n.t("menu.capture.record_stop") : L10n.t("menu.capture.record"),
+                            systemImage: model.isRecording ? "stop.circle.fill" : "record.circle",
+                            action: onCaptureRecordToggle
+                        )
+                        actionRow(title: L10n.t("menu.relayout"), systemImage: "rectangle.split.3x1", action: onRelayout)
                     }
-                    .padding(.bottom, 6)
                 }
 
-                actionRow(title: L10n.t("menu.command_palette"), systemImage: "command", action: onPalette)
-                actionRow(title: L10n.t("menu.quake"), systemImage: "terminal", action: onQuake)
-                actionRow(title: L10n.t("menu.color_palette"), systemImage: "paintpalette", action: onColorPalette)
-                actionRow(title: L10n.t("menu.notepad"), systemImage: "note.text", action: onNotepad)
-                actionRow(title: L10n.t("menu.capture.region"), systemImage: "crop", action: onCaptureRegion)
-                actionRow(title: L10n.t("menu.capture.display"), systemImage: "rectangle.dashed", action: onCaptureDisplay)
-                actionRow(
-                    title: model.isRecording ? L10n.t("menu.capture.record_stop") : L10n.t("menu.capture.record"),
-                    systemImage: model.isRecording ? "stop.circle.fill" : "record.circle",
-                    action: onCaptureRecordToggle
-                )
-                actionRow(title: L10n.t("menu.relayout"), systemImage: "rectangle.split.3x1", action: onRelayout)
+                supportSection
+
+                quitButton
             }
-
-            supportSection
-
-            quitButton
+            .padding(14)
         }
-        .padding(14)
         .frame(width: 340)
+        // Hug content on large screens; only grow up to the visible display height.
+        .frame(maxHeight: maxH, alignment: .top)
         .fixedSize(horizontal: true, vertical: true)
         .background(Color(nsColor: .windowBackgroundColor).opacity(0.92))
         .alwmLocalized()
@@ -384,18 +413,22 @@ struct StatusMenuView: View {
 
     private func actionRow(title: String, systemImage: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 12) {
+            HStack(spacing: 8) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
-                    .frame(width: 22)
+                    .frame(width: 18)
                 Text(title)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 9)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -449,7 +482,6 @@ struct StatusMenuView: View {
             )
         }
         .buttonStyle(.plain)
-        .padding(.top, 2)
     }
 
     private var supportSection: some View {
