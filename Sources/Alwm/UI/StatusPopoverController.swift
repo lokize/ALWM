@@ -7,6 +7,7 @@ public final class StatusPopoverController {
     private var popover = NSPopover()
     private let model = StatusMenuModel()
     private var hostingController: NSHostingController<StatusMenuView>?
+    private var updateResizeCancellable: AnyCancellable?
 
     public var onToggleFocusFollowsMouse: (() -> Void)?
     public var onToggleBorders: (() -> Void)?
@@ -32,6 +33,12 @@ public final class StatusPopoverController {
         popover.behavior = .transient
         popover.animates = true
         installContent()
+        updateResizeCancellable = AppUpdateService.shared.$phase
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self, self.popover.isShown else { return }
+                self.resizeToFit()
+            }
     }
 
     public func update(
@@ -70,6 +77,7 @@ public final class StatusPopoverController {
             popover.performClose(nil)
             return
         }
+        AppUpdateService.shared.checkForUpdates()
         resizeToFit()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         NSApp.activate(ignoringOtherApps: true)
@@ -155,6 +163,7 @@ private enum StatusMenuTheme {
 struct StatusMenuView: View {
     @ObservedObject var model: StatusMenuModel
     @ObservedObject private var loc = LocalizationController.shared
+    @ObservedObject private var updates = AppUpdateService.shared
     var onToggleFocus: () -> Void
     var onToggleBorders: () -> Void
     var onToggleBar: () -> Void
@@ -181,6 +190,7 @@ struct StatusMenuView: View {
         ScrollView(.vertical, showsIndicators: true) {
             VStack(alignment: .leading, spacing: StatusMenuTheme.sectionGap) {
                 header
+                headerUpdateBanner
 
                 controlsSection
 
@@ -261,13 +271,118 @@ struct StatusMenuView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("ALWM")
                     .font(.system(size: 16, weight: .semibold))
-                        Text("v\(AlwmVersion.installed)")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Text("v\(AlwmVersion.installed)")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    if case .available = updates.phase, let latest = updates.latestVersion {
+                        Text(L10n.tf("menu.update.badge", latest))
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(StatusMenuTheme.accent)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(StatusMenuTheme.accent.opacity(0.18))
+                            )
+                    }
+                }
             }
             Spacer(minLength: 0)
+            headerUpdateAction
         }
         .padding(.bottom, 2)
+    }
+
+    @ViewBuilder
+    private var headerUpdateAction: some View {
+        switch updates.phase {
+        case .available:
+            Button {
+                updates.installUpdate()
+            } label: {
+                Label(L10n.t("about.update.button"), systemImage: "arrow.down.circle.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .labelStyle(.titleAndIcon)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .tint(StatusMenuTheme.accent)
+        case .downloading, .installing:
+            ProgressView()
+                .controlSize(.small)
+        case .failed(_) where updates.isUpdateAvailable:
+            Button {
+                updates.installUpdate()
+            } label: {
+                Label(L10n.t("about.update.button"), systemImage: "arrow.down.circle.fill")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .tint(StatusMenuTheme.accent)
+        default:
+            EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private var headerUpdateBanner: some View {
+        switch updates.phase {
+        case .available:
+            EmptyView()
+        case .downloading:
+            updateProgressBanner(L10n.t("about.update.downloading"))
+        case .installing:
+            updateProgressBanner(L10n.t("about.update.installing"))
+        case .failed(let message):
+            VStack(alignment: .leading, spacing: 8) {
+                Text(L10n.tf("about.update.failed", message))
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    Button(L10n.t("about.update.retry")) {
+                        updates.checkForUpdates(force: true)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    if updates.isUpdateAvailable {
+                        Button(L10n.t("about.update.button")) {
+                            updates.installUpdate()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .tint(StatusMenuTheme.accent)
+                    }
+                }
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.red.opacity(0.12))
+            )
+        default:
+            EmptyView()
+        }
+    }
+
+    private func updateProgressBanner(_ text: String) -> some View {
+        HStack(spacing: 8) {
+            ProgressView()
+                .controlSize(.small)
+            Text(text)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(0.05))
+        )
     }
 
     private var controlsSection: some View {
