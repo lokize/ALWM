@@ -155,6 +155,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
 
         try configStore.load()
         applyConfig(configStore.config)
+        AppUpdateService.shared.checkForUpdates()
         configStore.onChange = { [weak self] config in
             Task { @MainActor in
                 self?.applyConfig(config)
@@ -546,7 +547,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
                     workspaceBar: s.workspaceBar.enabled,
                     preventSleep: s.preventDisplaySleep,
                     developerMode: s.developerMode,
-                    version: AlwmVersion.string,
+                    version: AlwmVersion.installed,
                     isRecording: self.capture.isRecording,
                     recentNotes: self.notepad.store.recentPreviews()
                 )
@@ -631,7 +632,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
             workspaceBar: settings.workspaceBar.enabled,
             preventSleep: settings.preventDisplaySleep,
             developerMode: settings.developerMode,
-            version: AlwmVersion.string,
+            version: AlwmVersion.installed,
             isRecording: capture.isRecording,
             recentNotes: notepad.store.recentPreviews()
         )

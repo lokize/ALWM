@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "0.4.9",
+      "items": [
+        "Maintenance and fixes"
+      ]
+    },
+    {
       "version": "0.4.8",
       "items": [
         "Maintenance and fixes"

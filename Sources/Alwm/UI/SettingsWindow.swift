@@ -143,6 +143,7 @@ struct SettingsRootView: View {
     @State private var showWhatsNew = false
     @State private var hotkeySearch = ""
     @State private var persistTask: Task<Void, Never>?
+    @ObservedObject private var updates = AppUpdateService.shared
     @ObservedObject private var loc = LocalizationController.shared
     let monitors: [MonitorInfo]
     let runningAppsProvider: () -> [AppRuleRunningApp]
@@ -426,7 +427,7 @@ struct SettingsRootView: View {
                         AlwmLogoImage(side: 96, cornerRadius: 22)
                         Text("ALWM")
                             .font(.title2.weight(.semibold))
-                        Text("v\(AlwmVersion.string)")
+                        Text("v\(AlwmVersion.installed)")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                     }
@@ -435,20 +436,88 @@ struct SettingsRootView: View {
                 }
             }
             Section {
-                LabeledContent("App", value: "ALWM")
-                LabeledContent("Version", value: AlwmVersion.string)
-                LabeledContent("Layout", value: "Niri-style scrolling columns")
-                LabeledContent("License", value: "GPL-3.0")
+                LabeledContent(L10n.t("about.app"), value: "ALWM")
+                LabeledContent(L10n.t("about.version"), value: AlwmVersion.installed)
+                if let latest = updates.latestVersion {
+                    LabeledContent(L10n.t("about.latest"), value: latest)
+                }
+                LabeledContent(L10n.t("about.layout"), value: L10n.t("about.layout_value"))
+                LabeledContent(L10n.t("about.license"), value: "GPL-3.0")
             }
-            Section("Lineage") {
-                Text("Inspired by Niri. Original Swift implementation — not a code fork of Niri.")
+            Section {
+                updateStatusRow
+            }
+            Section(L10n.t("about.lineage")) {
+                Text(L10n.t("about.lineage.body"))
                     .foregroundStyle(.secondary)
             }
             Section {
-                Button("What's New") { showWhatsNew = true }
+                Button(L10n.t("settings.whats_new")) { showWhatsNew = true }
             }
         }
         .formStyle(.grouped)
+        .onAppear {
+            updates.checkForUpdates()
+        }
+    }
+
+    @ViewBuilder
+    private var updateStatusRow: some View {
+        switch updates.phase {
+        case .idle, .checking:
+            HStack {
+                ProgressView()
+                    .controlSize(.small)
+                Text(L10n.t("about.update.checking"))
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+        case .upToDate:
+            Label(L10n.t("about.update.up_to_date"), systemImage: "checkmark.circle.fill")
+                .foregroundStyle(.secondary)
+        case .available:
+            VStack(alignment: .leading, spacing: 10) {
+                Text(L10n.tf("about.update.available", updates.latestVersion ?? ""))
+                    .foregroundStyle(.primary)
+                Button {
+                    updates.installUpdate()
+                } label: {
+                    Label(L10n.t("about.update.button"), systemImage: "arrow.down.circle.fill")
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        case .downloading:
+            HStack {
+                ProgressView()
+                    .controlSize(.small)
+                Text(L10n.t("about.update.downloading"))
+                Spacer()
+            }
+        case .installing:
+            HStack {
+                ProgressView()
+                    .controlSize(.small)
+                Text(L10n.t("about.update.installing"))
+                Spacer()
+            }
+        case .failed(let message):
+            VStack(alignment: .leading, spacing: 8) {
+                Text(L10n.tf("about.update.failed", message))
+                    .foregroundStyle(.red)
+                    .font(.callout)
+                HStack {
+                    Button(L10n.t("about.update.retry")) {
+                        updates.checkForUpdates(force: true)
+                    }
+                    if updates.isUpdateAvailable {
+                        Button(L10n.t("about.update.button")) {
+                            updates.installUpdate()
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                }
+            }
+        }
     }
 
     private var diagnosticsPane: some View {
@@ -1284,8 +1353,17 @@ struct WhatsNewView: View {
 }
 
 enum AlwmVersion {
-    static let string = "0.4.8"
+    /// Kept in sync by `scripts/bump-version.sh`. Prefer `installed` for UI / update checks.
+    static let string = "0.4.9"
     static let ctlHint = "~/.local/bin/alwmctl"
+    /// Version of the running app (Info.plist), falling back to the embedded constant.
+    static var installed: String {
+        if let fromBundle = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+           !fromBundle.isEmpty {
+            return fromBundle
+        }
+        return string
+    }
 }
 
 enum AlwmWhatsNew {

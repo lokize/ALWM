@@ -261,9 +261,9 @@ struct StatusMenuView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("ALWM")
                     .font(.system(size: 16, weight: .semibold))
-                Text("v\(model.version)")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                        Text("v\(AlwmVersion.installed)")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
         }
