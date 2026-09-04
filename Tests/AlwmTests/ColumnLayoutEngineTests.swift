@@ -51,6 +51,22 @@ struct ColumnLayoutEngineTests {
         #expect(ws.columns[1].windows == [a, b])
     }
 
+    @Test("stack scroll focus with stale focusedColumn does not trap")
+    func focusDownWithStaleFocusedColumn() {
+        var ws = WorkspaceState(id: "1", name: "1")
+        let usable = engine.usableArea(monitor: monitor)
+        let a = WindowID(pid: 1, windowNumber: 1)
+        let b = WindowID(pid: 1, windowNumber: 2)
+        engine.insertWindow(a, into: &ws, usable: usable)
+        engine.insertWindow(b, into: &ws, usable: usable)
+        ws.focusedColumn = 9
+        engine.focus(.down, workspace: &ws, usable: usable)
+        #expect(ws.focusedColumn == 0)
+        #expect(ws.focusedWindowID == b)
+        engine.focus(.up, workspace: &ws, usable: usable)
+        #expect(ws.focusedWindowID == a)
+    }
+
     @Test("computeFrames stacks visible windows in active workspace")
     func computeActiveFrames() {
         var ws = WorkspaceState(id: "1", name: "1")

@@ -379,6 +379,8 @@ public struct ColumnLayoutEngine: Sendable {
 
     public func focus(_ direction: Direction, workspace: inout WorkspaceState) {
         guard !workspace.columns.isEmpty else { return }
+        // Stale focus (after column cleanup / restore) must not trap on columns[col].
+        workspace.focusedColumn = min(max(0, workspace.focusedColumn), workspace.columns.count - 1)
         switch direction {
         case .left:
             var col = workspace.focusedColumn
@@ -400,13 +402,15 @@ public struct ColumnLayoutEngine: Sendable {
             }
         case .up:
             let col = workspace.focusedColumn
-            let row = workspace.focusedWindowInColumn[col] ?? 0
+            let count = workspace.columns[col].windows.count
+            guard count > 0 else { return }
+            let row = min(workspace.focusedWindowInColumn[col] ?? 0, count - 1)
             workspace.focusedWindowInColumn[col] = max(0, row - 1)
         case .down:
             let col = workspace.focusedColumn
             let count = workspace.columns[col].windows.count
             guard count > 0 else { return }
-            let row = workspace.focusedWindowInColumn[col] ?? 0
+            let row = min(workspace.focusedWindowInColumn[col] ?? 0, count - 1)
             workspace.focusedWindowInColumn[col] = min(count - 1, row + 1)
         }
     }
