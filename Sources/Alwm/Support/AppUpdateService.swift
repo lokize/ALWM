@@ -72,6 +72,9 @@ public final class AppUpdateService: ObservableObject {
             let dmgFile = try await downloadDMG(from: dmgURL, version: version)
             phase = .installing
             let stagedApp = try await mountAndExtractApp(dmg: dmgFile)
+            // GitHub DMGs are ad-hoc signed (CDHash changes every build → TCC resets).
+            // Re-sign with the same stable identity as the running install when possible.
+            try await resignForStableTCC(app: stagedApp)
             try scheduleReplaceAndRelaunch(newApp: stagedApp)
         } catch {
             phase = .failed(error.localizedDescription)
@@ -185,6 +188,141 @@ public final class AppUpdateService: ObservableObject {
         return staged
     }
 
+    // MARK: - Code signing (preserve TCC)
+
+    /// Prefer the identity of the currently installed app; fall back to local ALWM cert.
+    private func preferredSigningIdentity() async -> String? {
+        if let running = await signingIdentity(of: Bundle.main.bundleURL),
+           running != "-",
+           !running.isEmpty {
+            return running
+        }
+        if await codesigningIdentityExists("ALWM Local Signing") {
+            return "ALWM Local Signing"
+        }
+        return nil
+    }
+
+    private func resignForStableTCC(app: URL) async throws {
+        guard let identity = await preferredSigningIdentity() else {
+            NSLog("[ALWM] Update: no stable codesign identity — permissions may need re-grant after install")
+            return
+        }
+
+        let entitlements = try entitlementsFileForSigning(app: app)
+
+        // Nested code first (plugins / dylibs), then the app with --deep.
+        if let frameworks = optionalDirectory(app.appendingPathComponent("Contents/Frameworks")) {
+            let files = (try? FileManager.default.contentsOfDirectory(at: frameworks, includingPropertiesForKeys: nil)) ?? []
+            for file in files where file.pathExtension == "dylib" || file.lastPathComponent.hasPrefix("lib") {
+                _ = try await runProcess("/usr/bin/codesign", [
+                    "--force", "--sign", identity,
+                    "--identifier", "dev.alwm.ALWM.frameworks",
+                    file.path
+                ])
+            }
+        }
+        if let plugins = optionalDirectory(app.appendingPathComponent("Contents/PlugIns")) {
+            let bundles = (try? FileManager.default.contentsOfDirectory(at: plugins, includingPropertiesForKeys: nil)) ?? []
+            for plug in bundles where plug.pathExtension == "alwmplugin" {
+                _ = try await runProcess("/usr/bin/codesign", [
+                    "--force", "--deep", "--sign", identity,
+                    "--identifier", plug.deletingPathExtension().lastPathComponent,
+                    plug.path
+                ])
+            }
+        }
+
+        let status = try await runProcess("/usr/bin/codesign", [
+            "--force", "--deep",
+            "--sign", identity,
+            "--identifier", "dev.alwm.ALWM",
+            "--entitlements", entitlements.path,
+            app.path
+        ])
+        guard status == 0 else {
+            throw UpdateError.resignFailed
+        }
+        NSLog("[ALWM] Update: re-signed with identity '%@' (TCC-stable)", identity)
+    }
+
+    private func entitlementsFileForSigning(app: URL) throws -> URL {
+        let bundled = app.appendingPathComponent("Contents/Resources/Alwm.entitlements")
+        if FileManager.default.fileExists(atPath: bundled.path) {
+            return bundled
+        }
+        let fromRunning = Bundle.main.url(forResource: "Alwm", withExtension: "entitlements")
+        if let fromRunning, FileManager.default.fileExists(atPath: fromRunning.path) {
+            return fromRunning
+        }
+        let temp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("alwm-update-entitlements-\(UUID().uuidString).plist")
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>com.apple.security.app-sandbox</key>
+            <false/>
+        </dict>
+        </plist>
+        """
+        try xml.write(to: temp, atomically: true, encoding: .utf8)
+        return temp
+    }
+
+    private func optionalDirectory(_ url: URL) -> URL? {
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else {
+            return nil
+        }
+        return url
+    }
+
+    private func signingIdentity(of app: URL) async -> String? {
+        let output = await runProcessOutput("/usr/bin/codesign", ["-dv", "--verbose=4", app.path])
+        if output.contains("Signature=adhoc") || output.contains("flags=0x2(adhoc)") {
+            return "-"
+        }
+        // Prefer the leaf Authority= line (last one is usually Apple; first after Executable is signer).
+        let authorities = output.split(separator: "\n")
+            .compactMap { line -> String? in
+                let s = line.trimmingCharacters(in: .whitespaces)
+                guard s.hasPrefix("Authority=") else { return nil }
+                return String(s.dropFirst("Authority=".count))
+            }
+        return authorities.first
+    }
+
+    private func codesigningIdentityExists(_ name: String) async -> Bool {
+        let output = await runProcessOutput("/usr/bin/security", ["find-identity", "-v", "-p", "codesigning"])
+        return output.contains(name) && !output.contains("CSSMERR_TP_NOT_TRUSTED")
+    }
+
+    private func runProcessOutput(_ launchPath: String, _ arguments: [String]) async -> String {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let proc = Process()
+                proc.executableURL = URL(fileURLWithPath: launchPath)
+                proc.arguments = arguments
+                let out = Pipe()
+                let err = Pipe()
+                proc.standardOutput = out
+                proc.standardError = err
+                do {
+                    try proc.run()
+                    proc.waitUntilExit()
+                } catch {
+                    continuation.resume(returning: "")
+                    return
+                }
+                let data = out.fileHandleForReading.readDataToEndOfFile()
+                    + err.fileHandleForReading.readDataToEndOfFile()
+                continuation.resume(returning: String(data: data, encoding: .utf8) ?? "")
+            }
+        }
+    }
+
     private func runProcess(_ launchPath: String, _ arguments: [String]) async throws -> Int32 {
         try await Self.runProcessStatic(launchPath, arguments)
     }
@@ -279,6 +417,7 @@ public final class AppUpdateService: ObservableObject {
         case appMissingInDMG
         case copyFailed
         case invalidInstallLocation
+        case resignFailed
 
         public var errorDescription: String? {
             switch self {
@@ -288,6 +427,7 @@ public final class AppUpdateService: ObservableObject {
             case .appMissingInDMG: return "ALWM.app not found in the DMG"
             case .copyFailed: return "Could not copy ALWM.app from the DMG"
             case .invalidInstallLocation: return "ALWM is not running from an .app bundle"
+            case .resignFailed: return "Could not re-sign the update (permissions may reset)"
             }
         }
     }
