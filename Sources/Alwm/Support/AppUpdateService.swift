@@ -356,8 +356,12 @@ public final class AppUpdateService: ObservableObject {
         }
 
         let pid = ProcessInfo.processInfo.processIdentifier
-        let logPath = FileManager.default.temporaryDirectory
-            .appendingPathComponent("alwm-update.log").path
+        let logPath = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/alwm/alwm-update.log").path
+        try? FileManager.default.createDirectory(
+            at: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/alwm"),
+            withIntermediateDirectories: true
+        )
         let scriptURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("alwm-update-relaunch-\(UUID().uuidString).sh")
 
@@ -370,6 +374,7 @@ public final class AppUpdateService: ObservableObject {
         PID=\(pid)
         SRC=\(shellEscape(newApp.path))
         DST=\(shellEscape(destination.path))
+        BIN="$DST/Contents/MacOS/ALWM"
 
         # Wait for the running app to exit (parent would kill us if we stayed attached).
         for _ in $(seq 1 200); do
@@ -385,7 +390,14 @@ public final class AppUpdateService: ObservableObject {
           sleep 0.8
           kill -9 "$PID" 2>/dev/null || true
         fi
-        sleep 0.8
+        # Ensure the old process is fully gone before replacing the bundle.
+        for _ in $(seq 1 40); do
+          if ! kill -0 "$PID" 2>/dev/null; then
+            break
+          fi
+          sleep 0.1
+        done
+        sleep 0.5
 
         if [[ ! -d "$SRC/Contents/MacOS" ]]; then
           echo "error: staged app missing: $SRC"
@@ -396,25 +408,47 @@ public final class AppUpdateService: ObservableObject {
         /usr/bin/ditto "$SRC" "$DST"
         /usr/bin/xattr -dr com.apple.quarantine "$DST" 2>/dev/null || true
         /bin/chmod -R u+rwX "$DST" || true
-        /bin/chmod +x "$DST/Contents/MacOS/ALWM" 2>/dev/null || true
+        /bin/chmod +x "$BIN" 2>/dev/null || true
+
+        launch_once() {
+          local how="$1"
+          echo "Launch attempt: $how"
+          case "$how" in
+            open-n)
+              /usr/bin/open -n "$DST" || return 1
+              ;;
+            open-ng)
+              /usr/bin/open -n -g "$DST" || return 1
+              ;;
+            binary)
+              # Capture crash output — Bundle.module assert used to die silently.
+              nohup "$BIN" >>\(shellEscape(logPath)) 2>&1 &
+              disown || true
+              ;;
+            *)
+              return 1
+              ;;
+          esac
+          sleep 1.5
+          /usr/bin/pgrep -x ALWM >/dev/null 2>&1
+        }
 
         echo "Launching $DST"
-        # LSUIElement agent: open -n starts a new instance; -g keeps focus quiet.
-        if ! /usr/bin/open -n -g "$DST"; then
-          echo "open -n -g failed — trying open -n"
-          /usr/bin/open -n "$DST" || true
-        fi
-        sleep 1.2
-        if ! /usr/bin/pgrep -x ALWM >/dev/null 2>&1; then
-          echo "pgrep miss — launching binary directly"
-          nohup "$DST/Contents/MacOS/ALWM" >/dev/null 2>&1 &
-          disown || true
-          sleep 0.8
-        fi
-        if /usr/bin/pgrep -x ALWM >/dev/null 2>&1; then
-          echo "ALWM is running after update"
-        else
+        LAUNCHED=0
+        for attempt in open-n open-ng binary open-n binary; do
+          if launch_once "$attempt"; then
+            LAUNCHED=1
+            echo "ALWM is running after update (via $attempt)"
+            break
+          fi
+          echo "launch failed via $attempt — retrying"
+          sleep 0.6
+        done
+
+        if [[ "$LAUNCHED" -ne 1 ]]; then
           echo "error: ALWM failed to relaunch"
+          /usr/bin/codesign -dv --verbose=2 "$DST" 2>&1 || true
+          /bin/ls -la "$DST/Contents/Resources" 2>&1 || true
           exit 1
         fi
 

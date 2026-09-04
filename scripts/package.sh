@@ -100,6 +100,19 @@ cp -f Info.plist "$CONTENTS/Info.plist"
 cp -f Alwm.entitlements "$CONTENTS/Resources/Alwm.entitlements" 2>/dev/null || true
 cp -f "$ROOT/dist/AppIcon.icns" "$CONTENTS/Resources/AppIcon.icns"
 cp -f "$ROOT/assets/alwm.png" "$CONTENTS/Resources/alwm.png"
+# SPM resource bundle (whatsnew.json, donors.json, …). Without this, Bundle.module
+# asserts on launch and the post-update relaunch dies immediately.
+SPM_BUNDLE="$(find "$BIN_ROOT" -path "*/$CONFIG/ALWM_Alwm.bundle" -type d 2>/dev/null | head -1)"
+if [[ -z "${SPM_BUNDLE:-}" || ! -d "$SPM_BUNDLE" ]]; then
+  SPM_BUNDLE="$BIN_ROOT/$CONFIG/ALWM_Alwm.bundle"
+fi
+if [[ -d "$SPM_BUNDLE" ]]; then
+  rm -rf "$CONTENTS/Resources/ALWM_Alwm.bundle"
+  cp -R "$SPM_BUNDLE" "$CONTENTS/Resources/ALWM_Alwm.bundle"
+fi
+# Flat copies so Bundle.main can find them even without the SPM bundle.
+cp -f "$ROOT/Sources/Alwm/Resources/whatsnew.json" "$CONTENTS/Resources/whatsnew.json" 2>/dev/null || true
+cp -f "$ROOT/Sources/Alwm/Resources/donors.json" "$CONTENTS/Resources/donors.json" 2>/dev/null || true
 printf 'APPL????' > "$CONTENTS/PkgInfo"
 chmod +x "$MACOS/ALWM"
 

@@ -144,6 +144,7 @@ struct SettingsRootView: View {
     @State private var hotkeySearch = ""
     @State private var persistTask: Task<Void, Never>?
     @ObservedObject private var updates = AppUpdateService.shared
+    @ObservedObject private var credits = CreditsService.shared
     @ObservedObject private var loc = LocalizationController.shared
     let monitors: [MonitorInfo]
     let runningAppsProvider: () -> [AppRuleRunningApp]
@@ -451,6 +452,25 @@ struct SettingsRootView: View {
                 Text(L10n.t("about.lineage.body"))
                     .foregroundStyle(.secondary)
             }
+            Section(L10n.t("about.contributors")) {
+                creditsPeopleSection(
+                    people: credits.contributors,
+                    state: credits.contributorsState,
+                    emptyKey: "about.contributors.empty",
+                    showContributionCount: true
+                )
+            }
+            Section(L10n.t("about.donors")) {
+                Text(L10n.t("about.donors.blurb"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                creditsPeopleSection(
+                    people: credits.donors,
+                    state: credits.donorsState,
+                    emptyKey: "about.donors.empty",
+                    showContributionCount: false
+                )
+            }
             Section {
                 Button(L10n.t("settings.whats_new")) { showWhatsNew = true }
             }
@@ -458,7 +478,74 @@ struct SettingsRootView: View {
         .formStyle(.grouped)
         .onAppear {
             updates.checkForUpdates()
+            credits.refreshIfNeeded()
         }
+    }
+
+    @ViewBuilder
+    private func creditsPeopleSection(
+        people: [CreditsService.Person],
+        state: CreditsService.LoadState,
+        emptyKey: String,
+        showContributionCount: Bool
+    ) -> some View {
+        switch state {
+        case .idle, .loading:
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text(L10n.t("about.credits.loading"))
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+        case .failed(let message):
+            Text(L10n.tf("about.credits.failed", message))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        case .ready:
+            if people.isEmpty {
+                Text(L10n.t(emptyKey))
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(people) { person in
+                    creditsPersonRow(person, showContributionCount: showContributionCount)
+                }
+            }
+        }
+    }
+
+    private func creditsPersonRow(_ person: CreditsService.Person, showContributionCount: Bool) -> some View {
+        Button {
+            if let url = person.profileURL {
+                NSWorkspace.shared.open(url)
+            }
+        } label: {
+            HStack(spacing: 12) {
+                CreditsAvatarView(url: person.avatarURL, name: person.name)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(person.name)
+                        .foregroundStyle(.primary)
+                    if showContributionCount, let detail = person.detail {
+                        Text(L10n.tf("about.contributors.commits", detail))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else if let detail = person.detail {
+                        Text(detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: 0)
+                if person.profileURL != nil {
+                    Image(systemName: "arrow.up.right")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(person.profileURL == nil)
     }
 
     @ViewBuilder
@@ -1352,9 +1439,43 @@ struct WhatsNewView: View {
     }
 }
 
+private struct CreditsAvatarView: View {
+    let url: URL?
+    let name: String
+    @State private var image: NSImage?
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color.secondary.opacity(0.18))
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Text(initials)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 32, height: 32)
+        .clipShape(Circle())
+        .task(id: url) {
+            image = await CreditsService.shared.avatarImage(for: url)
+        }
+    }
+
+    private var initials: String {
+        let parts = name.split(separator: " ").prefix(2)
+        let letters = parts.compactMap { $0.first.map(String.init) }
+        if !letters.isEmpty { return letters.joined().uppercased() }
+        return String(name.prefix(1)).uppercased()
+    }
+}
+
 enum AlwmVersion {
     /// Kept in sync by `scripts/bump-version.sh`. Prefer `installed` for UI / update checks.
-    static let string = "0.5.2"
+    static let string = "0.5.3"
     static let ctlHint = "~/.local/bin/alwmctl"
     /// Version of the running app (Info.plist), falling back to the embedded constant.
     static var installed: String {
@@ -1383,7 +1504,7 @@ enum AlwmWhatsNew {
     }
 
     static var releases: [Release] {
-        guard let url = Bundle.module.url(forResource: "whatsnew", withExtension: "json"),
+        guard let url = AlwmResources.url(forResource: "whatsnew", withExtension: "json"),
               let data = try? Data(contentsOf: url) else {
             return fallback
         }

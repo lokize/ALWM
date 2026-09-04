@@ -5,6 +5,8 @@ import WebKit
 /// Stripe Buy Button embed for the status menu (publishable key is client-safe by design).
 enum StripeBuyButtonConfig {
     static let buyButtonID = "buy_btn_1UBvkHGal1e5K5Xoom1pJGUb"
+    /// Payment Link behind the buy button — used by `scripts/sync-donors-from-stripe.sh`.
+    static let paymentLinkID = "plink_1UBvk5Gal1e5K5Xo0WxWvwex"
     static let publishableKey =
         "pk_live_51J9zH0Gal1e5K5XoHm4N6z1N5eCtyNsl6efUF09xOG750IoMQCqAhnQ85dGjyIzozh1GPCunZyzAM6uz9rLnfcjy007zJVjcFB"
 }

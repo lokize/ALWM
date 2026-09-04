@@ -5,7 +5,7 @@ import SwiftUI
 public enum AlwmBrand {
     /// Full-color logo from `Resources/alwm.png` (falls back to SF Symbol).
     public static var logo: NSImage {
-        if let url = Bundle.module.url(forResource: "alwm", withExtension: "png"),
+        if let url = AlwmResources.url(forResource: "alwm", withExtension: "png"),
            let image = NSImage(contentsOf: url) {
             return image
         }
