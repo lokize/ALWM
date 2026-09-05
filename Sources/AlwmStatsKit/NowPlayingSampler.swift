@@ -1,7 +1,7 @@
 import Foundation
 import AppKit
 
-/// Now Playing via AppleScript for Spotify and Music.
+/// Now Playing via AppleScript for Spotify, Music, and Safari (YouTube/etc.).
 ///
 /// MediaRemote (`dlopen`) is intentionally avoided — it has crashed ALWM on current
 /// macOS (`EXC_BAD_ACCESS` / block ABI mismatches). Scripting runs out-of-process.
@@ -57,6 +57,7 @@ public final class NowPlayingSampler: @unchecked Sendable {
     private enum Source: String {
         case spotify
         case music
+        case safari
     }
 
     private let lock = NSLock()
@@ -104,6 +105,9 @@ public final class NowPlayingSampler: @unchecked Sendable {
         let source = lastSource
         lock.unlock()
         guard let source else { return false }
+        // Safari tab media has no reliable AppleScript transport without "Allow JavaScript
+        // from Apple Events" (off by default).
+        guard source != .safari else { return false }
         let verb: String
         switch command {
         case .play: verb = "play"
@@ -123,19 +127,25 @@ public final class NowPlayingSampler: @unchecked Sendable {
     private func sampleNow() -> Snapshot {
         let spotifyRunning = isRunning(bundleID: "com.spotify.client")
         let musicRunning = isRunning(bundleID: "com.apple.Music")
+        let safariRunning = isRunning(bundleID: "com.apple.Safari")
 
         let spotify = spotifyRunning ? sampleSpotify() : nil
         let music = musicRunning ? sampleMusic() : nil
+        let safari = safariRunning ? sampleSafari() : nil
 
         let chosen: (Snapshot, Source)?
         if let spotify, spotify.isPlaying {
             chosen = (spotify, .spotify)
         } else if let music, music.isPlaying {
             chosen = (music, .music)
+        } else if let safari, safari.isPlaying {
+            chosen = (safari, .safari)
         } else if let spotify, spotify.present {
             chosen = (spotify, .spotify)
         } else if let music, music.present {
             chosen = (music, .music)
+        } else if let safari, safari.present {
+            chosen = (safari, .safari)
         } else {
             chosen = nil
         }
@@ -153,17 +163,25 @@ public final class NowPlayingSampler: @unchecked Sendable {
     }
 
     private func sampleSpotify() -> Snapshot? {
+        // Spotify's `current track` does not implement `exists` (-1708). Probe with try.
         let script = """
         tell application "Spotify"
-          if not (exists current track) then return "none"
-          set st to player state as text
-          set n to name of current track
-          set a to artist of current track
-          set al to album of current track
-          set d to duration of current track
-          set p to player position
-          set art to artwork url of current track
-          return st & character id 31 & n & character id 31 & a & character id 31 & al & character id 31 & d & character id 31 & p & character id 31 & art
+          try
+            set playerState to player state as text
+            set trackName to name of current track
+            set trackArtist to artist of current track
+            set trackAlbum to album of current track
+            set trackDuration to duration of current track
+            set trackPosition to player position
+            set artURL to ""
+            try
+              set artURL to artwork url of current track
+            end try
+            set sep to character id 31
+            return playerState & sep & trackName & sep & trackArtist & sep & trackAlbum & sep & trackDuration & sep & trackPosition & sep & artURL
+          on error
+            return "none"
+          end try
         end tell
         """
         guard let raw = runAppleScript(script, timeout: 2.0)?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -177,8 +195,8 @@ public final class NowPlayingSampler: @unchecked Sendable {
         let artist = clean(parts[2])
         let album = clean(parts[3])
         // Spotify duration is milliseconds.
-        let durationMs = Double(parts[4].replacingOccurrences(of: ",", with: ".")) ?? 0
-        let elapsed = Double(parts[5].replacingOccurrences(of: ",", with: ".")) ?? 0
+        let durationMs = parseNumber(parts[4]) ?? 0
+        let elapsed = parseNumber(parts[5]) ?? 0
         let artURL = parts.count > 6 ? clean(parts[6]) : nil
         let isPlaying = state == "playing"
         let present = title != nil || artist != nil || isPlaying
@@ -205,15 +223,19 @@ public final class NowPlayingSampler: @unchecked Sendable {
     private func sampleMusic() -> Snapshot? {
         let script = """
         tell application "Music"
-          if player state is stopped then return "none"
-          if not (exists current track) then return "none"
-          set st to player state as text
-          set n to name of current track
-          set a to artist of current track
-          set al to album of current track
-          set d to duration of current track
-          set p to player position
-          return st & character id 31 & n & character id 31 & a & character id 31 & al & character id 31 & d & character id 31 & p
+          try
+            set playerState to player state as text
+            if playerState is "stopped" then return "none"
+            set trackName to name of current track
+            set trackArtist to artist of current track
+            set trackAlbum to album of current track
+            set trackDuration to duration of current track
+            set trackPosition to player position
+            set sep to character id 31
+            return playerState & sep & trackName & sep & trackArtist & sep & trackAlbum & sep & trackDuration & sep & trackPosition
+          on error
+            return "none"
+          end try
         end tell
         """
         guard let raw = runAppleScript(script, timeout: 2.0)?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -226,8 +248,8 @@ public final class NowPlayingSampler: @unchecked Sendable {
         let title = clean(parts[1])
         let artist = clean(parts[2])
         let album = clean(parts[3])
-        let duration = Double(parts[4].replacingOccurrences(of: ",", with: ".")) ?? 0
-        let elapsed = Double(parts[5].replacingOccurrences(of: ",", with: ".")) ?? 0
+        let duration = parseNumber(parts[4]) ?? 0
+        let elapsed = parseNumber(parts[5]) ?? 0
         let isPlaying = state == "playing"
         let present = title != nil || artist != nil || isPlaying
         guard present else { return nil }
@@ -245,6 +267,139 @@ public final class NowPlayingSampler: @unchecked Sendable {
         )
     }
 
+    /// Front Safari tab when it looks like a video site (YouTube, Vimeo, Twitch, …).
+    /// Play state uses URL heuristics — Safari JS requires a user setting we cannot rely on.
+    private func sampleSafari() -> Snapshot? {
+        let script = """
+        tell application "Safari"
+          try
+            if (count of windows) is 0 then return "none"
+            set tabName to name of current tab of front window
+            set tabURL to URL of current tab of front window
+            set sep to character id 31
+            return tabName & sep & tabURL
+          on error
+            return "none"
+          end try
+        end tell
+        """
+        guard let raw = runAppleScript(script, timeout: 2.0)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              raw != "none", !raw.isEmpty
+        else { return nil }
+
+        let parts = raw.split(separator: "\u{001f}", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count >= 2 else { return nil }
+        let pageTitle = clean(parts[0]) ?? ""
+        let urlString = clean(parts[1]) ?? ""
+        guard let media = browserMedia(title: pageTitle, urlString: urlString) else { return nil }
+
+        return Snapshot(
+            present: true,
+            isPlaying: media.isPlaying,
+            title: media.title,
+            artist: media.artist,
+            album: nil,
+            artworkData: nil,
+            duration: nil,
+            elapsed: nil,
+            appName: "Safari"
+        )
+    }
+
+    private struct BrowserMedia {
+        var title: String
+        var artist: String
+        var isPlaying: Bool
+    }
+
+    private func browserMedia(title rawTitle: String, urlString: String) -> BrowserMedia? {
+        guard let url = URL(string: urlString), let host = url.host?.lowercased() else { return nil }
+        let path = url.path.lowercased()
+        let query = url.query?.lowercased() ?? ""
+
+        enum Kind {
+            case youtube, vimeo, twitch, netflix, otherVideo
+        }
+
+        let kind: Kind?
+        if host.contains("youtube.com") || host == "youtu.be" || host.contains("youtube-nocookie.com") {
+            kind = .youtube
+        } else if host.contains("vimeo.com") {
+            kind = .vimeo
+        } else if host.contains("twitch.tv") {
+            kind = .twitch
+        } else if host.contains("netflix.com") {
+            kind = .netflix
+        } else if host.contains("primevideo.com")
+            || host.contains("disneyplus.com")
+            || host.contains("play.max.com")
+            || host.contains("hulu.com") {
+            kind = .otherVideo
+        } else {
+            kind = nil
+        }
+        guard let kind else { return nil }
+
+        let isContent: Bool
+        switch kind {
+        case .youtube:
+            isContent = host == "youtu.be"
+                || path.contains("/watch")
+                || path.contains("/shorts/")
+                || path.contains("/live")
+                || path.contains("/embed/")
+                || query.contains("v=")
+        case .vimeo:
+            isContent = path.split(separator: "/").contains { Int($0) != nil }
+        case .twitch:
+            isContent = path != "/" && !path.isEmpty
+        case .netflix, .otherVideo:
+            isContent = path.contains("/watch") || path.contains("/title") || path.contains("/video")
+        }
+        guard isContent else { return nil }
+
+        var title = stripBrowserChrome(rawTitle)
+        if title.isEmpty {
+            title = host
+        }
+        let artist: String
+        switch kind {
+        case .youtube: artist = "YouTube"
+        case .vimeo: artist = "Vimeo"
+        case .twitch: artist = "Twitch"
+        case .netflix: artist = "Netflix"
+        case .otherVideo: artist = host.replacingOccurrences(of: "www.", with: "")
+        }
+        // Without video element access, treat a content URL on the front tab as playing.
+        return BrowserMedia(title: title, artist: artist, isPlaying: true)
+    }
+
+    private func stripBrowserChrome(_ raw: String) -> String {
+        var t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Safari unread / notification prefixes: "(60) Title"
+        if t.hasPrefix("("), let close = t.firstIndex(of: ")") {
+            let after = t.index(after: close)
+            if after < t.endIndex {
+                t = String(t[after...]).trimmingCharacters(in: .whitespaces)
+            }
+        }
+        let suffixes = [
+            " - YouTube",
+            " — YouTube",
+            " | YouTube",
+            " - Vimeo",
+            " - Twitch",
+            " | Twitch",
+            " - Netflix",
+            " | Netflix"
+        ]
+        for suffix in suffixes where t.hasSuffix(suffix) {
+            t = String(t.dropLast(suffix.count)).trimmingCharacters(in: .whitespaces)
+            break
+        }
+        return t
+    }
+
     // MARK: - Helpers
 
     private func isRunning(bundleID: String) -> Bool {
@@ -254,6 +409,10 @@ public final class NowPlayingSampler: @unchecked Sendable {
     private func clean(_ s: String) -> String? {
         let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
         return t.isEmpty ? nil : t
+    }
+
+    private func parseNumber(_ s: String) -> Double? {
+        Double(s.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ",", with: "."))
     }
 
     private func artworkData(for urlString: String) -> Data? {

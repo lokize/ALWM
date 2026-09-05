@@ -4129,6 +4129,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
                 self.visibilityForceReveal = true
                 self.applyWorkspaceTileLayout(destinationID, on: mon, forceReveal: true, skipHeal: true)
                 self.scheduleTileFrameEnforcement()
+                self.nudgeElectronTileReflow(workspaceID: destinationID)
             }
             self.refreshBorder()
             self.refreshChrome()
@@ -4144,6 +4145,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
                 self.visibilityForceReveal = true
                 self.applyWorkspaceTileLayout(destinationID, on: mon, forceReveal: true, skipHeal: true)
                 self.scheduleTileFrameEnforcement()
+                self.nudgeElectronTileReflow(workspaceID: destinationID)
             }
             self.refreshChrome()
         }
@@ -5861,11 +5863,13 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
                 }
                 // Electron (WhatsApp/Discord) often refuses exact stack heights — height-only
                 // drift must not restart a full relayout or siblings pump forever.
+                // Do NOT accept bottom overflow: +80 let tiles sit under the dock and hide
+                // WhatsApp's composer until a manual resize.
                 if let expected, let live = self.ax.currentFrame(of: id),
                    abs(live.x - expected.x) < 10,
                    abs(live.width - expected.width) < 12,
                    abs(live.y - expected.y) < 48,
-                   live.maxY <= expected.maxY + 80 {
+                   live.maxY <= expected.maxY + 8 {
                     self.lastFrames[id] = live
                     continue
                 }
@@ -6619,7 +6623,8 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
                     }
                     let overflow = stackFrames.contains { wid, frame in
                         guard let live = ax.currentFrame(of: wid) else { return true }
-                        return live.maxY > usable.maxY + 24
+                        return live.maxY > usable.maxY + 8
+                            || live.maxY > frame.maxY + 8
                             || live.height > frame.height + 80
                             || live.width > frame.width + 40
                     }
@@ -6628,8 +6633,68 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
                 }
             }
         }
+        // Final clamp: Electron often expands a few dozen px past usable after deminiaturize.
+        clampActiveTilesToUsable(workspaceID: workspaceID, monitor: monitor)
         tuckWindowsLeakingWrongMonitor(preferredMonitorFrame: monitor.layoutFrame, onlyOnMonitor: monitor)
         return applied
+    }
+
+    /// Re-pin tiles that Electron pushed past the usable bottom (composer under dock).
+    private func clampActiveTilesToUsable(workspaceID: String, monitor: MonitorInfo) {
+        guard let ws = workspaces.workspaces[workspaceID] else { return }
+        let usable = engine.usableArea(monitor: monitor.layoutFrame)
+        ax.withMutation {
+            for wid in ws.columns.flatMap(\.windows) {
+                guard let win = windowsByID[wid], win.isTiled, !win.isIgnored else { continue }
+                guard authoritativeHome(for: wid) == workspaceID else { continue }
+                guard let live = ax.currentFrame(of: wid) else { continue }
+                guard live.maxY > usable.maxY + 8 || live.y < usable.y - 8 else { continue }
+                let target: Rect = {
+                    if let expected = lastFrames[wid], expected.maxY <= usable.maxY + 1 {
+                        return clampStackTileFrame(expected, usable: usable)
+                    }
+                    return clampStackTileFrame(live, usable: usable)
+                }()
+                ax.forceFrame(target, id: wid)
+                lastFrames[wid] = target
+            }
+        }
+    }
+
+    /// WhatsApp/Discord Chromium often keeps a stale layout after park→reveal (composer gone).
+    /// A 1px height toggle forces webview reflow without changing the final tile.
+    private func needsElectronReflowNudge(_ win: ManagedWindow) -> Bool {
+        let bundle = (win.bundleID ?? "").lowercased()
+        let name = win.appName.lowercased()
+        let hay = bundle.isEmpty ? name : bundle
+        return hay.contains("whatsapp")
+            || hay.contains("discord")
+            || hay.contains("slack")
+            || hay.contains("telegram")
+            || hay.contains("element")
+            || hay.contains("notion")
+            || hay.contains("figma")
+            || hay.contains("spotify")
+            || hay.contains("chromium")
+            || hay.contains("electron")
+    }
+
+    private func nudgeElectronTileReflow(workspaceID: String) {
+        guard let ws = workspaces.workspaces[workspaceID] else { return }
+        ax.withMutation {
+            for wid in ws.columns.flatMap(\.windows) {
+                guard let win = windowsByID[wid], win.isTiled, !win.isIgnored else { continue }
+                guard needsElectronReflowNudge(win) else { continue }
+                guard authoritativeHome(for: wid) == workspaceID else { continue }
+                guard let frame = lastFrames[wid] ?? ax.currentFrame(of: wid) else { continue }
+                guard frame.height > 64 else { continue }
+                var nudged = frame
+                nudged.height = frame.height - 1
+                ax.applyFrameOnly(frame: nudged, to: wid)
+                ax.applyFrameOnly(frame: frame, to: wid)
+                lastFrames[wid] = frame
+            }
+        }
     }
 
     /// Re-apply every visible tile in the focused window's stack column (paired height resize).
@@ -6857,12 +6922,18 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
                         target.x = engine.usableArea(monitor: mon.layoutFrame).x
                         target.width = engine.usableArea(monitor: mon.layoutFrame).width
                     }
+                    let usable = engine.usableArea(monitor: mon.layoutFrame)
+                    target = clampStackTileFrame(target, usable: usable)
                     ax.reveal(frame: target, id: a.windowID)
                     if shouldForceTileExpand(wsID)
                         || !ax.isSettled(id: a.windowID, frame: target, monitors: monitorFrames) {
                         ax.applyFrameOnly(frame: target, to: a.windowID)
                     }
-                    lastFrames[a.windowID] = ax.currentFrame(of: a.windowID) ?? target
+                    if let live = ax.currentFrame(of: a.windowID), live.maxY > usable.maxY + 8 {
+                        ax.forceFrame(target, id: a.windowID)
+                    }
+                    // Prefer engine target — storing Electron's overflowed live hid the composer.
+                    lastFrames[a.windowID] = target
                 }
             }
         }

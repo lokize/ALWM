@@ -6,7 +6,10 @@
   "apiVersion": 1,
   "license": "GPL-3.0",
   "summary": "Monitor Steam prices, pick currency, import from Noctalia, and get notified at your target.",
+  "category": "integrations",
   "preview": "previews/card.png",
-  "screenshots": ["previews/01.png"],
+  "screenshots": [
+    "previews/01.png"
+  ],
   "defaultPlacement": "afterWorkspaces"
 }

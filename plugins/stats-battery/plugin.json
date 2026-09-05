@@ -6,7 +6,10 @@
   "apiVersion": 1,
   "license": "GPL-3.0",
   "summary": "Battery chip and Stats-like popover on the workspace bar (hidden on desktops).",
+  "category": "system",
   "preview": "previews/card.png",
-  "screenshots": ["previews/01.png"],
+  "screenshots": [
+    "previews/01.png"
+  ],
   "defaultPlacement": "afterWorkspaces"
 }

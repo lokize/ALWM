@@ -42,17 +42,21 @@ public struct PluginUserState: Equatable, Sendable, Identifiable {
     public var enabled: Bool
     public var placement: AlwmBarPlacement
     public var display: PluginBarDisplay
+    /// Lower values appear first on the workspace bar (within the same placement).
+    public var order: Int
 
     public init(
         id: String,
         enabled: Bool = false,
         placement: AlwmBarPlacement = .afterWorkspaces,
-        display: PluginBarDisplay = .all
+        display: PluginBarDisplay = .all,
+        order: Int = 0
     ) {
         self.id = id
         self.enabled = enabled
         self.placement = placement
         self.display = display
+        self.order = order
     }
 }
 
@@ -78,12 +82,16 @@ public final class PluginSettingsStore: @unchecked Sendable {
             id: id,
             enabled: false,
             placement: Self.normalized(defaultPlacement),
-            display: .all
+            display: .all,
+            order: nextOrder()
         )
     }
 
     public func setEnabled(_ enabled: Bool, for id: String, defaultPlacement: AlwmBarPlacement = .afterWorkspaces) {
         var s = state(for: id, defaultPlacement: defaultPlacement)
+        if states[id] == nil {
+            s.order = nextOrder()
+        }
         s.enabled = enabled
         states[id] = s
         save()
@@ -91,6 +99,9 @@ public final class PluginSettingsStore: @unchecked Sendable {
 
     public func setPlacement(_ placement: AlwmBarPlacement, for id: String) {
         var s = state(for: id, defaultPlacement: placement)
+        if states[id] == nil {
+            s.order = nextOrder()
+        }
         s.placement = Self.normalized(placement)
         states[id] = s
         save()
@@ -98,6 +109,9 @@ public final class PluginSettingsStore: @unchecked Sendable {
 
     public func setDisplay(_ display: PluginBarDisplay, for id: String) {
         var s = state(for: id)
+        if states[id] == nil {
+            s.order = nextOrder()
+        }
         s.display = display
         states[id] = s
         save()
@@ -106,6 +120,39 @@ public final class PluginSettingsStore: @unchecked Sendable {
     public func upsert(_ state: PluginUserState) {
         states[state.id] = state
         save()
+    }
+
+    /// Stable bar order for catalog IDs (unknown ids append at the end).
+    public func orderedIDs(catalogIDs: [String]) -> [String] {
+        let known = Set(catalogIDs)
+        let ranked = states.values
+            .filter { known.contains($0.id) }
+            .sorted { a, b in
+                if a.order != b.order { return a.order < b.order }
+                return a.id < b.id
+            }
+            .map(\.id)
+        var seen = Set(ranked)
+        var result = ranked
+        for id in catalogIDs.sorted() where !seen.contains(id) {
+            result.append(id)
+            seen.insert(id)
+        }
+        return result
+    }
+
+    /// Persist a full bar order (catalog order from the settings UI).
+    public func reorder(_ ids: [String]) {
+        for (index, id) in ids.enumerated() {
+            var s = state(for: id)
+            s.order = index
+            states[id] = s
+        }
+        save()
+    }
+
+    public func sortKey(for id: String) -> Int {
+        states[id]?.order ?? Int.max / 2
     }
 
     public func load() {
@@ -118,6 +165,8 @@ public final class PluginSettingsStore: @unchecked Sendable {
         var enabled = false
         var placement = AlwmBarPlacement.afterWorkspaces
         var display = PluginBarDisplay.all
+        var order: Int?
+        var fileIndex = 0
 
         func flush() {
             guard let id = currentID else { return }
@@ -125,12 +174,15 @@ public final class PluginSettingsStore: @unchecked Sendable {
                 id: id,
                 enabled: enabled,
                 placement: Self.normalized(placement),
-                display: display
+                display: display,
+                order: order ?? fileIndex
             )
+            fileIndex += 1
             currentID = nil
             enabled = false
             placement = .afterWorkspaces
             display = .all
+            order = nil
         }
 
         for rawLine in text.split(whereSeparator: \.isNewline) {
@@ -150,6 +202,10 @@ public final class PluginSettingsStore: @unchecked Sendable {
                 placement = p
             } else if line.hasPrefix("display") {
                 display = PluginBarDisplay(rawString: Self.stringValue(line))
+            } else if line.hasPrefix("order"),
+                      let raw = Self.stringValue(line),
+                      let value = Int(raw) {
+                order = value
             }
         }
         flush()
@@ -158,17 +214,25 @@ public final class PluginSettingsStore: @unchecked Sendable {
 
     public func save() {
         var lines: [String] = []
-        for id in states.keys.sorted() {
-            guard let s = states[id] else { continue }
+        let ordered = states.values.sorted { a, b in
+            if a.order != b.order { return a.order < b.order }
+            return a.id < b.id
+        }
+        for s in ordered {
             lines.append("[[plugins]]")
             lines.append("id = \"\(s.id)\"")
             lines.append("enabled = \(s.enabled)")
             lines.append("placement = \"\(Self.normalized(s.placement).rawString)\"")
             lines.append("display = \"\(s.display.rawString)\"")
+            lines.append("order = \(s.order)")
             lines.append("")
         }
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    private func nextOrder() -> Int {
+        (states.values.map(\.order).max() ?? -1) + 1
     }
 
     /// `afterCommand` is obsolete (⌘ chip removed from the bar).

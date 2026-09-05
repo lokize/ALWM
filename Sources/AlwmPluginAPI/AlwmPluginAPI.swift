@@ -198,25 +198,36 @@ public enum PluginBarChipLayout {
     }
 }
 
-// MARK: - Click-outside dismiss for plugin panels
+// MARK: - Click-outside dismiss for floating ALWM chrome
 
-/// Shared mouse monitor so workspace-bar plugin popovers close when clicking outside —
-/// including nonactivating / `hidesOnDeactivate = false` panels that AppKit won't auto-dismiss.
+/// Shared mouse monitor so plugin popovers / Settings close when clicking outside.
 @MainActor
 public enum PluginPanelOutsideClick {
     private static var globalMonitor: Any?
     private static var localMonitor: Any?
     private static weak var watched: NSWindow?
+    private static var onDismiss: (() -> Void)?
     private static var generation = 0
 
-    /// Start watching `window`. Closes any previously watched plugin panel.
+    /// Start watching `window`. Closes any previously watched window.
     /// Install is deferred one turn so the opening click does not dismiss immediately.
-    public static func watch(_ window: NSWindow) {
+    /// - Parameter onDismiss: Custom close (e.g. Settings controller). Default: `orderOut`.
+    public static func watch(_ window: NSWindow, onDismiss: (() -> Void)? = nil) {
         if let previous = watched, previous !== window, previous.isVisible {
-            previous.orderOut(nil)
+            let previousCallback = self.onDismiss
+            tearDownMonitors()
+            watched = nil
+            self.onDismiss = nil
+            if let previousCallback {
+                previousCallback()
+            } else {
+                previous.orderOut(nil)
+            }
+        } else {
+            tearDownMonitors()
         }
-        stop()
         watched = window
+        self.onDismiss = onDismiss
         generation += 1
         let gen = generation
         DispatchQueue.main.async {
@@ -228,6 +239,12 @@ public enum PluginPanelOutsideClick {
     /// Stop monitoring. If `window` is passed, only stops when it is the active target.
     public static func stop(for window: NSWindow? = nil) {
         if let window, watched !== window { return }
+        tearDownMonitors()
+        watched = nil
+        onDismiss = nil
+    }
+
+    private static func tearDownMonitors() {
         generation += 1
         if let globalMonitor {
             NSEvent.removeMonitor(globalMonitor)
@@ -237,7 +254,6 @@ public enum PluginPanelOutsideClick {
         }
         globalMonitor = nil
         localMonitor = nil
-        watched = nil
     }
 
     private static func install(generation gen: Int) {
@@ -246,10 +262,19 @@ public enum PluginPanelOutsideClick {
                 stop()
                 return
             }
+            // Keep open while a sheet / modal is up (plugin details, open panels, …).
+            if window.attachedSheet != nil { return }
+            if NSApp.modalWindow != nil { return }
             let loc = NSEvent.mouseLocation
             // Slight inflate so shadow / edge clicks still count as inside.
             if window.frame.insetBy(dx: -4, dy: -4).contains(loc) { return }
-            window.orderOut(nil)
+            let callback = onDismiss
+            onDismiss = nil
+            if let callback {
+                callback()
+            } else {
+                window.orderOut(nil)
+            }
             stop()
         }
 

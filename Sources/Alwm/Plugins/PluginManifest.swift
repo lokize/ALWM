@@ -1,5 +1,27 @@
 import Foundation
 
+/// Catalog category slug from `plugin.json` (`category`).
+public enum PluginCategory: String, Sendable, CaseIterable, Identifiable, Codable {
+    case system
+    case media
+    case integrations
+    case utilities
+
+    public var id: String { rawValue }
+
+    public var l10nKey: String { "plugins.category.\(rawValue)" }
+
+    public static func resolve(_ raw: String?) -> PluginCategory {
+        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !raw.isEmpty,
+              let value = PluginCategory(rawValue: raw)
+        else {
+            return .utilities
+        }
+        return value
+    }
+}
+
 /// Metadata from `plugin.json`.
 public struct PluginManifest: Equatable, Sendable, Identifiable, Codable {
     public var id: String
@@ -9,9 +31,14 @@ public struct PluginManifest: Equatable, Sendable, Identifiable, Codable {
     public var apiVersion: Int
     public var license: String?
     public var summary: String
+    public var category: String
     public var preview: String?
     public var screenshots: [String]
     public var defaultPlacement: String
+
+    public var resolvedCategory: PluginCategory {
+        PluginCategory.resolve(category)
+    }
 
     public init(
         id: String,
@@ -21,6 +48,7 @@ public struct PluginManifest: Equatable, Sendable, Identifiable, Codable {
         apiVersion: Int = 1,
         license: String? = "GPL-3.0",
         summary: String = "",
+        category: String = PluginCategory.utilities.rawValue,
         preview: String? = nil,
         screenshots: [String] = [],
         defaultPlacement: String = "afterWorkspaces"
@@ -32,13 +60,14 @@ public struct PluginManifest: Equatable, Sendable, Identifiable, Codable {
         self.apiVersion = apiVersion
         self.license = license
         self.summary = summary
+        self.category = category
         self.preview = preview
         self.screenshots = screenshots
         self.defaultPlacement = defaultPlacement
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, author, version, apiVersion, license, summary, preview, screenshots, defaultPlacement
+        case id, name, author, version, apiVersion, license, summary, category, preview, screenshots, defaultPlacement
     }
 
     public init(from decoder: Decoder) throws {
@@ -50,6 +79,7 @@ public struct PluginManifest: Equatable, Sendable, Identifiable, Codable {
         apiVersion = try c.decodeIfPresent(Int.self, forKey: .apiVersion) ?? 1
         license = try c.decodeIfPresent(String.self, forKey: .license) ?? "GPL-3.0"
         summary = try c.decodeIfPresent(String.self, forKey: .summary) ?? ""
+        category = try c.decodeIfPresent(String.self, forKey: .category) ?? PluginCategory.utilities.rawValue
         preview = try c.decodeIfPresent(String.self, forKey: .preview)
         screenshots = try c.decodeIfPresent([String].self, forKey: .screenshots) ?? []
         defaultPlacement = try c.decodeIfPresent(String.self, forKey: .defaultPlacement) ?? "afterWorkspaces"

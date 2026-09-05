@@ -1,6 +1,18 @@
 {
   "releases": [
     {
+      "version": "0.6.2",
+      "items": [
+        "Maintenance and fixes"
+      ]
+    },
+    {
+      "version": "0.6.1",
+      "items": [
+        "Maintenance and fixes"
+      ]
+    },
+    {
       "version": "0.6.0",
       "items": [
         "Maintenance and fixes"
@@ -262,26 +274,6 @@
         "Focus arrows no longer snap back to the previous window",
         "Broken overlapping tiles auto-heal back into columns",
         "Pre-commit bump logs clearly; package warns if a commit skipped What's New"
-      ]
-    },
-    {
-      "version": "0.2.1",
-      "items": [
-        "Quake terminal stays floating — no longer tiles and shrinks other windows",
-        "Trackpad gestures via MultitouchSupport (3-finger scroll, 4-finger workspaces)",
-        "Configurable Quake blur intensity",
-        "Option-Shift -/= resizes tile height in a column",
-        "Workspace bar no longer pushed aside on secondary displays",
-        "More stable tiling when Quake opens — columns no longer stick mid-resize"
-      ]
-    },
-    {
-      "version": "0.2.0",
-      "items": [
-        "Settings sidebar (General, Layout, Appearance, Input)",
-        "Menu bar controls: Focus Follows Mouse, Borders, Workspace Bar",
-        "Quake terminal, command palette, app rules, diagnostics dump",
-        "Workspace bar below the menu bar (no more black overlay)"
       ]
     }
   ]

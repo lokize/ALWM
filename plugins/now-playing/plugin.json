@@ -6,7 +6,10 @@
   "apiVersion": 1,
   "license": "GPL-3.0",
   "summary": "Now Playing chip with artwork and transport controls on the workspace bar.",
+  "category": "media",
   "preview": "previews/card.png",
-  "screenshots": ["previews/01.png"],
+  "screenshots": [
+    "previews/01.png"
+  ],
   "defaultPlacement": "afterWorkspaces"
 }

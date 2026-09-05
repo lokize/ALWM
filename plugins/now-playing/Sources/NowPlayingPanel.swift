@@ -107,24 +107,28 @@ struct NowPlayingPanelView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                    progressSection
-
-                    HStack(spacing: 28) {
-                        transportButton(systemName: "backward.fill") {
-                            store.send(.previousTrack)
-                        }
-                        transportButton(
-                            systemName: snap.isPlaying ? "pause.fill" : "play.fill",
-                            large: true
-                        ) {
-                            store.send(.togglePlayPause)
-                        }
-                        transportButton(systemName: "forward.fill") {
-                            store.send(.nextTrack)
-                        }
+                    if snap.duration != nil {
+                        progressSection
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 4)
+
+                    if snap.appName != "Safari" {
+                        HStack(spacing: 28) {
+                            transportButton(systemName: "backward.fill") {
+                                store.send(.previousTrack)
+                            }
+                            transportButton(
+                                systemName: snap.isPlaying ? "pause.fill" : "play.fill",
+                                large: true
+                            ) {
+                                store.send(.togglePlayPause)
+                            }
+                            transportButton(systemName: "forward.fill") {
+                                store.send(.nextTrack)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 4)
+                    }
                 }
             }
             .padding(14)

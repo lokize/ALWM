@@ -8,9 +8,22 @@ struct PluginsSettingsPane: View {
     @State private var plugins: [DiscoveredPlugin] = []
     @State private var detail: DiscoveredPlugin?
     @State private var tick = 0
+    @State private var searchText = ""
+    @State private var categoryFilter: PluginCategory? = nil
 
     private let contentInset: CGFloat = 20
     private let cardGap: CGFloat = 12
+
+    private var filteredPlugins: [DiscoveredPlugin] {
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return plugins.filter { plugin in
+            if let categoryFilter, plugin.manifest.resolvedCategory != categoryFilter {
+                return false
+            }
+            guard !q.isEmpty else { return true }
+            return pluginMatches(plugin, query: q)
+        }
+    }
 
     var body: some View {
         ScrollView {
@@ -27,23 +40,34 @@ struct PluginsSettingsPane: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.vertical, 8)
                     } else {
-                        LazyVGrid(
-                            columns: [
-                                GridItem(.flexible(), spacing: cardGap),
-                                GridItem(.flexible(), spacing: cardGap)
-                            ],
-                            spacing: cardGap
-                        ) {
-                            ForEach(plugins) { plugin in
-                                PluginCardRow(
-                                    plugin: plugin,
-                                    enabled: isEnabled(plugin),
-                                    onToggle: { enabled in
-                                        PluginManager.shared.setEnabled(enabled, id: plugin.id)
-                                        tick &+= 1
-                                    },
-                                    onOpen: { detail = plugin }
-                                )
+                        pluginSearchBar
+                        categoryFilterBar
+                        pluginOrderBlock
+
+                        if filteredPlugins.isEmpty {
+                            Text(L10n.t("plugins.search.empty"))
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 12)
+                        } else {
+                            LazyVGrid(
+                                columns: [
+                                    GridItem(.flexible(), spacing: cardGap),
+                                    GridItem(.flexible(), spacing: cardGap)
+                                ],
+                                spacing: cardGap
+                            ) {
+                                ForEach(filteredPlugins) { plugin in
+                                    PluginCardRow(
+                                        plugin: plugin,
+                                        enabled: isEnabled(plugin),
+                                        onToggle: { enabled in
+                                            PluginManager.shared.setEnabled(enabled, id: plugin.id)
+                                            tick &+= 1
+                                        },
+                                        onOpen: { detail = plugin }
+                                    )
+                                }
                             }
                         }
                     }
@@ -109,12 +133,164 @@ struct PluginsSettingsPane: View {
         )
     }
 
+    private var pluginSearchBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField(L10n.t("plugins.search"), text: $searchText)
+                .textFieldStyle(.plain)
+                .disableAutocorrection(true)
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help(L10n.t("plugins.search.clear"))
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+        )
+    }
+
+    private var categoryFilterBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                categoryChip(
+                    title: L10n.t("plugins.category.all"),
+                    selected: categoryFilter == nil
+                ) {
+                    categoryFilter = nil
+                }
+                ForEach(PluginCategory.allCases) { category in
+                    categoryChip(
+                        title: L10n.t(category.l10nKey),
+                        selected: categoryFilter == category
+                    ) {
+                        categoryFilter = categoryFilter == category ? nil : category
+                    }
+                }
+            }
+        }
+    }
+
+    private func categoryChip(title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(
+                    Capsule()
+                        .fill(selected ? Color.accentColor.opacity(0.22) : Color.primary.opacity(0.06))
+                )
+                .overlay(
+                    Capsule()
+                        .strokeBorder(
+                            selected ? Color.accentColor.opacity(0.45) : Color.primary.opacity(0.08),
+                            lineWidth: 1
+                        )
+                )
+                .foregroundStyle(selected ? Color.accentColor : Color.primary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var pluginOrderBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(L10n.t("plugins.order"))
+                .font(.subheadline.weight(.semibold))
+            Text(L10n.t("plugins.order.help"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            List {
+                ForEach(plugins) { plugin in
+                    HStack(spacing: 10) {
+                        Image(systemName: "line.3.horizontal")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 16)
+                            .help(L10n.t("plugins.order.drag"))
+                        Text(plugin.manifest.name)
+                            .font(.system(size: 13, weight: .medium))
+                            .lineLimit(1)
+                        Spacer(minLength: 8)
+                        if isEnabled(plugin) {
+                            Text(L10n.t("menu.on"))
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(
+                                    Capsule().fill(Color.primary.opacity(0.08))
+                                )
+                        }
+                    }
+                    .padding(.vertical, 2)
+                    .contentShape(Rectangle())
+                    .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
+                    .listRowSeparator(.visible)
+                    .listRowBackground(Color.clear)
+                }
+                .onMove(perform: movePlugins)
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .environment(\.defaultMinListRowHeight, 32)
+            .frame(height: max(40, CGFloat(plugins.count) * 36))
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.primary.opacity(0.04))
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .padding(.bottom, 4)
+    }
+
     private static let publishDocsURL =
         "https://github.com/lokize/ALWM/blob/main/docs/plugins.md"
 
     private func reload() {
         PluginManager.shared.refreshCatalog()
-        plugins = PluginManager.shared.catalog
+        plugins = PluginManager.shared.orderedCatalog()
+    }
+
+    private func movePlugins(from source: IndexSet, to destination: Int) {
+        // Update local order only — bumping `tick` / reload() rebuilds the outer
+        // ScrollView and jumps scroll position back to the top.
+        plugins.move(fromOffsets: source, toOffset: destination)
+        PluginManager.shared.reorderBarPlugins(plugins.map(\.id))
+    }
+
+    private func pluginMatches(_ plugin: DiscoveredPlugin, query: String) -> Bool {
+        let m = plugin.manifest
+        let category = m.resolvedCategory
+        let haystack = [
+            m.id,
+            m.name,
+            m.author,
+            m.summary,
+            m.version,
+            m.license ?? "",
+            m.category,
+            category.rawValue,
+            L10n.t(category.l10nKey)
+        ]
+        .joined(separator: " ")
+        .lowercased()
+        return haystack.contains(query)
     }
 
     private func isEnabled(_ plugin: DiscoveredPlugin) -> Bool {
@@ -159,12 +335,32 @@ private struct PluginCardRow: View {
                             .background(Color.secondary.opacity(0.15))
                             .clipShape(Capsule())
                     }
-                    Text(plugin.manifest.author)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(L10n.t(plugin.manifest.resolvedCategory.l10nKey))
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1)
+                            .background(Color.accentColor.opacity(0.15))
+                            .foregroundStyle(Color.accentColor)
+                            .clipShape(Capsule())
+                        Text(plugin.manifest.author)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
                 Spacer(minLength: 0)
+
+                if enabled {
+                    Text(L10n.t("plugins.badge.active"))
+                        .font(.caption2.weight(.bold))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(Color.green.opacity(0.22))
+                        .foregroundStyle(Color.green)
+                        .clipShape(Capsule())
+                        .accessibilityLabel(L10n.t("plugins.badge.active"))
+                }
             }
 
             if !catalogSummary.isEmpty {
@@ -200,7 +396,10 @@ private struct PluginCardRow: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+                .strokeBorder(
+                    enabled ? Color.green.opacity(0.35) : Color.primary.opacity(0.06),
+                    lineWidth: enabled ? 1.5 : 1
+                )
         )
         .contentShape(Rectangle())
         .onTapGesture(perform: onOpen)
@@ -249,8 +448,17 @@ private struct PluginDetailSheet: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(plugin.manifest.name).font(.title2.weight(.semibold))
-                        Text("\(plugin.manifest.author) · v\(plugin.manifest.version)")
-                            .foregroundStyle(.secondary)
+                        HStack(spacing: 8) {
+                            Text(L10n.t(plugin.manifest.resolvedCategory.l10nKey))
+                                .font(.caption.weight(.semibold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                                .background(Color.accentColor.opacity(0.15))
+                                .foregroundStyle(Color.accentColor)
+                                .clipShape(Capsule())
+                            Text("\(plugin.manifest.author) · v\(plugin.manifest.version)")
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     Spacer()
                     Button(L10n.t("plugins.close")) { onClose() }

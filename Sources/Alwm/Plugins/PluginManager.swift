@@ -209,6 +209,16 @@ public final class PluginManager {
         requestBarRefresh()
     }
 
+    public func reorderBarPlugins(_ ids: [String]) {
+        settings.reorder(ids)
+        requestBarRefresh()
+    }
+
+    public func orderedCatalog() -> [DiscoveredPlugin] {
+        let ids = settings.orderedIDs(catalogIDs: catalog.map(\.id))
+        return ids.compactMap { id in catalog.first(where: { $0.id == id }) }
+    }
+
     public func barItemsSnapshot() -> [PluginBarItem] {
         loaded.values.map { entry in
             let sig: String
@@ -224,7 +234,12 @@ public final class PluginManager {
                 signature: sig
             )
         }
-        .sorted { $0.id < $1.id }
+        .sorted { a, b in
+            let oa = settings.sortKey(for: a.id)
+            let ob = settings.sortKey(for: b.id)
+            if oa != ob { return oa < ob }
+            return a.id < b.id
+        }
     }
 
     public func makeBarView(id: String, placement: AlwmBarPlacement, scale: CGFloat) -> NSView? {

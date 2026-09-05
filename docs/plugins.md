@@ -45,6 +45,7 @@ bash scripts/verify-plugin-l10n.sh
   "version": "1.0.0",
   "apiVersion": 1,
   "summary": "Short catalog blurb.",
+  "category": "utilities",
   "preview": "previews/card.png",
   "screenshots": ["previews/01.png"],
   "defaultPlacement": "afterWorkspaces"
@@ -52,6 +53,8 @@ bash scripts/verify-plugin-l10n.sh
 ```
 
 Placement: `beforeWorkspaces` | `afterWorkspaces`. Users can change placement and monitor in Settings.
+
+Category (`category`): `system` | `media` | `integrations` | `utilities` — used in Settings → Plugins search and filters.
 
 ## Entry point
 

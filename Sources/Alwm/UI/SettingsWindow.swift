@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import AlwmPluginAPI
 
 @MainActor
 public final class SettingsWindowController {
@@ -21,6 +22,7 @@ public final class SettingsWindowController {
         let pane = SettingsPane(rawValue: initialPane ?? "") ?? .general
         // Always rebuild so toggles reflect the live config (not a stale copy).
         if let window {
+            PluginPanelOutsideClick.stop(for: window)
             window.orderOut(nil)
             self.window = nil
         }
@@ -49,19 +51,25 @@ public final class SettingsWindowController {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         self.window = window
+        PluginPanelOutsideClick.watch(window) { [weak self] in
+            self?.close()
+        }
         closeObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
             object: window,
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.detachCloseObserver()
-                self?.window = nil
+                guard let self else { return }
+                PluginPanelOutsideClick.stop(for: self.window)
+                self.detachCloseObserver()
+                self.window = nil
             }
         }
     }
 
     public func close() {
+        PluginPanelOutsideClick.stop(for: window)
         detachCloseObserver()
         window?.orderOut(nil)
         window = nil
@@ -1515,7 +1523,7 @@ private struct CreditsAvatarView: View {
 
 enum AlwmVersion {
     /// Kept in sync by `scripts/bump-version.sh`. Prefer `installed` for UI / update checks.
-    static let string = "0.6.0"
+    static let string = "0.6.2"
     static let ctlHint = "~/.local/bin/alwmctl"
     /// Version of the running app (Info.plist), falling back to the embedded constant.
     static var installed: String {
