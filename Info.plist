@@ -17,24 +17,24 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.5.9</string>
+	<string>0.6.0</string>
 	<key>CFBundleVersion</key>
-	<string>59</string>
+	<string>60</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>15.0</string>
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>ALWM needs to control other apps' windows for tiling and workspaces.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>ALWM shows battery levels of your paired Bluetooth accessories on the workspace bar.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>ALWM shows battery levels of your paired Bluetooth accessories on the workspace bar.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 ALWM contributors</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>ALWM records microphone audio when you capture screen video.</string>
-	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>ALWM shows battery levels of your paired Bluetooth accessories on the workspace bar.</string>
-	<key>NSBluetoothPeripheralUsageDescription</key>
-	<string>ALWM shows battery levels of your paired Bluetooth accessories on the workspace bar.</string>
 </dict>
 </plist>
