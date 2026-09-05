@@ -36,27 +36,40 @@ struct SlashCommandMenu: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(L10n.t("notepad.slash_menu"))
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
+                .padding(.bottom, 2)
             ForEach(items) { item in
                 Button {
                     onPick(item.kind)
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: item.icon)
-                            .frame(width: 18)
+                            .font(.system(size: 12, weight: .semibold))
+                            .frame(width: 24, height: 24)
+                            .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 6))
                             .foregroundStyle(.secondary)
                         Text(item.title)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
         }
-        .frame(minWidth: 220)
-        .padding(.vertical, 4)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.quaternary))
+        .frame(minWidth: 240)
+        .padding(.bottom, 6)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.12))
+        )
+        .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
     }
 }

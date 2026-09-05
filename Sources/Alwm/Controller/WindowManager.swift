@@ -39,6 +39,8 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
     /// Overlay dismiss NSEvent bridge.
     private var quakeClickEventBridge: AppKitEventMonitorBridge?
     private var suppressQuakeDismissUntil = Date.distantPast
+    /// Debounce false AX destroy / scan blips while Ghostty·Terminal creates tabs (⌘T).
+    private var quakeCloseConfirmWorkItem: DispatchWorkItem?
     private var suppressNotepadDismissUntil = Date.distantPast
     private enum OverlayFocusTarget { case quake, notepad }
     private var preferredOverlayFocus: OverlayFocusTarget?
@@ -2061,6 +2063,36 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         return runtimeState.snapshot.quakeWindowToken == id.token
     }
 
+    /// Bundle ID for the active Quake session (bound window, pending launch, or visible panel).
+    private func quakeSessionBundleID() -> String? {
+        if let pending = quake.pendingAdoptBundleID, !pending.isEmpty { return pending }
+        if let id = quake.windowID, let bid = windowsByID[id]?.bundleID, !bid.isEmpty {
+            return bid
+        }
+        if quake.windowID != nil || quake.isVisible {
+            return QuakeTerminalController.resolveBundleID(
+                configured: configStore.config.settings.quake.bundleID
+            )
+        }
+        return nil
+    }
+
+    /// Windows that belong to the Quake session must never enter tile columns.
+    /// Includes the bound scratchpad and extra Ghostty/Terminal windows from the
+    /// same process (new tab / ⌘N often surfaces as another AX window).
+    private func isQuakeSessionWindow(_ win: ManagedWindow) -> Bool {
+        if isQuakeOwned(win.id) || quake.windowID == win.id { return true }
+        guard let sessionBundle = quakeSessionBundleID() else { return false }
+        let bid = win.bundleID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let matchesBundle = bid == sessionBundle
+            || (bid.isEmpty && Self.appNameMatchesQuakeBundle(win.appName, bundleID: sessionBundle))
+        guard matchesBundle else { return false }
+        if let qid = quake.windowID, win.id.pid == qid.pid { return true }
+        if quake.pendingAdoptBundleID != nil { return true }
+        if quake.isVisible { return true }
+        return false
+    }
+
     /// Keep the Quake window as a sticky float forever (no tile column).
     private func enforceQuakeFloat() {
         // Rebind from persisted token after relaunch.
@@ -2071,7 +2103,10 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
             }
         }
 
-        guard let id = quake.windowID, var win = windowsByID[id] else { return }
+        guard let id = quake.windowID, var win = windowsByID[id] else {
+            _ = stripQuakeSessionFromColumns()
+            return
+        }
         win.isFloating = true
         win.isScratchpad = true
         windowsByID[id] = win
@@ -2079,20 +2114,16 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         workspaces.removeWindowEverywhere(id)
         runtimeState.setQuakeWindowToken(id.token)
         ensureFloatHome(id, win: win)
+        _ = stripQuakeSessionFromColumns()
     }
 
-    /// While a Quake launch is in flight, never leave matching windows in tile columns.
+    /// While Quake owns a shell, never leave matching windows in tile columns.
     /// Returns true if any window was removed from a tile column (caller should sync-relayout).
     @discardableResult
-    private func stripPendingQuakeFromColumns() -> Bool {
-        guard quake.windowID == nil, let pending = quake.pendingAdoptBundleID else { return false }
+    private func stripQuakeSessionFromColumns() -> Bool {
         var stripped = false
         for (id, win) in windowsByID {
-            // Only candidates already flagged for Quake — never yank a normal tiled Terminal.
-            guard floatingOverrides.contains(id) || win.isScratchpad else { continue }
-            let matchesBundle = win.bundleID == pending
-            let matchesName = Self.appNameMatchesQuakeBundle(win.appName, bundleID: pending)
-            guard matchesBundle || matchesName else { continue }
+            guard isQuakeSessionWindow(win) else { continue }
             if var updated = windowsByID[id] {
                 updated.isFloating = true
                 updated.isScratchpad = true
@@ -2102,9 +2133,48 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
             if workspaces.workspaceID(containing: id) != nil {
                 workspaces.removeWindowEverywhere(id)
                 stripped = true
+                NSLog("ALWM Quake: stripped %@ from tile columns", id.token)
             }
         }
         return stripped
+    }
+
+    @discardableResult
+    private func stripPendingQuakeFromColumns() -> Bool {
+        stripQuakeSessionFromColumns()
+    }
+
+    /// If the Quake AX id churned (new tab/window), rebind to the newest session float
+    /// instead of leaving the shell unmanaged and tileable.
+    private func recoverQuakeBindingIfNeeded(fromAdded added: Set<WindowID>) {
+        if let id = quake.windowID, windowsByID[id] != nil { return }
+        let sessionBundle = QuakeTerminalController.resolveBundleID(
+            configured: configStore.config.settings.quake.bundleID
+        )
+        let candidates = windowsByID.values.filter { win in
+            guard win.isScratchpad || floatingOverrides.contains(win.id) else { return false }
+            let bid = win.bundleID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return bid == sessionBundle
+                || Self.appNameMatchesQuakeBundle(win.appName, bundleID: sessionBundle)
+        }
+        guard let newest = candidates.max(by: { $0.id.windowNumber < $1.id.windowNumber }) else { return }
+        // Prefer a freshly added window when the previous binding disappeared.
+        let pick: ManagedWindow
+        if let addedHit = candidates.first(where: { added.contains($0.id) }) {
+            pick = addedHit
+        } else {
+            pick = newest
+        }
+        quake.rebind(pick.id)
+        runtimeState.setQuakeWindowToken(pick.id.token)
+        floatingOverrides.insert(pick.id)
+        if var win = windowsByID[pick.id] {
+            win.isFloating = true
+            win.isScratchpad = true
+            windowsByID[pick.id] = win
+        }
+        workspaces.removeWindowEverywhere(pick.id)
+        NSLog("ALWM Quake: rebound session window %@", pick.id.token)
     }
 
     /// True for the next Terminal/Ghostty window created while Quake is launching.
@@ -2141,6 +2211,17 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
     private func syncColumnTilesNotFloat() {
         let rules = configStore.config.rules
         for (id, var win) in windowsByID {
+            if isQuakeSessionWindow(win) {
+                // Quake session windows must leave columns, not lose scratchpad flags.
+                if workspaces.workspaceID(containing: id) != nil {
+                    workspaces.removeWindowEverywhere(id)
+                }
+                win.isFloating = true
+                win.isScratchpad = true
+                windowsByID[id] = win
+                floatingOverrides.insert(id)
+                continue
+            }
             if AppRules.forcesFloat(rules: rules, window: win) {
                 if workspaces.workspaceID(containing: id) != nil {
                     workspaces.removeWindowEverywhere(id)
@@ -2179,7 +2260,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         let rules = configStore.config.rules
         for id in ids {
             guard var win = windowsByID[id], !win.isIgnored else { continue }
-            if quake.windowID == id || isQuakeOwned(id) { continue }
+            if quake.windowID == id || isQuakeOwned(id) || isQuakeSessionWindow(win) { continue }
             if AppRules.forcesFloat(rules: rules, window: win) { continue }
             if floatingOverrides.contains(id) { continue }
             let usable = usableAreaNear(win.frame)
@@ -2594,6 +2675,8 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
     }
 
     private func handleQuakeWindowClosed() {
+        quakeCloseConfirmWorkItem?.cancel()
+        quakeCloseConfirmWorkItem = nil
         let closedID = quake.windowID
         quake.clearAfterUserClose()
         runtimeState.setQuakeWindowToken(nil)
@@ -2616,6 +2699,89 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
             self.applyFluidLayout(animated: false)
             self.refreshChrome()
         }
+    }
+
+    /// Confirm Quake is really gone — ⌘T / tab chrome must not dismiss the panel.
+    private func scheduleConfirmQuakeClosed(suspectID: WindowID) {
+        quakeCloseConfirmWorkItem?.cancel()
+        let wasVisible = quake.isVisible
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            guard self.quake.windowID == suspectID || self.isQuakeOwned(suspectID) else { return }
+            self.ax.scanAll()
+            let live = self.ax.currentWindows
+            if live.contains(where: { $0.id == suspectID }) {
+                NSLog("ALWM Quake: ignoring false AX destroy for %@", suspectID.token)
+                self.missingScanCounts.removeValue(forKey: suspectID)
+                if wasVisible {
+                    self.reassertQuakeVisibleFrame(for: suspectID)
+                }
+                return
+            }
+            // Window number churn: same process still has a shell window.
+            if let replacement = live.first(where: {
+                $0.id.pid == suspectID.pid && !$0.isIgnored && $0.id != suspectID
+            }) {
+                NSLog(
+                    "ALWM Quake: rebinding after AX churn %@ → %@",
+                    suspectID.token,
+                    replacement.id.token
+                )
+                self.adoptQuakeReplacement(replacement.id, wasVisible: wasVisible)
+                return
+            }
+            // Also check tracked soft-missing / float pool.
+            if let tracked = self.windowsByID.values.first(where: {
+                $0.id.pid == suspectID.pid && $0.id != suspectID && ($0.isScratchpad || self.floatingOverrides.contains($0.id))
+            }) {
+                NSLog(
+                    "ALWM Quake: rebinding tracked replacement %@ → %@",
+                    suspectID.token,
+                    tracked.id.token
+                )
+                self.adoptQuakeReplacement(tracked.id, wasVisible: wasVisible)
+                return
+            }
+            NSLog("ALWM Quake: confirmed closed %@", suspectID.token)
+            self.handleQuakeWindowClosed()
+            self.persistRuntimeState()
+            self.refreshChrome()
+        }
+        quakeCloseConfirmWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+    }
+
+    private func adoptQuakeReplacement(_ id: WindowID, wasVisible: Bool) {
+        floatingOverrides.insert(id)
+        if var win = windowsByID[id] {
+            win.isFloating = true
+            win.isScratchpad = true
+            windowsByID[id] = win
+        }
+        workspaces.removeWindowEverywhere(id)
+        quake.rebind(id)
+        runtimeState.setQuakeWindowToken(id.token)
+        missingScanCounts.removeValue(forKey: id)
+        suppressQuakeDismissUntil = Date().addingTimeInterval(0.8)
+        if wasVisible {
+            quake.setVisibleForRecovery(true)
+            reassertQuakeVisibleFrame(for: id)
+            preferredOverlayFocus = .quake
+        }
+        updateOverlayInputMode()
+        persistRuntimeState()
+        refreshChrome()
+    }
+
+    private func reassertQuakeVisibleFrame(for id: WindowID) {
+        guard let monitor = primaryMonitor() ?? monitors.monitors.first else { return }
+        let settings = configStore.config.settings.quake
+        let frame = quake.visibleFrame(settings: settings, monitor: monitor)
+        ax.setMinimized(false, id: id)
+        ax.apply(frame: frame, to: id)
+        ax.focus(id)
+        lastFrames[id] = frame
+        quake.refreshBlur(settings: settings, monitor: monitor, frame: frame)
     }
 
     /// Accumulated swipe deltas for discrete gesture bindings.
@@ -3652,6 +3818,10 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         if bid.hasPrefix("dev.alwm") || bid.contains(".alwm") { return }
         if bid == "com.apple.finder" { return }
         if bid.hasPrefix("com.apple.dock") || bid.hasPrefix("com.apple.systemuiserver") { return }
+        // Never quit the Quake shell — new tabs/windows must not kill Ghostty/Terminal.
+        if let qid = quake.windowID, qid.pid == pid { return }
+        if let session = quakeSessionBundleID()?.lowercased(), bid == session { return }
+        if windowsByID.values.contains(where: { $0.id.pid == pid && $0.isScratchpad }) { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
             guard let self else { return }
             self.ax.scanAll()
@@ -3661,6 +3831,8 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
                     && ($0.frame.width > 40 && $0.frame.height > 40)
             }
             if liveSamePid { return }
+            if self.windowsByID.values.contains(where: { $0.id.pid == pid && $0.isScratchpad }) { return }
+            if let qid = self.quake.windowID, qid.pid == pid { return }
             self.logMove("quit last-window pid=\(pid) bundle=\(bundleID ?? "?")")
             self.quitApp(pid: pid)
         }
@@ -5428,9 +5600,9 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
 
     private func handleUserClosedWindow(_ id: WindowID) {
         if id == quake.windowID || isQuakeOwned(id) {
-            handleQuakeWindowClosed()
-            persistRuntimeState()
-            refreshChrome()
+            // Ghostty/Terminal often emit AX destroy noise when opening tabs (⌘T).
+            // Confirm the window is actually gone before tearing Quake down.
+            scheduleConfirmQuakeClosed(suspectID: id)
             return
         }
         guard windowsByID[id] != nil || workspaces.workspaceID(containing: id) != nil else { return }
@@ -5591,7 +5763,8 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
                 quakeWindowID: quake.windowID,
                 alreadyKnown: alreadyKnown
             )
-            if isQuakeOwned(w.id) || quake.windowID == w.id || pendingCandidate {
+            let quakeSession = isQuakeSessionWindow(applied) || pendingCandidate
+            if quakeSession {
                 applied.isFloating = true
                 applied.isScratchpad = true
                 floatingOverrides.insert(w.id)
@@ -5635,9 +5808,12 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         var lastWindowQuitPIDs: [(pid: pid_t, bundleID: String?, homeWasActive: Bool)] = []
         for id in removed {
             if id == quake.windowID {
-                handleQuakeWindowClosed()
-                forgotten.insert(id)
-                missingScanCounts.removeValue(forKey: id)
+                // Soft-delete: ⌘T / tab chrome must not immediately tear Quake down.
+                let count = (missingScanCounts[id] ?? 0) + 1
+                missingScanCounts[id] = count
+                if count >= 6 {
+                    scheduleConfirmQuakeClosed(suspectID: id)
+                }
                 continue
             }
             // Floats (Finder etc.) leave the bar immediately — soft-delete only helps tiled park blips.
@@ -5761,7 +5937,11 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         forceTileExpandUntil = forceTileExpandUntil.filter { Date() < $0.value }
         // Use merged tracking (soft-missing kept) so a parked quake is not forgotten.
         if let qid = quake.windowID, merged[qid] == nil {
-            quake.forgetIfFullyGone(windows: merged)
+            let count = missingScanCounts[qid] ?? 0
+            if count >= 6 {
+                scheduleConfirmQuakeClosed(suspectID: qid)
+            }
+            // Do not call forgetIfFullyGone on first blips — that clears visible Quake on ⌘T.
         }
         quake.markScratchpad(in: &windowsByID)
 
@@ -5779,8 +5959,9 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         strippedLayouts.formUnion(enforceAppRuleFloats())
         // Quake is sticky-float only — never a tile.
         enforceQuakeFloat()
-        // Pending launch: keep candidates out of columns even before windowID binds.
+        // Pending launch / extra shell windows: keep candidates out of columns.
         let quakeStripped = stripPendingQuakeFromColumns()
+        recoverQuakeBindingIfNeeded(fromAdded: added)
 
         // Explicit floats / scratchpads leave columns but keep a home workspace.
         for (id, win) in windowsByID where win.isFloating || win.isScratchpad {

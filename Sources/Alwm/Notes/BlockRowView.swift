@@ -9,23 +9,19 @@ struct BlockRowView: View {
     var onEnter: (UUID) -> Void
     var onBackspaceEmpty: (UUID) -> Void
     var onSlashCommand: (UUID, BlockKind) -> Void
+    var onChangeKind: (UUID, BlockKind) -> Void
     var onMoveBlock: (IndexSet, Int) -> Void
 
     @State private var slashFilter = ""
     @State private var showSlash = false
+    @State private var hovered = false
     @FocusState private var isFocused: Bool
 
+    private var isActive: Bool { focusedBlockID == block.id || isFocused || hovered }
+
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            if block.kind != .divider {
-                Image(systemName: "line.3.horizontal")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .padding(.top, 6)
-                    .frame(width: 14)
-            } else {
-                Color.clear.frame(width: 14)
-            }
+        HStack(alignment: .top, spacing: 6) {
+            blockChrome
 
             VStack(alignment: .leading, spacing: 6) {
                 blockContent
@@ -45,8 +41,19 @@ struct BlockRowView: View {
                     }
                 }
             }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isActive ? Color.primary.opacity(0.045) : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(isFocused ? Color.accentColor.opacity(0.35) : Color.clear, lineWidth: 1)
+            )
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 1)
+        .onHover { hovered = $0 }
         .onAppear {
             if focusedBlockID == block.id {
                 isFocused = true
@@ -57,32 +64,96 @@ struct BlockRowView: View {
         }
     }
 
+    private var blockChrome: some View {
+        VStack(spacing: 2) {
+            if block.kind != .divider {
+                Image(systemName: "line.3.horizontal")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(isActive ? .secondary : .tertiary)
+                    .frame(width: 16, height: 16)
+                    .opacity(isActive ? 1 : 0.35)
+            } else {
+                Color.clear.frame(width: 16, height: 16)
+            }
+
+            Menu {
+                ForEach(SlashCommands.all) { item in
+                    Button {
+                        onChangeKind(block.id, item.kind)
+                    } label: {
+                        Label(item.title, systemImage: item.icon)
+                    }
+                }
+                Divider()
+                Button {
+                    onChangeKind(block.id, .paragraph)
+                } label: {
+                    Label(L10n.t("notepad.block.paragraph"), systemImage: "text.alignleft")
+                }
+            } label: {
+                Image(systemName: kindIcon)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 18, height: 18)
+                    .background(Color.primary.opacity(isActive ? 0.08 : 0.04), in: RoundedRectangle(cornerRadius: 4))
+            }
+            .menuStyle(.borderlessButton)
+            .opacity(isActive ? 1 : 0.4)
+            .help(L10n.t("notepad.change_block"))
+        }
+        .padding(.top, 4)
+        .frame(width: 22)
+    }
+
+    private var kindIcon: String {
+        switch block.kind {
+        case .paragraph: return "text.alignleft"
+        case .heading1: return "textformat.size.larger"
+        case .heading2: return "textformat.size"
+        case .heading3: return "textformat"
+        case .bulletList: return "list.bullet"
+        case .numberedList: return "list.number"
+        case .todo: return "checkmark.square"
+        case .toggle: return "chevron.right.square"
+        case .code: return "chevron.left.forwardslash.chevron.right"
+        case .callout: return "info.circle"
+        case .divider: return "minus"
+        }
+    }
+
     @ViewBuilder
     private var blockContent: some View {
         switch block.kind {
         case .divider:
-            Divider().padding(.vertical, 8)
+            Divider().padding(.vertical, 10)
         case .code:
-            VStack(alignment: .leading, spacing: 4) {
-                Picker("", selection: $block.language) {
-                    Text("Swift").tag("swift")
-                    Text("JSON").tag("json")
-                    Text("Shell").tag("shell")
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Label(L10n.t("notepad.block.code"), systemImage: "chevron.left.forwardslash.chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Picker("", selection: $block.language) {
+                        Text("Swift").tag("swift")
+                        Text("JSON").tag("json")
+                        Text("Shell").tag("shell")
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(maxWidth: 220)
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
                 TextEditor(text: $block.text)
                     .font(.system(.body, design: .monospaced))
-                    .frame(minHeight: 80)
+                    .frame(minHeight: 88)
                     .scrollContentBackground(.hidden)
-                    .padding(8)
-                    .background(Color(nsColor: .textBackgroundColor).opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
+                    .padding(10)
+                    .background(Color(nsColor: .textBackgroundColor).opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
                     .focused($isFocused)
             }
         case .callout:
             HStack(alignment: .top, spacing: 10) {
                 calloutIcon
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 6) {
                     Picker("", selection: $block.calloutStyle) {
                         ForEach(CalloutStyle.allCases) { s in
                             Text(s.rawValue.capitalized).tag(s)
@@ -90,12 +161,13 @@ struct BlockRowView: View {
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
+                    .frame(maxWidth: 240)
                     editableField(font: .body)
                 }
             }
-            .padding(10)
-            .background(calloutColor.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(calloutColor.opacity(0.45)))
+            .padding(12)
+            .background(calloutColor.opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(calloutColor.opacity(0.4)))
         case .todo:
             HStack(alignment: .top, spacing: 8) {
                 Toggle("", isOn: $block.checked)
@@ -120,12 +192,18 @@ struct BlockRowView: View {
             }
         case .bulletList:
             HStack(alignment: .top, spacing: 8) {
-                Text("•").padding(.top, 1)
+                Text("•")
+                    .font(.body.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 1)
                 editableField(font: .body)
             }
         case .numberedList:
             HStack(alignment: .top, spacing: 8) {
-                Text("\(numberedIndex).").monospacedDigit().frame(width: 22, alignment: .trailing)
+                Text("\(numberedIndex).")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, alignment: .trailing)
                 editableField(font: .body)
             }
         case .heading1:
@@ -149,6 +227,7 @@ struct BlockRowView: View {
             onEnter: { _ in },
             onBackspaceEmpty: { _ in },
             onSlashCommand: { _, _ in },
+            onChangeKind: { _, _ in },
             onMoveBlock: { _, _ in }
         )
     }

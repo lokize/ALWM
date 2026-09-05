@@ -214,6 +214,14 @@ public final class QuakeTerminalController {
         onVisibilityChanged?(visible)
     }
 
+    /// Restore visibility after a false AX destroy / window-number churn without re-running show animation.
+    public func setVisibleForRecovery(_ visible: Bool) {
+        setVisible(visible)
+        if !visible {
+            blurPanel?.orderOut(nil)
+        }
+    }
+
     private func show(
         id: WindowID,
         settings: QuakeSettings,
