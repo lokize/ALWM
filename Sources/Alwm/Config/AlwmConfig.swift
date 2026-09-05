@@ -198,6 +198,7 @@ public struct AlwmConfig: Equatable, Sendable {
         HotkeyBinding(action: "capture.display", key: "3", modifiers: ["control", "command", "shift"]),
         HotkeyBinding(action: "capture.record.toggle", key: "5", modifiers: ["control", "command", "shift"]),
         HotkeyBinding(action: "float.toggle", key: "f", modifiers: ["option"]),
+        HotkeyBinding(action: "column.maximize", key: "f", modifiers: ["option", "shift"]),
         HotkeyBinding(action: "settings.open", key: ",", modifiers: ["option"])
     ]
 

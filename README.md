@@ -43,25 +43,51 @@
 
 ## What you get
 
-- **Layouts** — Niri or Dwindle per workspace, optional monitor pins
-- **Workspace bar** — chips, app icons, focused title, plugin slots on every display
-- **Focus border** & overview with column thumbnails
-- **Quake terminal** — Ghostty when installed, otherwise Terminal.app
-- **Tools** — fuzzy command palette, notepad, screen capture, color picker, float toggle
-- **Gestures & hotkeys** — trackpad gestures, fully editable bindings
-- **Settings UI** — 10 languages (follows macOS by default)
-- **Live config** — TOML under `~/.config/alwm/`
-- **IPC** — `alwmctl`
-- **Plugins** — clock, Steam price watcher, and [your own](docs/plugins.md)
-- **Open at login** — starts with macOS (toggle in Settings → General)
+### Layout & windows
+- **Niri** — scrolling columns with stacked tiles (per workspace)
+- **Dwindle** — binary-space-partition splits (per workspace)
+- **Multi-monitor** — pin workspaces to a display (`monitorIndex`)
+- **Float / tile** — pull a window out of the layout or put it back
+- **Column maximize** — expand the focused tile to fill its column
+- **Focus border** — highlight the active tiled window
+- **App rules** — float, ignore, or pin apps via `apprules.d/*.toml`
+- **Sticky homes** — windows remember their workspace across relaunches
+
+### Chrome & overlays
+- **Workspace bar** — chips, app icons, focused title, plugin slots (overlay menu bar or below)
+- **Overview** — workspace thumbnails (bind `overview.toggle` yourself; also via palette)
+- **Status menu** — Focus Follows Mouse, borders, workspace bar, sleep lock, tools, update badge
+- **Command palette** — fuzzy search for every action + chord
+
+### Tools
+- **Quake terminal** — drop-down float (Ghostty if installed, else Terminal.app); stays scratchpad (not tiled)
+- **Notepad** — block editor with categories, tabs, `/` commands + toolbar (headings, lists, code, callouts…)
+- **Screen capture** — region / display PNG → `~/Pictures/ALWM`
+- **Screen recording** — mic + system audio → `~/Movies/ALWM`
+- **Color palette** — eyedropper + copy hex (status menu / tools)
+- **In-app updates** — checks GitHub Releases; Update from About or the status menu
+
+### Input & config
+- **Hotkeys** — fully editable (Settings or `hotkeys.toml`)
+- **Trackpad gestures** — 3-finger column/stack scroll, 4-finger workspace switch
+- **Focus follows mouse** — optional; warp cursor on focus / empty workspace
+- **Settings UI** — General, About, Diagnostics, Layout, Monitors, Workspaces, App Rules, Workspace Bar, Borders, Gestures, Hotkeys, Quake, Capture, Notepad, Plugins
+- **10 languages** — follows macOS by default
+- **Live TOML** — `~/.config/alwm/` reloads without a full restart for most settings
+- **IPC** — `alwmctl` for scripting
+- **Plugins** — Sample Clock, Steam price watcher, GitHub; [write your own](docs/plugins.md)
+- **Open at login** — Login Item (Settings → General)
+- **About** — version, What's New, GitHub contributors, Stripe donors
 
 ---
 
 ## Requirements
 
 - macOS 15+
-- Swift 6 / Xcode 16+
-- Accessibility (Input Monitoring for hotkeys; Screen Recording only for Overview thumbnails)
+- Swift 6 / Xcode 16+ (to build from source)
+- **Accessibility** (tiling)
+- **Input Monitoring** (hotkeys & trackpad gestures)
+- **Screen Recording** (Overview thumbnails, capture, recording)
 
 ---
 
@@ -133,21 +159,79 @@ alwmctl status
 
 ## Hotkeys (defaults)
 
+Chords below match a fresh `~/.config/alwm/hotkeys.toml` (and `AlwmConfig.defaultHotkeys`). Everything is editable in **Settings → Hotkeys** or that file.
+
+### Focus & move
+
 | Chord | Action |
 |---|---|
-| ⌥ H/L/K/J | Focus |
-| ⌥⇧ ←/→/↑/↓ | Move window |
-| ⌥ U/I | Scroll strip (Niri) |
-| ⌥ 1–4 | Switch workspace |
-| ⌥⇧ 1–4 | Send window to workspace |
-| ⌥ ←/→/↑/↓ | Resize |
-| ⌥ O | Overview |
-| ⌥ T | Quake |
-| ⌥ P | Palette |
-| ⌥ F | Float |
-| ⌥ , | Settings |
+| ⌥ ← / → / ↑ / ↓ | Focus tiled window |
+| ⌥ H / L / K / J | Focus (vim keys) |
+| ⌥⇧ ← / → / ↑ / ↓ | Move / peel window in the layout |
 
-Everything is editable in Settings or `~/.config/alwm/hotkeys.toml`.
+### Resize & scroll (Niri)
+
+| Chord | Action |
+|---|---|
+| ⌥ - / ⌥ = | Resize column width (shrink / grow) |
+| ⌥⇧ - / ⌥⇧ = | Resize stack height (up / down neighbor) |
+| ⌥ U / I | Scroll the column strip left / right |
+
+### Workspaces
+
+| Chord | Action |
+|---|---|
+| ⌥ 1–9 | Switch to workspace 1–9 |
+| ⌥ 0 | Switch to workspace 10 |
+| ⌥ F1–F10 | Switch to workspace 11–20 |
+| ⌥⇧ 1–9 / 0 / F1–F10 | Send focused window to that workspace |
+
+Only workspaces that exist in `workspaces.toml` are useful; extras can be bound for later.
+
+### Float, maximize & chrome
+
+| Chord | Action |
+|---|---|
+| ⌥ F | Toggle float |
+| ⌥⇧ F | Maximize focused tile in its column |
+| ⌥ , | Open Settings |
+| ⌥ P | Command palette |
+
+### Quake & notepad
+
+| Chord | Action |
+|---|---|
+| ⌥ T | Toggle Quake terminal |
+| ⌥ N | Toggle notepad |
+| ⌥⇧ N | New note (opens notepad) |
+
+### Capture
+
+| Chord | Action |
+|---|---|
+| ⌃⌘⇧ 4 | Capture region |
+| ⌃⌘⇧ 3 | Capture display |
+| ⌃⌘⇧ 5 | Start / stop recording |
+
+### Unbound by default (palette or bind in Settings)
+
+| Action | Notes |
+|---|---|
+| `overview.toggle` | Workspace overview |
+| `relayout` | Re-apply layout (also in status menu) |
+| `workspace.prev` / `workspace.next` | Also bound to **4-finger** trackpad by default |
+| `float.on` / `float.off` | Force float / tile |
+| `debug.dump` | Copy runtime dump (developer mode) |
+
+### Trackpad gestures (defaults)
+
+| Gesture | Action |
+|---|---|
+| 3 fingers horizontal | Scroll columns (`scroll.columns`) |
+| 3 fingers vertical | Scroll stack in focused column (`scroll.stack`) |
+| 4 fingers left / right | Previous / next workspace |
+
+Edit in **Settings → Gestures** or `~/.config/alwm/gestures.toml`. For 3/4-finger swipes, grant **Input Monitoring** and turn off Mission Control’s competing trackpad swipes.
 
 ---
 
@@ -160,6 +244,8 @@ Everything is editable in Settings or `~/.config/alwm/hotkeys.toml`.
 ├── hotkeys.toml
 ├── workspaces.toml
 ├── plugins.toml
+├── runtime-state.json
+├── notes/
 └── apprules.d/
 ```
 
@@ -177,15 +263,21 @@ layout = "dwindle"
 monitorIndex = 1
 ```
 
-Quake prefers Ghostty (`com.mitchellh.ghostty`); override with `quakeBundleID`. To leave Ghostty’s own quick terminal alone, see `ghostty-quick-terminal.toml.sample`.
+Quake prefers Ghostty (`com.mitchellh.ghostty`); override with `quakeBundleID` in settings. To leave Ghostty’s own quick terminal alone, see `apprules.d/ghostty-quick-terminal.toml.sample`.
 
 ---
 
 ## Plugins
 
-Bundled plugins live under `plugins/` (same **GPL-3.0** as the app) and show up in **Settings → Plugins**. Enable, pick bar placement, and optionally lock a chip to one monitor.
+Bundled plugins live under `plugins/` (same **GPL-3.0** as the app) and show up in **Settings → Plugins**:
 
-Docs for authors (API, packaging, PR): **[docs/plugins.md](docs/plugins.md)**.
+| Plugin | Role |
+|---|---|
+| **Sample Clock** | Time chip on the workspace bar |
+| **Steam Price Watcher** | Track Steam prices on the bar |
+| **GitHub** | Notifications / activity chip |
+
+Enable, pick bar placement, and optionally lock a chip to one monitor. Docs for authors (API, packaging, PR): **[docs/plugins.md](docs/plugins.md)**.
 
 ---
 

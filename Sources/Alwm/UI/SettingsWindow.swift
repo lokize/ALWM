@@ -1509,7 +1509,7 @@ private struct CreditsAvatarView: View {
 
 enum AlwmVersion {
     /// Kept in sync by `scripts/bump-version.sh`. Prefer `installed` for UI / update checks.
-    static let string = "0.5.7"
+    static let string = "0.5.8"
     static let ctlHint = "~/.local/bin/alwmctl"
     /// Version of the running app (Info.plist), falling back to the embedded constant.
     static var installed: String {
