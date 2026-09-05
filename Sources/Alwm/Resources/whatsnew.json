@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "0.6.3",
+      "items": [
+        "Maintenance and fixes"
+      ]
+    },
+    {
       "version": "0.6.2",
       "items": [
         "Maintenance and fixes"
@@ -262,18 +268,6 @@
       "items": [
         "Pre-commit logs What's New bumps clearly",
         "Package warns when a commit skipped the version bump"
-      ]
-    },
-    {
-      "version": "0.2.2",
-      "items": [
-        "Stacked tiles no longer shrink to half height when a sibling is minimized",
-        "Workspace bar shows each app only on its home workspace",
-        "Windows no longer leak or get stolen into workspace 1 on switch",
-        "Option-Shift arrows move/resize the focused window on the correct monitor",
-        "Focus arrows no longer snap back to the previous window",
-        "Broken overlapping tiles auto-heal back into columns",
-        "Pre-commit bump logs clearly; package warns if a commit skipped What's New"
       ]
     }
   ]
