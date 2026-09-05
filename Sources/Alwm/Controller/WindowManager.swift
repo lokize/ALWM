@@ -4149,6 +4149,8 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
             }
             self.refreshChrome()
         }
+        // WhatsApp/Discord: Chromium needs several delayed size toggles after park→reveal.
+        scheduleElectronReflowPasses(workspaceID: destinationID, generation: switchGeneration)
         refreshChrome()
     }
 
@@ -6662,7 +6664,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
     }
 
     /// WhatsApp/Discord Chromium often keeps a stale layout after park→reveal (composer gone).
-    /// A 1px height toggle forces webview reflow without changing the final tile.
+    /// A real size change (not 1px) is required — Electron ignores tiny AX deltas.
     private func needsElectronReflowNudge(_ win: ManagedWindow) -> Bool {
         let bundle = (win.bundleID ?? "").lowercased()
         let name = win.appName.lowercased()
@@ -6686,13 +6688,39 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
                 guard let win = windowsByID[wid], win.isTiled, !win.isIgnored else { continue }
                 guard needsElectronReflowNudge(win) else { continue }
                 guard authoritativeHome(for: wid) == workspaceID else { continue }
-                guard let frame = lastFrames[wid] ?? ax.currentFrame(of: wid) else { continue }
-                guard frame.height > 64 else { continue }
-                var nudged = frame
-                nudged.height = frame.height - 1
-                ax.applyFrameOnly(frame: nudged, to: wid)
-                ax.applyFrameOnly(frame: frame, to: wid)
+                let frame = expectedTileFrame(for: wid)
+                    ?? lastFrames[wid]
+                    ?? ax.currentFrame(of: wid)
+                guard let frame, frame.height > 96, frame.width > 160 else { continue }
+                if ax.isMinimized(wid) {
+                    ax.setMinimized(false, id: wid)
+                }
+                // Shrink both axes so Chromium must reflow, then restore the tile.
+                var shrunk = frame
+                shrunk.width = max(160, frame.width - 24)
+                shrunk.height = max(96, frame.height - 24)
+                ax.forceFrame(shrunk, id: wid)
+                ax.forceFrame(frame, id: wid)
                 lastFrames[wid] = frame
+            }
+        }
+    }
+
+    /// Multiple delayed passes — deminiaturize / first AX write often land after the first nudge.
+    private func scheduleElectronReflowPasses(workspaceID: String, generation: UInt64) {
+        let delays: [UInt64] = [50_000_000, 220_000_000, 550_000_000, 950_000_000]
+        for delay in delays {
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: delay)
+                guard let self, self.workspaceSwitchGeneration == generation else { return }
+                guard self.workspaces.activeWorkspaceByMonitor.values.contains(workspaceID) else { return }
+                if let mon = self.monitors.monitors.first(where: {
+                    self.workspaces.activeWorkspaceByMonitor[$0.id] == workspaceID
+                }) {
+                    self.clampActiveTilesToUsable(workspaceID: workspaceID, monitor: mon)
+                }
+                self.nudgeElectronTileReflow(workspaceID: workspaceID)
+                self.refreshBorder()
             }
         }
     }
@@ -7525,14 +7553,20 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
     /// only for apps where that is safe while a sibling stays visible.
     private func allowsPerWindowMinimize(_ id: WindowID) -> Bool {
         let bid = (windowsByID[id]?.bundleID ?? "").lowercased()
-        if bid.isEmpty { return true }
-        if bid.contains("electron") { return false }
-        if bid.hasPrefix("com.microsoft.vscode") || bid.hasPrefix("com.visualstudio.code") { return false }
-        if bid.hasPrefix("com.github.atom") { return false }
-        if bid.hasPrefix("com.slack.") || bid.hasPrefix("com.tinyspeck.") { return false }
-        if bid.hasPrefix("com.hnc.discord") || bid.hasPrefix("com.discordapp") { return false }
-        if bid.hasPrefix("com.figma.") { return false }
-        if bid.hasPrefix("com.spotify.") { return false }
+        let name = (windowsByID[id]?.appName ?? "").lowercased()
+        let hay = bid.isEmpty ? name : bid
+        if hay.isEmpty { return true }
+        // Chromium shells: minimize corrupts webview chrome (WhatsApp composer vanishes).
+        if hay.contains("electron") { return false }
+        if hay.contains("whatsapp") { return false }
+        if hay.contains("telegram") { return false }
+        if hay.hasPrefix("com.microsoft.vscode") || hay.hasPrefix("com.visualstudio.code") { return false }
+        if hay.hasPrefix("com.github.atom") { return false }
+        if hay.hasPrefix("com.slack.") || hay.hasPrefix("com.tinyspeck.") { return false }
+        if hay.hasPrefix("com.hnc.discord") || hay.hasPrefix("com.discordapp") { return false }
+        if hay.hasPrefix("com.figma.") { return false }
+        if hay.hasPrefix("com.spotify.") { return false }
+        if hay.contains("notion") { return false }
         return true
     }
 
@@ -8124,18 +8158,31 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
                     let win = self.windowsByID[id]
                     let target = (win?.isTiled == true && win?.isFloating != true)
                         ? self.clampHorizontalTileFrame(frame, for: id) : frame
+                    let electron = win.map { self.needsElectronReflowNudge($0) } ?? false
                     if !self.visibilityForceReveal,
+                       !electron,
                        self.ax.isSettled(id: id, frame: target, monitors: allMonitorFrames),
                        !(self.authoritativeHome(for: id).map { self.frameLeaksWrongMonitor(home: $0, frame: self.liveFrameForVisibility(id) ?? target) } ?? false) {
                         self.lastFrames[id] = target
                         continue
                     }
+                    // Electron: unminimize before sizing so Chromium lays out against the real tile.
+                    if electron, self.ax.isMinimized(id) {
+                        self.ax.setMinimized(false, id: id)
+                    }
                     self.ax.reveal(frame: target, id: id)
+                    if electron {
+                        var shrunk = target
+                        shrunk.width = max(160, target.width - 24)
+                        shrunk.height = max(96, target.height - 24)
+                        self.ax.forceFrame(shrunk, id: id)
+                        self.ax.forceFrame(target, id: id)
+                    }
                     if let live = self.ax.currentFrame(of: id),
                        !OffscreenParking.isUsableOnscreenFrame(live, monitors: allMonitorFrames) {
                         self.ax.reveal(frame: target, id: id)
                     }
-                    self.lastFrames[id] = self.ax.currentFrame(of: id) ?? target
+                    self.lastFrames[id] = target
                 }
 
                 // 3) Hide remaining outgoing (no sibling being revealed this pass).

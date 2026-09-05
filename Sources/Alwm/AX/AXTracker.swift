@@ -460,9 +460,12 @@ public final class AXTracker: @unchecked Sendable {
             }
             if needsShow {
                 ax.isMinimized = false
-                if !framesApproximatelyEqual(ax.frame, frame, epsilon: 4) {
-                    ax.frame = frame
-                }
+            }
+            // Always re-apply after deminiaturize: Electron/WhatsApp Chromium often keeps a
+            // stale webview layout (composer clipped) unless size is written while visible.
+            ax.frame = frame
+            if !framesApproximatelyEqual(ax.frame, frame, epsilon: 4) {
+                ax.frame = frame
             }
         }
     }
