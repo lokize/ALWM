@@ -10,6 +10,8 @@ public final class WorkspaceBarController {
     /// Skip full rebuild when the visible signature is unchanged.
     private var lastRenderSignature = ""
     private var pluginBarItems: [PluginBarItem] = []
+    /// Menu-bar-style status text (workspace + focused window), shown at end of the pill when enabled.
+    private var focusedStatusLabel = ""
 
     /// Returns live ManagedWindows for a given bundleID/appName restricted to a workspace.
     /// Used by the multi-window picker to resolve token-churn cases.
@@ -23,6 +25,8 @@ public final class WorkspaceBarController {
     public var onQuitApp: ((pid_t) -> Void)?
     public var onToggleFloatWindow: ((WindowID) -> Void)?
     public var onFocusFloatingOnMonitor: ((CGDirectDisplayID) -> Void)?
+    /// Opens the ALWM status menu (same as the menu-bar icon).
+    public var onFocusedStatusClicked: ((NSView) -> Void)?
 
     /// Snapshot of workspace chips for context menus (id + display name).
     private var menuWorkspaces: [(id: String, name: String)] = []
@@ -50,7 +54,8 @@ public final class WorkspaceBarController {
         settings: WorkspaceBarSettings,
         mainHeight: Double,
         avoidRect: NSRect? = nil,
-        pluginItems: [PluginBarItem] = []
+        pluginItems: [PluginBarItem] = [],
+        focusedStatusLabel: String = ""
     ) {
         let signature = renderSignature(
             monitors: monitors,
@@ -61,11 +66,13 @@ public final class WorkspaceBarController {
             windowWorkspace: windowWorkspace,
             settings: settings,
             avoidRect: avoidRect,
-            pluginItems: pluginItems
+            pluginItems: pluginItems,
+            focusedStatusLabel: focusedStatusLabel
         )
         guard signature != lastRenderSignature else { return }
         lastRenderSignature = signature
         pluginBarItems = pluginItems
+        self.focusedStatusLabel = focusedStatusLabel
         lastWorkspaces = workspaces
         lastWindowsByID = windowsByID
         lastWindowWorkspace = windowWorkspace
@@ -168,7 +175,8 @@ public final class WorkspaceBarController {
         let leftChrome: CGFloat = narrow
             ? min(72, max(28, screenFrame.width * 0.05))
             : min(120, max(40, screenFrame.width * 0.08))
-        let minOriginX = screenFrame.minX + leftChrome + CGFloat(settings.horizontalOffset)
+        // Keep horizontalOffset out of the clamp floor — it applies after alignment.
+        let minOriginX = screenFrame.minX + leftChrome
         let documentTitleLeadingX = MenuBarLayout.documentTitleLeadingX(
             screenFrame: screenFrame,
             menuHeight: menuHeight
@@ -198,8 +206,7 @@ public final class WorkspaceBarController {
         let originX = overlayOriginX(
             barWidth: width,
             settings: settings,
-            statusLeadingX: statusLeadingX,
-            documentTitleLeadingX: documentTitleLeadingX,
+            screenFrame: screenFrame,
             minOriginX: minOriginX,
             rightClearX: rightClearX
         )
@@ -234,30 +241,29 @@ public final class WorkspaceBarController {
         return screenFrame.maxX - insetFromTrailing
     }
 
-    /// Prefer docking immediately left of the ALWM status item (the “2 – title” label).
+    /// Place the overlay pill per `settings.alignment`, clamped so it stays clear of
+    /// Apple menu chrome (left) and status / document-title region (right).
     private func overlayOriginX(
         barWidth: CGFloat,
         settings: WorkspaceBarSettings,
-        statusLeadingX: CGFloat?,
-        documentTitleLeadingX: CGFloat?,
+        screenFrame: NSRect,
         minOriginX: CGFloat,
         rightClearX: CGFloat
     ) -> CGFloat {
-        let gap: CGFloat = 8
         let offset = CGFloat(settings.horizontalOffset)
         let maxOriginX = max(minOriginX, rightClearX - barWidth)
 
-        if let statusLeadingX {
-            let besideStatus = statusLeadingX - gap - barWidth + offset
-            return min(max(besideStatus, minOriginX), maxOriginX)
+        let unclamped: CGFloat
+        switch settings.alignment {
+        case .left:
+            unclamped = minOriginX + offset
+        case .center:
+            // Geometric center of this monitor — not “dock left of status item”.
+            unclamped = screenFrame.midX - barWidth / 2 + offset
+        case .right:
+            unclamped = rightClearX - barWidth + offset
         }
-
-        if let titleX = documentTitleLeadingX, titleX > minOriginX + 80 {
-            let besideTitle = titleX - gap - barWidth + offset
-            return min(max(besideTitle, minOriginX), maxOriginX)
-        }
-
-        return minOriginX
+        return min(max(unclamped, minOriginX), maxOriginX)
     }
 
     private func renderBelow(
@@ -460,6 +466,20 @@ public final class WorkspaceBarController {
         }
         appendPluginViews(afterWS, to: pillStack, scale: scale, leadingSeparator: true)
 
+        if settings.showFocusedStatus {
+            let label = focusedStatusLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !label.isEmpty {
+                pillStack.addArrangedSubview(makeVerticalSeparator(scale: scale))
+                pillStack.addArrangedSubview(
+                    makeFocusedStatusChip(
+                        text: label,
+                        chipHeight: max(14, pillHeight - 4),
+                        scale: scale
+                    )
+                )
+            }
+        }
+
         leftPill.setContentHuggingPriority(.required, for: .horizontal)
         leftPill.setContentCompressionResistancePriority(.required, for: .horizontal)
         pillStack.setHuggingPriority(.required, for: .horizontal)
@@ -483,23 +503,79 @@ public final class WorkspaceBarController {
         trailingSeparator: Bool = false
     ) {
         guard !items.isEmpty else { return }
+        PluginManager.shared.updateBarScale(scale)
+        // Skip plugins that auto-hide (fanless Fans, no-battery, BT off, …) so we
+        // don't leave orphan separators on the bar.
+        var views: [NSView] = []
+        views.reserveCapacity(items.count)
+        for item in items {
+            guard let view = PluginManager.shared.makeBarView(
+                id: item.id,
+                placement: item.placement,
+                scale: scale
+            ) else { continue }
+            view.setContentHuggingPriority(.required, for: .horizontal)
+            view.setContentCompressionResistancePriority(.required, for: .horizontal)
+            views.append(view)
+        }
+        guard !views.isEmpty else { return }
         if leadingSeparator {
             stack.addArrangedSubview(makeVerticalSeparator(scale: scale))
         }
-        PluginManager.shared.updateBarScale(scale)
-        for (index, item) in items.enumerated() {
+        for (index, view) in views.enumerated() {
             if index > 0 {
                 stack.addArrangedSubview(makeVerticalSeparator(scale: scale))
             }
-            if let view = PluginManager.shared.makeBarView(id: item.id, placement: item.placement, scale: scale) {
-                view.setContentHuggingPriority(.required, for: .horizontal)
-                view.setContentCompressionResistancePriority(.required, for: .horizontal)
-                stack.addArrangedSubview(view)
-            }
+            stack.addArrangedSubview(view)
         }
         if trailingSeparator {
             stack.addArrangedSubview(makeVerticalSeparator(scale: scale))
         }
+    }
+
+    /// Same affordance as the menu-bar status item: brand logo + workspace/window title.
+    private func makeFocusedStatusChip(text: String, chipHeight: CGFloat, scale: CGFloat) -> NSView {
+        let maxChars = 28
+        let display = truncateStatusLabel(text, maxChars: maxChars)
+        let fontSize = max(9, 10 * scale)
+        let iconSide = max(11, 12 * scale)
+        let padX = max(5, 6 * scale)
+        let spacing = max(3, 4 * scale)
+
+        let btn = NSButton(title: "", target: actionBridge, action: #selector(WorkspaceBarActionBridge.focusedStatusClicked(_:)))
+        btn.bezelStyle = .inline
+        btn.isBordered = false
+        btn.image = AlwmBrand.logo(side: iconSide * 2)
+        btn.imagePosition = .imageLeft
+        btn.imageScaling = .scaleProportionallyDown
+        btn.title = display
+        btn.font = .systemFont(ofSize: fontSize, weight: .medium)
+        btn.contentTintColor = .white
+        btn.toolTip = text
+        btn.setContentHuggingPriority(.required, for: .horizontal)
+        btn.setContentCompressionResistancePriority(.required, for: .horizontal)
+        btn.translatesAutoresizingMaskIntoConstraints = false
+
+        let wrap = NSView()
+        wrap.wantsLayer = true
+        wrap.translatesAutoresizingMaskIntoConstraints = false
+        wrap.addSubview(btn)
+        NSLayoutConstraint.activate([
+            btn.leadingAnchor.constraint(equalTo: wrap.leadingAnchor, constant: padX),
+            btn.trailingAnchor.constraint(equalTo: wrap.trailingAnchor, constant: -padX),
+            btn.centerYAnchor.constraint(equalTo: wrap.centerYAnchor),
+            wrap.heightAnchor.constraint(equalToConstant: chipHeight),
+            btn.heightAnchor.constraint(equalToConstant: chipHeight)
+        ])
+        // Keep a little breathing room matching menu-bar chrome.
+        _ = spacing
+        return wrap
+    }
+
+    private func truncateStatusLabel(_ text: String, maxChars: Int) -> String {
+        guard text.count > maxChars, maxChars > 1 else { return text }
+        let end = text.index(text.startIndex, offsetBy: maxChars - 1)
+        return String(text[..<end]) + "…"
     }
 
     /// Stable key for grouping icons (bundle preferred, else app name).
@@ -903,6 +979,10 @@ public final class WorkspaceBarController {
         onSelectWorkspace?(CGDirectDisplayID(mon), String(parts[1]))
     }
 
+    fileprivate func focusedStatusClicked(_ sender: NSButton) {
+        onFocusedStatusClicked?(sender)
+    }
+
     fileprivate func appIconClicked(_ sender: NSButton) {
         guard let raw = sender.identifier?.rawValue else { return }
         let parts = raw.split(separator: "|", maxSplits: 2, omittingEmptySubsequences: false).map(String.init)
@@ -1256,7 +1336,8 @@ public final class WorkspaceBarController {
         windowWorkspace: [WindowID: String],
         settings: WorkspaceBarSettings,
         avoidRect: NSRect?,
-        pluginItems: [PluginBarItem]
+        pluginItems: [PluginBarItem],
+        focusedStatusLabel: String
     ) -> String {
         var parts: [String] = []
         parts.append("pos=\(settings.position.rawValue)")
@@ -1267,6 +1348,8 @@ public final class WorkspaceBarController {
         parts.append("lbl=\(settings.showLabels)")
         parts.append("ic=\(settings.showAppIcons)")
         parts.append("dedup=\(settings.deduplicateAppIcons)")
+        parts.append("fs=\(settings.showFocusedStatus)")
+        parts.append("fst=\(focusedStatusLabel)")
         parts.append("ws=\(Int(settings.widthScale * 100))")
         for item in pluginItems {
             parts.append("pl:\(item.id):\(item.placement.rawString):\(item.display.rawString):\(item.signature)")
@@ -1457,6 +1540,10 @@ private final class WorkspaceBarActionBridge: NSObject {
 
     @objc func workspaceClicked(_ sender: NSButton) {
         hopButton(sender) { $0.workspaceClicked($1) }
+    }
+
+    @objc func focusedStatusClicked(_ sender: NSButton) {
+        hopButton(sender) { $0.focusedStatusClicked($1) }
     }
 
     @objc func appIconClicked(_ sender: NSButton) {

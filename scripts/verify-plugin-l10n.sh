@@ -6,7 +6,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 LANGS=(en zh-Hans hi es fr ar bn pt-BR ru ur)
-PLUGINS=(github steam-price-watcher sample-clock)
+PLUGINS=(github steam-price-watcher sample-clock stats-cpu stats-memory stats-network stats-battery stats-disk stats-gpu stats-sensors stats-fans stats-bluetooth now-playing stats-uptime)
 
 fail=0
 for plugin in "${PLUGINS[@]}"; do

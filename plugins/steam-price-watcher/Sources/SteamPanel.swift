@@ -1,17 +1,20 @@
 import AppKit
 import SwiftUI
 import AlwmL10n
+import AlwmPluginAPI
 
 @MainActor
 enum SteamPanelController {
     private static var window: NSWindow?
 
     static func close() {
+        PluginPanelOutsideClick.stop(for: window)
         window?.orderOut(nil)
     }
 
     static func toggle(relativeTo view: NSView?) {
         if let window, window.isVisible {
+            PluginPanelOutsideClick.stop(for: window)
             window.orderOut(nil)
             return
         }
@@ -50,6 +53,7 @@ enum SteamPanelController {
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         window = win
+        PluginPanelOutsideClick.watch(win)
     }
 }
 

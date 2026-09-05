@@ -39,17 +39,12 @@ enum QuakePanelGeometry {
     }
 
     static func hiddenFrame(edge: QuakeEdge, visible: Rect, monitor: MonitorInfo) -> Rect {
-        let mon = monitor.frame
-        switch edge {
-        case .top:
-            return Rect(x: visible.x, y: mon.y - visible.height - 40, width: visible.width, height: visible.height)
-        case .bottom:
-            return Rect(x: visible.x, y: mon.maxY + 40, width: visible.width, height: visible.height)
-        case .left:
-            return Rect(x: mon.x - visible.width - 40, y: visible.y, width: visible.width, height: visible.height)
-        case .right:
-            return Rect(x: mon.maxX + 40, y: visible.y, width: visible.width, height: visible.height)
-        }
+        // Always park BELOW the display arrangement. Sliding past the top/left edge
+        // makes macOS clamp a visible strip back onto the screen (classic Quake leak
+        // when switching workspaces while the panel is dismissed).
+        _ = edge
+        let park = OffscreenParking.parkOrigin(monitors: [monitor.frame], preferred: monitor.frame)
+        return OffscreenParking.parkedFrame(origin: park, sizeFrom: visible, live: visible)
     }
 
     static func visibleFrame(settings: NotepadSettings, monitor: MonitorInfo) -> Rect {

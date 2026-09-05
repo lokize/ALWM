@@ -32,5 +32,9 @@
 	<string>Copyright © 2026 ALWM contributors</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>ALWM records microphone audio when you capture screen video.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>ALWM shows battery levels of your paired Bluetooth accessories on the workspace bar.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>ALWM shows battery levels of your paired Bluetooth accessories on the workspace bar.</string>
 </dict>
 </plist>

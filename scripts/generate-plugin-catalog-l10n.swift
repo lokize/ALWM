@@ -8,6 +8,17 @@ let plugins: [String: [String: String]] = [
     "github": githubReadmes(),
     "steam-price-watcher": steamReadmes(),
     "sample-clock": clockReadmes(),
+    "stats-cpu": cpuReadmes(),
+    "stats-memory": memoryReadmes(),
+    "stats-network": networkReadmes(),
+    "stats-battery": batteryReadmes(),
+    "stats-disk": diskReadmes(),
+    "stats-gpu": gpuReadmes(),
+    "stats-sensors": sensorsReadmes(),
+    "stats-fans": fansReadmes(),
+    "stats-bluetooth": bluetoothReadmes(),
+    "now-playing": nowPlayingReadmes(),
+    "stats-uptime": uptimeReadmes(),
 ]
 
 let root = URL(fileURLWithPath: CommandLine.arguments[0])
@@ -550,3 +561,397 @@ func clockReadmes() -> [String: String] {
     }
     return out
 }
+
+func cpuReadmes() -> [String: String] {
+    let bodies: [String: String] = [
+        "en": """
+Stats-style **CPU** chip on the ALWM workspace bar.
+
+- Chip shows `CPU n%`
+- Click opens a dense popover (gauges, usage history, core bars, system/user/idle, E/P cores, load averages, top processes)
+
+Enable under **Settings → Plugins**. Temperature and frequency fill in when sensor APIs are available.
+""",
+        "pt-BR": """
+Chip de **CPU** estilo Stats na barra de workspaces do ALWM.
+
+- Chip mostra `CPU n%`
+- Clique abre um popover denso (gauges, histórico, barras por núcleo, sistema/usuário/ocioso, E/P cores, carga média, principais processos)
+
+Ative em **Ajustes → Plugins**. Temperatura e frequência entram quando as APIs de sensores estiverem disponíveis.
+""",
+        "es": "Chip **CPU** estilo Stats. Muestra `CPU n%` y un popover denso al hacer clic. Actívalo en **Ajustes → Plugins**.",
+        "fr": "Puce **CPU** style Stats. Affiche `CPU n%` et un popover dense. Activez dans **Réglages → Plugins**.",
+        "zh-Hans": "Stats 风格 **CPU** 芯片。显示 `CPU n%`，点击打开详细面板。在 **设置 → 插件** 中启用。",
+        "ru": "Чип **CPU** в стиле Stats. Показывает `CPU n%` и плотный popover. Включите в **Настройки → Плагины**.",
+        "hi": "Stats-style **CPU** chip। `CPU n%` दिखाता है। **Settings → Plugins** में चालू करें।",
+        "ar": "شريحة **CPU** بأسلوب Stats. تعرض `CPU n%`. فعّل من **الإعدادات → الإضافات**.",
+        "bn": "Stats-style **CPU** chip। `CPU n%` দেখায়। **Settings → Plugins**-এ চালু করুন।",
+        "ur": "Stats-style **CPU** chip۔ `CPU n%` دکھاتا ہے۔ **Settings → Plugins** میں فعال کریں۔",
+    ]
+    var out: [String: String] = [:]
+    for (lang, body) in bodies {
+        out[lang] = "# CPU\n\n\(body.trimmingCharacters(in: .whitespacesAndNewlines))\n\nLicense: **GPL-3.0** (same as ALWM)."
+    }
+    return out
+}
+
+func memoryReadmes() -> [String: String] {
+    let bodies: [String: String] = [
+        "en": """
+Stats-style **Memory** chip on the ALWM workspace bar.
+
+- Chip shows `RAM n%`
+- Click opens a dense popover (usage rings, history, app/wired/compressed/free, pressure, top processes by resident size)
+
+Enable under **Settings → Plugins**.
+""",
+        "pt-BR": """
+Chip de **Memória** estilo Stats na barra de workspaces do ALWM.
+
+- Chip mostra `RAM n%`
+- Clique abre um popover denso (anéis, histórico, apps/wired/comprimido/livre, pressão, principais processos)
+
+Ative em **Ajustes → Plugins**.
+""",
+        "es": "Chip **Memory** estilo Stats. Muestra `RAM n%` y un popover denso. Actívalo en **Ajustes → Plugins**.",
+        "fr": "Puce **Memory** style Stats. Affiche `RAM n%` et un popover dense. Activez dans **Réglages → Plugins**.",
+        "zh-Hans": "Stats 风格 **Memory** 芯片。显示 `RAM n%`，点击打开详细面板。在 **设置 → 插件** 中启用。",
+        "ru": "Чип **Memory** в стиле Stats. Показывает `RAM n%`. Включите в **Настройки → Плагины**.",
+        "hi": "Stats-style **Memory** chip। `RAM n%` दिखाता है। **Settings → Plugins** में चालू करें।",
+        "ar": "شريحة **Memory** بأسلوب Stats. تعرض `RAM n%`. فعّل من **الإعدادات → الإضافات**.",
+        "bn": "Stats-style **Memory** chip। `RAM n%` দেখায়। **Settings → Plugins**-এ চালু করুন।",
+        "ur": "Stats-style **Memory** chip۔ `RAM n%` دکھاتا ہے۔ **Settings → Plugins** میں فعال کریں۔",
+    ]
+    var out: [String: String] = [:]
+    for (lang, body) in bodies {
+        let title = lang == "pt-BR" ? "Memória" : "Memory"
+        out[lang] = "# \(title)\n\n\(body.trimmingCharacters(in: .whitespacesAndNewlines))\n\nLicense: **GPL-3.0** (same as ALWM)."
+    }
+    return out
+}
+
+func networkReadmes() -> [String: String] {
+    let bodies: [String: String] = [
+        "en": """
+Stats-style **Network** chip on the ALWM workspace bar.
+
+- Chip shows `↓x ↑y`
+- Click opens a dense popover (rates, dual history, connectivity grid, interface totals, local/public IP)
+
+Enable under **Settings → Plugins**.
+""",
+        "pt-BR": """
+Chip de **Rede** estilo Stats na barra de workspaces do ALWM.
+
+- Chip mostra `↓x ↑y`
+- Clique abre um popover denso (taxas, histórico duplo, grid de conectividade, totais, IP local/público)
+
+Ative em **Ajustes → Plugins**.
+""",
+        "es": "Chip **Network** estilo Stats. Muestra `↓x ↑y` y un popover denso. Actívalo en **Ajustes → Plugins**.",
+        "fr": "Puce **Network** style Stats. Affiche `↓x ↑y` et un popover dense. Activez dans **Réglages → Plugins**.",
+        "zh-Hans": "Stats 风格 **Network** 芯片。显示 `↓x ↑y`，点击打开详细面板。在 **设置 → 插件** 中启用。",
+        "ru": "Чип **Network** в стиле Stats. Показывает `↓x ↑y`. Включите в **Настройки → Плагины**.",
+        "hi": "Stats-style **Network** chip। `↓x ↑y` दिखाता है। **Settings → Plugins** में चालू करें।",
+        "ar": "شريحة **Network** بأسلوب Stats. تعرض `↓x ↑y`. فعّل من **الإعدادات → الإضافات**.",
+        "bn": "Stats-style **Network** chip। `↓x ↑y` দেখায়। **Settings → Plugins**-এ চালু করুন।",
+        "ur": "Stats-style **Network** chip۔ `↓x ↑y` دکھاتا ہے۔ **Settings → Plugins** میں فعال کریں۔",
+    ]
+    var out: [String: String] = [:]
+    for (lang, body) in bodies {
+        let title = lang == "pt-BR" ? "Rede" : "Network"
+        out[lang] = "# \(title)\n\n\(body.trimmingCharacters(in: .whitespacesAndNewlines))\n\nLicense: **GPL-3.0** (same as ALWM)."
+    }
+    return out
+}
+
+func batteryReadmes() -> [String: String] {
+    let bodies: [String: String] = [
+        "en": """
+Stats-style **Battery** chip on the ALWM workspace bar.
+
+- Chip shows `BAT n%` (charging indicator when plugged in)
+- Click opens a dense popover (charge/health rings, history, cycles, time remaining, temperature)
+- Auto-hides on Macs without an internal battery
+
+Enable under **Settings → Plugins**.
+""",
+        "pt-BR": """
+Chip de **Bateria** estilo Stats na barra de workspaces do ALWM.
+
+- Chip mostra `BAT n%` (indicador de carga quando conectado)
+- Clique abre um popover denso (anéis de carga/saúde, histórico, ciclos, tempo restante, temperatura)
+- Oculta automaticamente em Macs sem bateria interna
+
+Ative em **Ajustes → Plugins**.
+""",
+        "es": "Chip **Battery** estilo Stats. Muestra `BAT n%` y se oculta en escritorios. Actívalo en **Ajustes → Plugins**.",
+        "fr": "Puce **Battery** style Stats. Affiche `BAT n%` et se masque sur desktop. Activez dans **Réglages → Plugins**.",
+        "zh-Hans": "Stats 风格 **Battery** 芯片。显示 `BAT n%`，无内置电池时自动隐藏。在 **设置 → 插件** 中启用。",
+        "ru": "Чип **Battery** в стиле Stats. Показывает `BAT n%`, скрывается на десктопах. Включите в **Настройки → Плагины**.",
+        "hi": "Stats-style **Battery** chip। `BAT n%` दिखाता है; डेस्कटॉप पर छिप जाता है। **Settings → Plugins** में चालू करें।",
+        "ar": "شريحة **Battery** بأسلوب Stats. تعرض `BAT n%` وتُخفى على أجهزة سطح المكتب. فعّل من **الإعدادات → الإضافات**.",
+        "bn": "Stats-style **Battery** chip। `BAT n%` দেখায়; ডেস্কটপে লুকানো থাকে। **Settings → Plugins**-এ চালু করুন।",
+        "ur": "Stats-style **Battery** chip۔ `BAT n%` دکھاتا ہے؛ ڈیسک ٹاپ پر چھپ جاتا ہے۔ **Settings → Plugins** میں فعال کریں۔",
+    ]
+    var out: [String: String] = [:]
+    for (lang, body) in bodies {
+        let title = lang == "pt-BR" ? "Bateria" : "Battery"
+        out[lang] = "# \(title)\n\n\(body.trimmingCharacters(in: .whitespacesAndNewlines))\n\nLicense: **GPL-3.0** (same as ALWM)."
+    }
+    return out
+}
+
+func diskReadmes() -> [String: String] {
+    let bodies: [String: String] = [
+        "en": """
+Stats-style **Disk / SSD** chip on the ALWM workspace bar.
+
+- Chip shows `SSD n%`
+- Click opens a dense popover (usage rings, history, free/total, mounted volumes)
+
+Enable under **Settings → Plugins**.
+""",
+        "pt-BR": """
+Chip de **Disco / SSD** estilo Stats na barra de workspaces do ALWM.
+
+- Chip mostra `SSD n%`
+- Clique abre um popover denso (anéis de uso, histórico, livre/total, volumes montados)
+
+Ative em **Ajustes → Plugins**.
+""",
+        "es": "Chip **Disk** estilo Stats. Muestra `SSD n%` y un popover denso. Actívalo en **Ajustes → Plugins**.",
+        "fr": "Puce **Disk** style Stats. Affiche `SSD n%` et un popover dense. Activez dans **Réglages → Plugins**.",
+        "zh-Hans": "Stats 风格 **Disk** 芯片。显示 `SSD n%`，点击打开详细面板。在 **设置 → 插件** 中启用。",
+        "ru": "Чип **Disk** в стиле Stats. Показывает `SSD n%`. Включите в **Настройки → Плагины**.",
+        "hi": "Stats-style **Disk** chip। `SSD n%` दिखाता है। **Settings → Plugins** में चालू करें।",
+        "ar": "شريحة **Disk** بأسلوب Stats. تعرض `SSD n%`. فعّل من **الإعدادات → الإضافات**.",
+        "bn": "Stats-style **Disk** chip। `SSD n%` দেখায়। **Settings → Plugins**-এ চালু করুন।",
+        "ur": "Stats-style **Disk** chip۔ `SSD n%` دکھاتا ہے۔ **Settings → Plugins** میں فعال کریں۔",
+    ]
+    var out: [String: String] = [:]
+    for (lang, body) in bodies {
+        let title = lang == "pt-BR" ? "Disco" : "Disk"
+        out[lang] = "# \(title)\n\n\(body.trimmingCharacters(in: .whitespacesAndNewlines))\n\nLicense: **GPL-3.0** (same as ALWM)."
+    }
+    return out
+}
+
+func gpuReadmes() -> [String: String] {
+    let bodies: [String: String] = [
+        "en": """
+Stats-style **GPU** chip on the ALWM workspace bar.
+
+- Chip shows `GPU n%`
+- Click opens a dense popover (device/render/tiler rings, history, model, cores, memory)
+
+Enable under **Settings → Plugins**.
+""",
+        "pt-BR": """
+Chip de **GPU** estilo Stats na barra de workspaces do ALWM.
+
+- Chip mostra `GPU n%`
+- Clique abre um popover denso (anéis device/render/tiler, histórico, modelo, núcleos, memória)
+
+Ative em **Ajustes → Plugins**.
+""",
+        "es": "Chip **GPU** estilo Stats. Muestra `GPU n%` y un popover denso. Actívalo en **Ajustes → Plugins**.",
+        "fr": "Puce **GPU** style Stats. Affiche `GPU n%` et un popover dense. Activez dans **Réglages → Plugins**.",
+        "zh-Hans": "Stats 风格 **GPU** 芯片。显示 `GPU n%`，点击打开详细面板。在 **设置 → 插件** 中启用。",
+        "ru": "Чип **GPU** в стиле Stats. Показывает `GPU n%`. Включите в **Настройки → Плагины**.",
+        "hi": "Stats-style **GPU** chip। `GPU n%` दिखाता है। **Settings → Plugins** में चालू करें।",
+        "ar": "شريحة **GPU** بأسلوب Stats. تعرض `GPU n%`. فعّل من **الإعدادات → الإضافات**.",
+        "bn": "Stats-style **GPU** chip। `GPU n%` দেখায়। **Settings → Plugins**-এ চালু করুন।",
+        "ur": "Stats-style **GPU** chip۔ `GPU n%` دکھاتا ہے۔ **Settings → Plugins** میں فعال کریں۔",
+    ]
+    var out: [String: String] = [:]
+    for (lang, body) in bodies {
+        out[lang] = "# GPU\n\n\(body.trimmingCharacters(in: .whitespacesAndNewlines))\n\nLicense: **GPL-3.0** (same as ALWM)."
+    }
+    return out
+}
+
+func sensorsReadmes() -> [String: String] {
+    let bodies: [String: String] = [
+        "en": """
+Stats-style **Sensors** chip on the ALWM workspace bar.
+
+- Chip shows `50°` (primary / hottest die)
+- Click opens a dense popover with grouped temperatures (CPU, PMU, Battery, NAND, …) and °C/°F toggle
+
+Enable under **Settings → Plugins**.
+""",
+        "pt-BR": """
+Chip de **Sensores** estilo Stats na barra de workspaces do ALWM.
+
+- Chip mostra `50°` (principal / die mais quente)
+- Clique abre um popover denso com temperaturas agrupadas (CPU, PMU, bateria, NAND…) e toggle °C/°F
+
+Ative em **Ajustes → Plugins**.
+""",
+        "es": "Chip **Sensors** estilo Stats. Muestra `50°` y una lista agrupada. Actívalo en **Ajustes → Plugins**.",
+        "fr": "Puce **Sensors** style Stats. Affiche `50°` et une liste groupée. Activez dans **Réglages → Plugins**.",
+        "zh-Hans": "Stats 风格 **Sensors** 芯片。显示 `50°`，点击打开分组温度列表。在 **设置 → 插件** 中启用。",
+        "ru": "Чип **Sensors** в стиле Stats. Показывает `50°`. Включите в **Настройки → Плагины**.",
+        "hi": "Stats-style **Sensors** chip। `50°` दिखाता है। **Settings → Plugins** में चालू करें।",
+        "ar": "شريحة **Sensors** بأسلوب Stats. تعرض `50°`. فعّل من **الإعدادات → الإضافات**.",
+        "bn": "Stats-style **Sensors** chip। `50°` দেখায়। **Settings → Plugins**-এ চালু করুন।",
+        "ur": "Stats-style **Sensors** chip۔ `50°` دکھاتا ہے۔ **Settings → Plugins** میں فعال کریں۔",
+    ]
+    var out: [String: String] = [:]
+    for (lang, body) in bodies {
+        let title = lang == "pt-BR" ? "Sensores" : "Sensors"
+        out[lang] = "# \(title)\n\n\(body.trimmingCharacters(in: .whitespacesAndNewlines))\n\nLicense: **GPL-3.0** (same as ALWM)."
+    }
+    return out
+}
+
+func fansReadmes() -> [String: String] {
+    let bodies: [String: String] = [
+        "en": """
+Stats-style **Fans** chip on the ALWM workspace bar.
+
+- Chip shows `FAN n%` (or RPM)
+- Click opens per-fan RPM rows with min–max range
+- Auto-hides on fanless Macs
+
+Enable under **Settings → Plugins**.
+""",
+        "pt-BR": """
+Chip de **Ventiladores** estilo Stats na barra de workspaces do ALWM.
+
+- Chip mostra `FAN n%` (ou RPM)
+- Clique abre linhas por ventilador com faixa min–max
+- Oculta automaticamente em Macs sem cooler
+
+Ative em **Ajustes → Plugins**.
+""",
+        "es": "Chip **Fans** estilo Stats. Muestra RPM/% y se oculta sin ventiladores. Actívalo en **Ajustes → Plugins**.",
+        "fr": "Puce **Fans** style Stats. Affiche RPM/% et se masque sans ventilateur. Activez dans **Réglages → Plugins**.",
+        "zh-Hans": "Stats 风格 **Fans** 芯片。显示 RPM/%，无风扇时自动隐藏。在 **设置 → 插件** 中启用。",
+        "ru": "Чип **Fans** в стиле Stats. Показывает RPM/%, скрывается без вентиляторов. Включите в **Настройки → Плагины**.",
+        "hi": "Stats-style **Fans** chip। RPM/% दिखाता है; बिना फैन वाले Mac पर छिप जाता है। **Settings → Plugins** में चालू करें।",
+        "ar": "شريحة **Fans** بأسلوب Stats. تعرض RPM/% وتُخفى بدون مراوح. فعّل من **الإعدادات → الإضافات**.",
+        "bn": "Stats-style **Fans** chip। RPM/% দেখায়; ফ্যানবিহীন Mac-এ লুকানো থাকে। **Settings → Plugins**-এ চালু করুন।",
+        "ur": "Stats-style **Fans** chip۔ RPM/% دکھاتا ہے؛ بغیر فین Mac پر چھپ جاتا ہے۔ **Settings → Plugins** میں فعال کریں۔",
+    ]
+    var out: [String: String] = [:]
+    for (lang, body) in bodies {
+        let title = lang == "pt-BR" ? "Ventiladores" : "Fans"
+        out[lang] = "# \(title)\n\n\(body.trimmingCharacters(in: .whitespacesAndNewlines))\n\nLicense: **GPL-3.0** (same as ALWM)."
+    }
+    return out
+}
+
+func bluetoothReadmes() -> [String: String] {
+    let bodies: [String: String] = [
+        "en": """
+Stats-style **Bluetooth** chip on the ALWM workspace bar.
+
+- Chip shows `BT n%` (lowest connected battery) or connected count
+- Click opens device cards with battery rings
+- Auto-hides when Bluetooth is powered off
+
+Enable under **Settings → Plugins**.
+""",
+        "pt-BR": """
+Chip **Bluetooth** estilo Stats na barra de workspaces do ALWM.
+
+- Chip mostra `BT n%` (menor bateria conectada) ou contagem
+- Clique abre cards de dispositivos com anéis de bateria
+- Oculta quando o Bluetooth está desligado
+
+Ative em **Ajustes → Plugins**.
+""",
+        "es": "Chip **Bluetooth** estilo Stats con batería de accesorios. Actívalo en **Ajustes → Plugins**.",
+        "fr": "Puce **Bluetooth** style Stats avec batterie des accessoires. Activez dans **Réglages → Plugins**.",
+        "zh-Hans": "Stats 风格 **Bluetooth** 芯片。显示配件电量。在 **设置 → 插件** 中启用。",
+        "ru": "Чип **Bluetooth** в стиле Stats с батареями устройств. Включите в **Настройки → Плагины**.",
+        "hi": "Stats-style **Bluetooth** chip। **Settings → Plugins** में चालू करें।",
+        "ar": "شريحة **Bluetooth** بأسلوب Stats. فعّل من **الإعدادات → الإضافات**.",
+        "bn": "Stats-style **Bluetooth** chip। **Settings → Plugins**-এ চালু করুন।",
+        "ur": "Stats-style **Bluetooth** chip۔ **Settings → Plugins** میں فعال کریں۔",
+    ]
+    var out: [String: String] = [:]
+    for (lang, body) in bodies {
+        out[lang] = "# Bluetooth\n\n\(body.trimmingCharacters(in: .whitespacesAndNewlines))\n\nLicense: **GPL-3.0** (same as ALWM)."
+    }
+    return out
+}
+
+func nowPlayingReadmes() -> [String: String] {
+    let bodies: [String: String] = [
+        "en": """
+Stats-style **Now Playing** chip on the ALWM workspace bar.
+
+- Chip shows `▶ title — artist`
+- Click opens artwork, progress, and transport controls
+
+Enable under **Settings → Plugins**.
+""",
+        "pt-BR": """
+Chip **Em reprodução** estilo Stats na barra de workspaces do ALWM.
+
+- Chip mostra `▶ título — artista`
+- Clique abre arte, progresso e controles de transporte
+
+Ative em **Ajustes → Plugins**.
+""",
+        "es": "Chip **Now Playing** estilo Stats con carátula y controles. Actívalo en **Ajustes → Plugins**.",
+        "fr": "Puce **Now Playing** style Stats avec pochette et commandes. Activez dans **Réglages → Plugins**.",
+        "zh-Hans": "Stats 风格 **Now Playing** 芯片。显示曲目并提供播放控制。在 **设置 → 插件** 中启用。",
+        "ru": "Чип **Now Playing** в стиле Stats с обложкой и управлением. Включите в **Настройки → Плагины**.",
+        "hi": "Stats-style **Now Playing** chip। **Settings → Plugins** में चालू करें।",
+        "ar": "شريحة **Now Playing** بأسلوب Stats. فعّل من **الإعدادات → الإضافات**.",
+        "bn": "Stats-style **Now Playing** chip। **Settings → Plugins**-এ চালু করুন।",
+        "ur": "Stats-style **Now Playing** chip۔ **Settings → Plugins** میں فعال کریں۔",
+    ]
+    var out: [String: String] = [:]
+    for (lang, body) in bodies {
+        let title = lang == "pt-BR" ? "Em reprodução" : "Now Playing"
+        out[lang] = "# \(title)\n\n\(body.trimmingCharacters(in: .whitespacesAndNewlines))\n\nLicense: **GPL-3.0** (same as ALWM)."
+    }
+    return out
+}
+
+func uptimeReadmes() -> [String: String] {
+    let bodies: [String: String] = [
+        "en": """
+Stats-style **Uptime** chip on the ALWM workspace bar.
+
+- Chip shows compact uptime (`3d 4h` / `12h 30m`)
+- Click opens boot date/time and detailed uptime
+
+Enable under **Settings → Plugins**.
+""",
+        "pt-BR": """
+Chip **Tempo ligado** estilo Stats na barra de workspaces do ALWM.
+
+- Chip mostra uptime compacto (`3d 4h` / `12h 30m`)
+- Clique abre data/hora do boot e detalhe do tempo ligado
+
+Ative em **Ajustes → Plugins**.
+""",
+        "es": "Chip **Uptime** estilo Stats (`3d 4h`) con detalle de arranque. Actívalo en **Ajustes → Plugins**.",
+        "fr": "Puce **Uptime** style Stats (`3d 4h`) avec détail du démarrage. Activez dans **Réglages → Plugins**.",
+        "zh-Hans": "Stats 风格 **运行时间** 芯片（`3d 4h`），含开机时间详情。在 **设置 → 插件** 中启用。",
+        "ru": "Чип **Uptime** в стиле Stats (`3d 4h`) с деталями загрузки. Включите в **Настройки → Плагины**.",
+        "hi": "Stats-style **Uptime** chip (`3d 4h`)। **Settings → Plugins** में चालू करें।",
+        "ar": "شريحة **Uptime** بأسلوب Stats (`3d 4h`). فعّل من **الإعدادات → الإضافات**.",
+        "bn": "Stats-style **Uptime** chip (`3d 4h`)। **Settings → Plugins**-এ চালু করুন।",
+        "ur": "Stats-style **Uptime** chip (`3d 4h`)۔ **Settings → Plugins** میں فعال کریں۔",
+    ]
+    var out: [String: String] = [:]
+    for (lang, body) in bodies {
+        let title: String
+        switch lang {
+        case "pt-BR": title = "Tempo ligado"
+        case "zh-Hans": title = "运行时间"
+        default: title = "Uptime"
+        }
+        out[lang] = "# \(title)\n\n\(body.trimmingCharacters(in: .whitespacesAndNewlines))\n\nLicense: **GPL-3.0** (same as ALWM)."
+    }
+    return out
+}
+

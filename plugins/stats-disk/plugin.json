@@ -1,0 +1,12 @@
+{
+  "id": "dev.alwm.stats-disk",
+  "name": "Disk",
+  "author": "ALWM",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "license": "GPL-3.0",
+  "summary": "SSD usage chip and Stats-like popover with volumes on the workspace bar.",
+  "preview": "previews/card.png",
+  "screenshots": ["previews/01.png"],
+  "defaultPlacement": "afterWorkspaces"
+}

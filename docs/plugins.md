@@ -2,6 +2,8 @@
 
 ALWM ships plugins inside the app (`Contents/PlugIns/*.alwmplugin`). There is no separate store yet — new plugins land through pull requests. Bundled plugins and the plugin API are **GPL-3.0**, same as the host app.
 
+**Stats-style system chips roadmap:** [plugins-stats-roadmap.md](plugins-stats-roadmap.md) (CPU, RAM, network, battery, …).
+
 ## Add one
 
 1. Fork [ALWM](https://github.com/lokize/ALWM---Tiling-window-manager-for-macOS) and copy `plugins/sample-clock/` (or use `steam-price-watcher` as a fuller example).

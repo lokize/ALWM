@@ -194,18 +194,7 @@ public final class QuakeTerminalController {
     }
 
     public func hiddenFrame(settings: QuakeSettings, monitor: MonitorInfo) -> Rect {
-        let visible = visibleFrame(settings: settings, monitor: monitor)
-        let mon = monitor.frame
-        switch settings.edge {
-        case .top:
-            return Rect(x: visible.x, y: mon.y - visible.height - 40, width: visible.width, height: visible.height)
-        case .bottom:
-            return Rect(x: visible.x, y: mon.maxY + 40, width: visible.width, height: visible.height)
-        case .left:
-            return Rect(x: mon.x - visible.width - 40, y: visible.y, width: visible.width, height: visible.height)
-        case .right:
-            return Rect(x: mon.maxX + 40, y: visible.y, width: visible.width, height: visible.height)
-        }
+        QuakePanelGeometry.hiddenFrame(settings: settings, monitor: monitor)
     }
 
     private func setVisible(_ visible: Bool) {

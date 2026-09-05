@@ -225,7 +225,13 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         PluginManager.shared.onBarRefreshNeeded = { [weak self] in
             self?.refreshChrome()
         }
-        PluginManager.shared.reloadFromSettings()
+        PluginManager.shared.onPluginAutoDisabled = { [weak self] id in
+            self?.notifyPluginAutoDisabled(id)
+        }
+        // Defer so the first chrome paint isn't blocked by plugin dlopen/SMC/HID.
+        DispatchQueue.main.async {
+            PluginManager.shared.reloadFromSettings()
+        }
 
         AppUpdateService.shared.onPrepareQuitForUpdate = { [weak self] in
             self?.persistRuntimeStateBeforeUpdate()
@@ -269,6 +275,23 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         bar.onFocusFloatingOnMonitor = { [weak self] monitorID in
             Task { @MainActor in
                 self?.focusFloatingWindow(on: monitorID)
+            }
+        }
+        bar.onFocusedStatusClicked = { [weak self] anchor in
+            Task { @MainActor in
+                guard let self else { return }
+                let s = self.configStore.config.settings
+                self.statusPopover.update(
+                    focusFollowsMouse: s.focusFollowsMouse,
+                    borders: s.borders.enabled,
+                    workspaceBar: s.workspaceBar.enabled,
+                    preventSleep: s.preventDisplaySleep,
+                    developerMode: s.developerMode,
+                    version: AlwmVersion.installed,
+                    isRecording: self.capture.isRecording,
+                    recentNotes: self.notepad.store.recentPreviews()
+                )
+                self.statusPopover.toggle(relativeTo: anchor)
             }
         }
         // Live window list for multi-window picker — all open windows of the app,
@@ -626,7 +649,10 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         refreshStatusPopover()
         guard let item = statusItem else { return }
         let settings = configStore.config.settings
-        let label = settings.showMenuBarStatusLabel ? statusBarWindowLabel() : ""
+        // Workspace bar already shows chips (+ optional focused status). Don't duplicate
+        // the same workspace/window label in the system menu bar.
+        let showLabel = settings.showMenuBarStatusLabel && !settings.workspaceBar.enabled
+        let label = showLabel ? statusBarWindowLabel() : ""
         // Skip marquee work when nothing visible changed (AX churn after capture was pegging CPU).
         if label == lastStatusLabel,
            abs(item.length - lastStatusLength) < 0.5 {
@@ -793,6 +819,22 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         refreshChrome()
         refreshStatusItem()
         NSLog("ALWM: runtime state reset")
+    }
+
+    private func notifyPluginAutoDisabled(_ id: String) {
+        let name = PluginManager.shared.catalog.first(where: { $0.id == id })?.manifest.name ?? id
+        let alert = NSAlert()
+        alert.messageText = L10n.t("plugins.load_failed.title")
+        alert.informativeText = String(format: L10n.t("plugins.load_failed.body"), name)
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: L10n.t("plugins.load_failed.open_settings"))
+        DispatchQueue.main.async {
+            let response = alert.runModal()
+            if response == .alertSecondButtonReturn {
+                self.handleAction("settings.open.plugins")
+            }
+        }
     }
 
     private func restorePersistedWorkspaces() {
@@ -2736,6 +2778,46 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         }
     }
 
+    /// If Quake is dismissed but still bleeding onto a display (edge clamp strip), force
+    /// park+minimize again. Workspace switches used to leave a thin HUD across the top.
+    private func ensureQuakeFullyHidden() {
+        guard !quake.isVisible else { return }
+        let monitorFrames = monitors.monitors.map(\.frame)
+        guard !monitorFrames.isEmpty else { return }
+        let settings = configStore.config.settings.quake
+        let mon = monitors.monitors.first(where: { $0.id == primaryMonitorID })
+            ?? primaryMonitor()
+            ?? monitors.monitors.first
+        guard let mon else { return }
+        let hidden = quake.hiddenFrame(settings: settings, monitor: mon)
+
+        func tuck(_ id: WindowID) {
+            let live = ax.currentFrame(of: id) ?? windowsByID[id]?.frame
+            let leaking = live.map {
+                OffscreenParking.intersectsAnyMonitor($0, monitors: monitorFrames)
+                    && !OffscreenParking.isUsableOnscreenFrame($0, monitors: monitorFrames)
+            } ?? false
+            let onScreen = live.map { OffscreenParking.isUsableOnscreenFrame($0, monitors: monitorFrames) } ?? false
+            let deminiaturized = !ax.isMinimized(id)
+            guard deminiaturized || leaking || onScreen else {
+                lastFrames[id] = hidden
+                return
+            }
+            ax.parkAndHide(frame: hidden, id: id, monitors: monitorFrames)
+            lastFrames[id] = hidden
+            quake.hideBlur()
+            NSLog("ALWM Quake: tucked dismissed panel %@", id.token)
+        }
+
+        if let qid = quake.windowID {
+            tuck(qid)
+        }
+        for (id, win) in windowsByID where isQuakeSessionWindow(win) || isQuakeOwned(id) {
+            if id == quake.windowID { continue }
+            tuck(id)
+        }
+    }
+
     private func handleQuakeWindowClosed() {
         quakeCloseConfirmWorkItem?.cancel()
         quakeCloseConfirmWorkItem = nil
@@ -4004,6 +4086,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         visibilityForceReveal = true
         lastVisibilitySignature = nil
         applyWorkspaceVisibility(animated: false)
+        ensureQuakeFullyHidden()
 
         if let mon = monitors.monitors.first(where: { $0.id == targetMonitorID }) {
             // Force column frames now — visibility alone can skip via isSettled / stale signature.
@@ -4038,6 +4121,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
             guard let self, self.workspaceSwitchGeneration == switchGeneration else { return }
             let activeLater = Set(self.workspaces.activeWorkspaceByMonitor.values)
             self.settleParkedWindows(activeIDs: activeLater, monitors: monitorsSnapshot)
+            self.ensureQuakeFullyHidden()
             if activeLater.contains(destinationID),
                let mon = self.monitors.monitors.first(where: {
                    self.workspaces.activeWorkspaceByMonitor[$0.id] == destinationID
@@ -4173,10 +4257,11 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
 
     /// Soft post-switch pass: hide stragglers without touching already-correct visible windows.
     private func settleParkedWindows(activeIDs: Set<String>, monitors: [Rect]) {
+        ensureQuakeFullyHidden()
         guard !isApplyingVisibility else { return }
         ax.withMutation {
             for (id, win) in windowsByID where !win.isIgnored {
-                if id == quake.windowID { continue }
+                if id == quake.windowID || isQuakeOwned(id) { continue }
                 let home = authoritativeHome(for: id)
                 let onActive = home.map { isHomeActiveOnAnyMonitor($0) } ?? false
                 if onActive, let home {
@@ -7203,7 +7288,9 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
                         ax.setMinimized(false, id: id)
                         ax.applyFrameOnly(frame: frame, to: id)
                     } else {
-                        ax.parkOffscreen(frame: frame, id: id, monitors: allMonitorFrames)
+                        // Minimize + below-arrangement park — never edge-slide (macOS clamps
+                        // a thin strip onto the display during workspace switches).
+                        ax.parkAndHide(frame: frame, id: id, monitors: allMonitorFrames)
                     }
                     lastFrames[id] = frame
                     continue
@@ -8222,7 +8309,8 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
                 settings: barSettings,
                 mainHeight: mainHeight,
                 avoidRect: statusItemScreenFrame(),
-                pluginItems: PluginManager.shared.barItemsSnapshot()
+                pluginItems: PluginManager.shared.barItemsSnapshot(),
+                focusedStatusLabel: barSettings.showFocusedStatus ? statusBarWindowLabel() : ""
             )
         } else {
             bar.hideAll()

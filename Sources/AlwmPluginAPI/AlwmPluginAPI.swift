@@ -197,3 +197,72 @@ public enum PluginBarChipLayout {
         return String(t[..<idx]) + "…"
     }
 }
+
+// MARK: - Click-outside dismiss for plugin panels
+
+/// Shared mouse monitor so workspace-bar plugin popovers close when clicking outside —
+/// including nonactivating / `hidesOnDeactivate = false` panels that AppKit won't auto-dismiss.
+@MainActor
+public enum PluginPanelOutsideClick {
+    private static var globalMonitor: Any?
+    private static var localMonitor: Any?
+    private static weak var watched: NSWindow?
+    private static var generation = 0
+
+    /// Start watching `window`. Closes any previously watched plugin panel.
+    /// Install is deferred one turn so the opening click does not dismiss immediately.
+    public static func watch(_ window: NSWindow) {
+        if let previous = watched, previous !== window, previous.isVisible {
+            previous.orderOut(nil)
+        }
+        stop()
+        watched = window
+        generation += 1
+        let gen = generation
+        DispatchQueue.main.async {
+            guard gen == generation, watched === window, window.isVisible else { return }
+            install(generation: gen)
+        }
+    }
+
+    /// Stop monitoring. If `window` is passed, only stops when it is the active target.
+    public static func stop(for window: NSWindow? = nil) {
+        if let window, watched !== window { return }
+        generation += 1
+        if let globalMonitor {
+            NSEvent.removeMonitor(globalMonitor)
+        }
+        if let localMonitor {
+            NSEvent.removeMonitor(localMonitor)
+        }
+        globalMonitor = nil
+        localMonitor = nil
+        watched = nil
+    }
+
+    private static func install(generation gen: Int) {
+        let dismiss: () -> Void = {
+            guard gen == generation, let window = watched, window.isVisible else {
+                stop()
+                return
+            }
+            let loc = NSEvent.mouseLocation
+            // Slight inflate so shadow / edge clicks still count as inside.
+            if window.frame.insetBy(dx: -4, dy: -4).contains(loc) { return }
+            window.orderOut(nil)
+            stop()
+        }
+
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { _ in
+            Task { @MainActor in dismiss() }
+        }
+        localMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { event in
+            Task { @MainActor in dismiss() }
+            return event
+        }
+    }
+}

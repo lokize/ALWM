@@ -32,9 +32,13 @@ public final class PluginManager {
     public private(set) var catalog: [DiscoveredPlugin] = []
 
     public var onBarRefreshNeeded: (() -> Void)?
+    /// Fired on the main queue after a plugin was auto-disabled for crashing mid-load.
+    public var onPluginAutoDisabled: ((String) -> Void)?
 
     private var loaded: [String: LoadedPlugin] = [:]
     private var refreshWorkItem: DispatchWorkItem?
+    private var pendingLoadWorkItem: DispatchWorkItem?
+    private var pendingAutoDisabledIDs: [String] = []
     nonisolated(unsafe) private var barScale: CGFloat = 1
     nonisolated(unsafe) private var localeCString: UnsafeMutablePointer<CChar>?
     private var hostVTable = AlwmHostContextVTable()
@@ -76,9 +80,21 @@ public final class PluginManager {
 
     public func reloadFromSettings() {
         refreshCatalog()
+
+        // Last launch died while loading a plugin — quarantine it before touching more bundles.
+        if let crashedID = PluginLoadGuard.consumeFailedLoad() {
+            let def = catalog.first(where: { $0.id == crashedID }).flatMap {
+                AlwmBarPlacement(rawString: $0.manifest.defaultPlacement)
+            } ?? .afterWorkspaces
+            settings.setEnabled(false, for: crashedID, defaultPlacement: def)
+            pendingAutoDisabledIDs.append(crashedID)
+            NSLog("ALWM plugins: auto-disabled \(crashedID) after previous load crash")
+        }
+
         let allowedRoot = Bundle.main.builtInPlugInsURL?.standardizedFileURL
 
         var wanted: Set<String> = []
+        var toLoad: [DiscoveredPlugin] = []
         for plugin in catalog {
             let defPlacement = AlwmBarPlacement(rawString: plugin.manifest.defaultPlacement) ?? .afterWorkspaces
             let state = settings.state(for: plugin.id, defaultPlacement: defPlacement)
@@ -95,22 +111,7 @@ public final class PluginManager {
             }
             wanted.insert(plugin.id)
             if loaded[plugin.id] == nil {
-                if let instance = loadBundle(plugin) {
-                    withUnsafePointer(to: &hostVTable) { ptr in
-                        instance.table.pointee.load?(instance.table.pointee.userData, ptr)
-                    }
-                    loaded[plugin.id] = LoadedPlugin(
-                        id: plugin.id,
-                        handle: instance.handle,
-                        table: instance.table,
-                        placement: state.placement,
-                        display: state.display,
-                        bundleURL: plugin.bundleURL
-                    )
-                } else {
-                    settings.setEnabled(false, for: plugin.id, defaultPlacement: state.placement)
-                    NSLog("ALWM plugins: failed to load \(plugin.id) — disabled")
-                }
+                toLoad.append(plugin)
             } else {
                 loaded[plugin.id]?.placement = state.placement
                 loaded[plugin.id]?.display = state.display
@@ -120,7 +121,67 @@ public final class PluginManager {
         for id in loaded.keys.filter({ !wanted.contains($0) }) {
             unload(id: id)
         }
-        requestBarRefresh()
+
+        // Don't block app start: load remaining plugins one-by-one on the next turns.
+        pendingLoadWorkItem?.cancel()
+        if toLoad.isEmpty {
+            requestBarRefresh()
+            flushAutoDisabledNotices()
+            return
+        }
+        scheduleSequentialLoads(toLoad, index: 0)
+    }
+
+    private func scheduleSequentialLoads(_ plugins: [DiscoveredPlugin], index: Int) {
+        guard index < plugins.count else {
+            requestBarRefresh()
+            flushAutoDisabledNotices()
+            return
+        }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.loadOne(plugins[index])
+            self.scheduleSequentialLoads(plugins, index: index + 1)
+        }
+        pendingLoadWorkItem = work
+        // Small stagger keeps the first paint responsive when many stats plugins are on.
+        DispatchQueue.main.asyncAfter(deadline: .now() + (index == 0 ? 0.05 : 0.02), execute: work)
+    }
+
+    private func loadOne(_ plugin: DiscoveredPlugin) {
+        let defPlacement = AlwmBarPlacement(rawString: plugin.manifest.defaultPlacement) ?? .afterWorkspaces
+        let state = settings.state(for: plugin.id, defaultPlacement: defPlacement)
+        guard state.enabled, loaded[plugin.id] == nil else { return }
+
+        PluginLoadGuard.begin(plugin.id)
+        defer { PluginLoadGuard.end() }
+
+        if let instance = loadBundle(plugin) {
+            withUnsafePointer(to: &hostVTable) { ptr in
+                instance.table.pointee.load?(instance.table.pointee.userData, ptr)
+            }
+            loaded[plugin.id] = LoadedPlugin(
+                id: plugin.id,
+                handle: instance.handle,
+                table: instance.table,
+                placement: state.placement,
+                display: state.display,
+                bundleURL: plugin.bundleURL
+            )
+            requestBarRefresh()
+        } else {
+            settings.setEnabled(false, for: plugin.id, defaultPlacement: state.placement)
+            pendingAutoDisabledIDs.append(plugin.id)
+            NSLog("ALWM plugins: failed to load \(plugin.id) — disabled")
+        }
+    }
+
+    private func flushAutoDisabledNotices() {
+        let ids = pendingAutoDisabledIDs
+        pendingAutoDisabledIDs.removeAll()
+        for id in ids {
+            onPluginAutoDisabled?(id)
+        }
     }
 
     public func setEnabled(_ enabled: Bool, id: String) {

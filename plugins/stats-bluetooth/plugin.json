@@ -1,0 +1,12 @@
+{
+  "id": "dev.alwm.stats-bluetooth",
+  "name": "Bluetooth",
+  "author": "ALWM",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "license": "GPL-3.0",
+  "summary": "Bluetooth chip with device battery cards on the workspace bar.",
+  "preview": "previews/card.png",
+  "screenshots": ["previews/01.png"],
+  "defaultPlacement": "afterWorkspaces"
+}

@@ -57,7 +57,11 @@ public enum OffscreenParking {
         return monitors.contains { mon in
             let onRight = abs(frame.maxX - mon.maxX) < 3 && frame.width < mon.width * 0.15
             let onLeft = abs(frame.x - mon.x) < 3 && frame.width < mon.width * 0.15
-            let onTop = abs(frame.y - mon.y) < 3 && frame.height < mon.height * 0.15
+            // Allow slack for menu-bar / notch inset — clamped Quake strips often sit
+            // ~22–40pt below mon.y rather than flush with the top edge.
+            let onTop = frame.y >= mon.y - 2
+                && frame.y <= mon.y + 48
+                && frame.height < mon.height * 0.2
             let onBottom = abs(frame.maxY - mon.maxY) < 3 && frame.height < mon.height * 0.15
             return onRight || onLeft || onTop || onBottom
         }

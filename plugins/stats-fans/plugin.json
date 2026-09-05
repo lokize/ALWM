@@ -1,0 +1,12 @@
+{
+  "id": "dev.alwm.stats-fans",
+  "name": "Fans",
+  "author": "ALWM",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "license": "GPL-3.0",
+  "summary": "Fan RPM chip and Stats-like popover (hidden on fanless Macs).",
+  "preview": "previews/card.png",
+  "screenshots": ["previews/01.png"],
+  "defaultPlacement": "afterWorkspaces"
+}

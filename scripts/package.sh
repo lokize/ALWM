@@ -127,6 +127,27 @@ API_DYLIB="$(find "$BIN_ROOT" -path "*/$CONFIG/libAlwmPluginAPI.dylib" -type f 2
 if [[ -z "${API_DYLIB:-}" || ! -f "$API_DYLIB" ]]; then
   API_DYLIB="$BIN_ROOT/$CONFIG/libAlwmPluginAPI.dylib"
 fi
+
+stage_shared_dylib() {
+  local name="$1"   # e.g. libAlwmStatsKit.dylib
+  local src
+  src="$(find "$BIN_ROOT" -path "*/$CONFIG/${name}" -type f 2>/dev/null | head -1)"
+  if [[ -z "${src:-}" || ! -f "$src" ]]; then
+    src="$BIN_ROOT/$CONFIG/${name}"
+  fi
+  if [[ ! -f "$src" ]]; then
+    echo "AVISO: shared dylib ausente: ${name}" >&2
+    return 0
+  fi
+  cp -f "$src" "$FRAMEWORKS/${name}"
+  install_name_tool -id "@rpath/${name}" "$FRAMEWORKS/${name}" 2>/dev/null || true
+  # Host binary may link these too.
+  otool -L "$MACOS/ALWM" | awk -v n="$name" 'index($1, n) {print $1}' | while read -r old; do
+    install_name_tool -change "$old" "@rpath/${name}" "$MACOS/ALWM" 2>/dev/null || true
+  done
+  echo "  Framework: ${name}"
+}
+
 if [[ -f "$API_DYLIB" ]]; then
   cp -f "$API_DYLIB" "$FRAMEWORKS/libAlwmPluginAPI.dylib"
   install_name_tool -id "@rpath/libAlwmPluginAPI.dylib" "$FRAMEWORKS/libAlwmPluginAPI.dylib" 2>/dev/null || true
@@ -138,7 +159,8 @@ if [[ -f "$API_DYLIB" ]]; then
     install_name_tool -change "$old" "@rpath/libAlwmPluginAPI.dylib" "$MACOS/ALWM" 2>/dev/null || true
   done
 fi
-
+stage_shared_dylib "libAlwmL10n.dylib"
+stage_shared_dylib "libAlwmStatsKit.dylib"
 package_plugin() {
   local src_dir="$1"
   local product_dylib_name="$2"
@@ -203,9 +225,10 @@ PLIST
 
   install_name_tool -id "@rpath/${bundle_name}" "$macos_dir/${bundle_name}" 2>/dev/null || true
   install_name_tool -add_rpath "@loader_path/../../../Frameworks" "$macos_dir/${bundle_name}" 2>/dev/null || true
-  otool -L "$macos_dir/${bundle_name}" | awk '/libAlwmPluginAPI\.dylib/ {print $1}' | while read -r old; do
-    [[ "$old" == *"libAlwmPluginAPI.dylib"* ]] || continue
-    install_name_tool -change "$old" "@rpath/libAlwmPluginAPI.dylib" "$macos_dir/${bundle_name}" 2>/dev/null || true
+  for shared in libAlwmPluginAPI.dylib libAlwmL10n.dylib libAlwmStatsKit.dylib; do
+    otool -L "$macos_dir/${bundle_name}" | awk -v n="$shared" 'index($1, n) {print $1}' | while read -r old; do
+      install_name_tool -change "$old" "@rpath/${shared}" "$macos_dir/${bundle_name}" 2>/dev/null || true
+    done
   done
   echo "  PlugIn: ${bundle_name}.alwmplugin"
 }
@@ -231,6 +254,83 @@ if [[ -d "$ROOT/plugins/github" ]]; then
     "libGitHubPlugin.dylib" \
     "GitHub" \
     "dev.alwm.github"
+fi
+if [[ -d "$ROOT/plugins/stats-cpu" ]]; then
+  package_plugin \
+    "$ROOT/plugins/stats-cpu" \
+    "libStatsCPUPlugin.dylib" \
+    "StatsCPU" \
+    "dev.alwm.stats-cpu"
+fi
+if [[ -d "$ROOT/plugins/stats-memory" ]]; then
+  package_plugin \
+    "$ROOT/plugins/stats-memory" \
+    "libStatsMemoryPlugin.dylib" \
+    "StatsMemory" \
+    "dev.alwm.stats-memory"
+fi
+if [[ -d "$ROOT/plugins/stats-network" ]]; then
+  package_plugin \
+    "$ROOT/plugins/stats-network" \
+    "libStatsNetworkPlugin.dylib" \
+    "StatsNetwork" \
+    "dev.alwm.stats-network"
+fi
+if [[ -d "$ROOT/plugins/stats-battery" ]]; then
+  package_plugin \
+    "$ROOT/plugins/stats-battery" \
+    "libStatsBatteryPlugin.dylib" \
+    "StatsBattery" \
+    "dev.alwm.stats-battery"
+fi
+if [[ -d "$ROOT/plugins/stats-disk" ]]; then
+  package_plugin \
+    "$ROOT/plugins/stats-disk" \
+    "libStatsDiskPlugin.dylib" \
+    "StatsDisk" \
+    "dev.alwm.stats-disk"
+fi
+if [[ -d "$ROOT/plugins/stats-gpu" ]]; then
+  package_plugin \
+    "$ROOT/plugins/stats-gpu" \
+    "libStatsGPUPlugin.dylib" \
+    "StatsGPU" \
+    "dev.alwm.stats-gpu"
+fi
+if [[ -d "$ROOT/plugins/stats-sensors" ]]; then
+  package_plugin \
+    "$ROOT/plugins/stats-sensors" \
+    "libStatsSensorsPlugin.dylib" \
+    "StatsSensors" \
+    "dev.alwm.stats-sensors"
+fi
+if [[ -d "$ROOT/plugins/stats-fans" ]]; then
+  package_plugin \
+    "$ROOT/plugins/stats-fans" \
+    "libStatsFansPlugin.dylib" \
+    "StatsFans" \
+    "dev.alwm.stats-fans"
+fi
+if [[ -d "$ROOT/plugins/stats-bluetooth" ]]; then
+  package_plugin \
+    "$ROOT/plugins/stats-bluetooth" \
+    "libStatsBluetoothPlugin.dylib" \
+    "StatsBluetooth" \
+    "dev.alwm.stats-bluetooth"
+fi
+if [[ -d "$ROOT/plugins/now-playing" ]]; then
+  package_plugin \
+    "$ROOT/plugins/now-playing" \
+    "libNowPlayingPlugin.dylib" \
+    "NowPlaying" \
+    "dev.alwm.now-playing"
+fi
+if [[ -d "$ROOT/plugins/stats-uptime" ]]; then
+  package_plugin \
+    "$ROOT/plugins/stats-uptime" \
+    "libStatsUptimePlugin.dylib" \
+    "StatsUptime" \
+    "dev.alwm.stats-uptime"
 fi
 
 sign_app() {

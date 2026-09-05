@@ -1,0 +1,5 @@
+# Now Playing
+
+شريحة **Now Playing** بأسلوب Stats. فعّل من **الإعدادات → الإضافات**.
+
+License: **GPL-3.0** (same as ALWM).

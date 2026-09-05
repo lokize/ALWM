@@ -8,6 +8,11 @@ public final class StatusPopoverController {
     private let model = StatusMenuModel()
     private var hostingController: NSHostingController<StatusMenuView>?
     private var updateResizeCancellable: AnyCancellable?
+    /// Survives workspace-bar re-renders so toggles don't dismiss the menu when the chip is rebuilt.
+    private let anchorWindow: NSWindow
+    private let anchorView: NSView
+    private var pendingShowWorkItem: DispatchWorkItem?
+    private var popoverCloseBridge: PopoverCloseBridge?
 
     public var onToggleFocusFollowsMouse: (() -> Void)?
     public var onToggleBorders: (() -> Void)?
@@ -29,9 +34,35 @@ public final class StatusPopoverController {
     public var onColorPalette: (() -> Void)?
     public var onQuit: (() -> Void)?
 
+    public var isShown: Bool { popover.isShown }
+
     public init() {
-        popover.behavior = .transient
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 1, height: 1))
+        let win = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: true
+        )
+        win.isOpaque = false
+        win.backgroundColor = .clear
+        win.hasShadow = false
+        win.level = .statusBar
+        win.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+        win.ignoresMouseEvents = true
+        win.contentView = view
+        anchorView = view
+        anchorWindow = win
+
+        // Semitransient: stays open while flipping toggles / chrome refresh in-app;
+        // still closes on outside click. Transient + bar chip rebuild was auto-dismissing.
+        popover.behavior = .semitransient
         popover.animates = true
+        let bridge = PopoverCloseBridge { [weak self] in
+            self?.anchorWindow.orderOut(nil)
+        }
+        popoverCloseBridge = bridge
+        popover.delegate = bridge
         installContent()
         updateResizeCancellable = AppUpdateService.shared.$phase
             .receive(on: RunLoop.main)
@@ -73,18 +104,57 @@ public final class StatusPopoverController {
     }
 
     public func toggle(relativeTo button: NSStatusBarButton) {
+        toggle(relativeTo: button as NSView)
+    }
+
+    /// Anchor the menu under any view (workspace-bar status chip or menu-bar icon).
+    public func toggle(relativeTo view: NSView) {
+        pendingShowWorkItem?.cancel()
+        pendingShowWorkItem = nil
         if popover.isShown {
-            popover.performClose(nil)
+            close()
             return
         }
         AppUpdateService.shared.checkForUpdates()
         resizeToFit()
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        NSApp.activate(ignoringOtherApps: true)
+        placeAnchor(under: view)
+        // Defer past the opening mouse-up — otherwise transient/semitransient treats it as
+        // an outside click and closes immediately (common with custom status-bar overlays).
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.popover.show(
+                relativeTo: self.anchorView.bounds,
+                of: self.anchorView,
+                preferredEdge: .minY
+            )
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        pendingShowWorkItem = work
+        DispatchQueue.main.async(execute: work)
     }
 
     public func close() {
+        pendingShowWorkItem?.cancel()
+        pendingShowWorkItem = nil
         popover.performClose(nil)
+        anchorWindow.orderOut(nil)
+    }
+
+    private func placeAnchor(under view: NSView) {
+        guard let window = view.window else {
+            // Fallback: 1×1 under the cursor.
+            let p = NSEvent.mouseLocation
+            anchorWindow.setFrame(NSRect(x: p.x, y: p.y - 1, width: 1, height: 1), display: true)
+            anchorWindow.orderFrontRegardless()
+            return
+        }
+        let local = view.convert(view.bounds, to: nil)
+        var screen = window.convertToScreen(local)
+        // Prefer a non-empty rect so AppKit has a real edge to attach under.
+        if screen.width < 1 { screen.size.width = 1 }
+        if screen.height < 1 { screen.size.height = 1 }
+        anchorWindow.setFrame(screen, display: true)
+        anchorWindow.orderFrontRegardless()
     }
 
     private func installContent() {
@@ -128,6 +198,19 @@ public final class StatusPopoverController {
             width: max(340, ceil(ideal.width)),
             height: max(1, min(ceil(ideal.height), maxH))
         )
+    }
+}
+
+/// Keeps MainActor isolation off the NSPopoverDelegate path.
+private final class PopoverCloseBridge: NSObject, NSPopoverDelegate {
+    private let onClose: () -> Void
+
+    init(onClose: @escaping () -> Void) {
+        self.onClose = onClose
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        onClose()
     }
 }
 
