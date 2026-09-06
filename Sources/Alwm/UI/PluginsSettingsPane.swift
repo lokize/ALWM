@@ -42,7 +42,6 @@ struct PluginsSettingsPane: View {
                     } else {
                         pluginSearchBar
                         categoryFilterBar
-                        pluginOrderBlock
 
                         if filteredPlugins.isEmpty {
                             Text(L10n.t("plugins.search.empty"))
@@ -70,6 +69,9 @@ struct PluginsSettingsPane: View {
                                 }
                             }
                         }
+
+                        // Order list after the catalog grid so search/filters stay above cards.
+                        pluginOrderBlock
                     }
 
                     Text(L10n.t("plugins.footer"))

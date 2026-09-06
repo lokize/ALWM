@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "0.6.5",
+      "items": [
+        "Maintenance and fixes"
+      ]
+    },
+    {
       "version": "0.6.4",
       "items": [
         "Maintenance and fixes"
@@ -260,13 +266,6 @@
         "Initial public release",
         "Niri-style scrolling columns and multi-monitor workspaces",
         "Quake terminal, notepad, gestures, and plugin host"
-      ]
-    },
-    {
-      "version": "0.2.5",
-      "items": [
-        "Option-Shift -/= height resize keeps the column fully filled",
-        "Height resize no longer flips stacked tiles into tabbing / empty gaps"
       ]
     }
   ]
