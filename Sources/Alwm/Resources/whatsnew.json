@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "0.6.6",
+      "items": [
+        "Maintenance and fixes"
+      ]
+    },
+    {
       "version": "0.6.5",
       "items": [
         "Maintenance and fixes"
@@ -258,14 +264,6 @@
         "More reliable keyboard input in Quake Terminal and Notepad",
         "Status menu toggles update live",
         "Steam Price Watcher localized like the rest of the app"
-      ]
-    },
-    {
-      "version": "0.2.6",
-      "items": [
-        "Initial public release",
-        "Niri-style scrolling columns and multi-monitor workspaces",
-        "Quake terminal, notepad, gestures, and plugin host"
       ]
     }
   ]

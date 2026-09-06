@@ -111,23 +111,29 @@ struct NowPlayingPanelView: View {
                         progressSection
                     }
 
-                    if snap.appName != "Safari" {
-                        HStack(spacing: 28) {
-                            transportButton(systemName: "backward.fill") {
-                                store.send(.previousTrack)
-                            }
-                            transportButton(
-                                systemName: snap.isPlaying ? "pause.fill" : "play.fill",
-                                large: true
-                            ) {
-                                store.send(.togglePlayPause)
-                            }
-                            transportButton(systemName: "forward.fill") {
-                                store.send(.nextTrack)
-                            }
+                    HStack(spacing: 28) {
+                        transportButton(systemName: "backward.fill") {
+                            store.send(.previousTrack)
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 4)
+                        transportButton(
+                            systemName: snap.isPlaying ? "pause.fill" : "play.fill",
+                            large: true
+                        ) {
+                            store.send(.togglePlayPause)
+                        }
+                        transportButton(systemName: "forward.fill") {
+                            store.send(.nextTrack)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 4)
+
+                    if snap.appName == "Safari", snap.duration == nil {
+                        Text(t("plugin.nowplaying.safari_js_hint"))
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 2)
                     }
                 }
             }
@@ -160,7 +166,7 @@ struct NowPlayingPanelView: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Color.primary.opacity(0.06))
                     .frame(width: side, height: side)
-                Image(systemName: "music.note")
+                Image(systemName: snap.artist == "YouTube" || snap.appName == "Safari" ? "play.rectangle.fill" : "music.note")
                     .font(.system(size: 40))
                     .foregroundStyle(.secondary)
             }
@@ -169,27 +175,28 @@ struct NowPlayingPanelView: View {
 
     @ViewBuilder
     private var progressSection: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 2) {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule()
                         .fill(Color.secondary.opacity(0.2))
                     Capsule()
                         .fill(StatsColors.accent)
-                        .frame(width: max(4, geo.size.width * snap.progress))
+                        .frame(width: max(3, geo.size.width * snap.progress))
                 }
             }
-            .frame(height: 4)
+            .frame(height: 3)
             HStack {
                 Text(formatTime(snap.elapsed))
-                    .font(.system(size: 10).monospacedDigit())
+                    .font(.system(size: 9).monospacedDigit())
                     .foregroundStyle(.secondary)
                 Spacer()
                 Text(formatTime(snap.duration))
-                    .font(.system(size: 10).monospacedDigit())
+                    .font(.system(size: 9).monospacedDigit())
                     .foregroundStyle(.secondary)
             }
         }
+        .padding(.top, 2)
     }
 
     private func transportButton(systemName: String, large: Bool = false, action: @escaping () -> Void) -> some View {

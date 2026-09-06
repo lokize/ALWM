@@ -68,6 +68,11 @@ public final class NowPlayingSampler: @unchecked Sendable {
     private let workQueue = DispatchQueue(label: "dev.alwm.nowplaying.script", qos: .utility)
     private var refreshInFlight = false
     private var pendingCompletion: (@Sendable (Snapshot) -> Void)?
+    /// `nil` = unknown; false after Safari refuses "Allow JavaScript from Apple Events".
+    private var safariJavaScriptOK: Bool?
+    private var safariJavaScriptCheckedAt = Date.distantPast
+    /// Last Safari media tab URL — JS must target this tab, not whatever is frontmost.
+    private var lastSafariMediaURL: String?
 
     public init() {}
 
@@ -99,15 +104,22 @@ public final class NowPlayingSampler: @unchecked Sendable {
         return cached
     }
 
+    /// True when Safari transport works fully (JS enabled). Keystroke fallback may still work.
+    public func safariControlsNeedPermission() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return lastSource == .safari && safariJavaScriptOK == false
+    }
+
     @discardableResult
     public func send(_ command: Command) -> Bool {
         lock.lock()
         let source = lastSource
         lock.unlock()
         guard let source else { return false }
-        // Safari tab media has no reliable AppleScript transport without "Allow JavaScript
-        // from Apple Events" (off by default).
-        guard source != .safari else { return false }
+        if source == .safari {
+            return sendSafari(command)
+        }
         let verb: String
         switch command {
         case .play: verb = "play"
@@ -120,6 +132,57 @@ public final class NowPlayingSampler: @unchecked Sendable {
         let app = source == .spotify ? "Spotify" : "Music"
         let script = "tell application \"\(app)\" to \(verb)"
         return runAppleScript(script, timeout: 1.5) != nil
+    }
+
+    private func sendSafari(_ command: Command) -> Bool {
+        // User may have just enabled Develop → Allow JavaScript from Apple Events.
+        lock.lock()
+        safariJavaScriptOK = nil
+        lock.unlock()
+
+        let js: String
+        switch command {
+        case .play:
+            js = "(function(){var v=document.querySelector('video');if(!v)return '0';v.play();return '1';})()"
+        case .pause, .stop:
+            js = "(function(){var v=document.querySelector('video');if(!v)return '0';v.pause();return '1';})()"
+        case .togglePlayPause:
+            js = "(function(){var v=document.querySelector('video');if(!v)return '0';if(v.paused){v.play();}else{v.pause();}return '1';})()"
+        case .nextTrack:
+            js = "(function(){var b=document.querySelector('.ytp-next-button');if(b){b.click();return '1';}var v=document.querySelector('video');if(!v)return '0';v.currentTime=Math.min((Number.isFinite(v.duration)?v.duration:v.currentTime+10),v.currentTime+10);return '1';})()"
+        case .previousTrack:
+            js = "(function(){var b=document.querySelector('.ytp-prev-button');if(b&&!b.disabled&&b.getAttribute('aria-disabled')!=='true'){b.click();return '1';}var v=document.querySelector('video');if(!v)return '0';v.currentTime=Math.max(0,v.currentTime-10);return '1';})()"
+        }
+        if let result = runSafariJavaScript(js, inURL: nil) {
+            let trimmed = result.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasPrefix("1") { return true }
+            NSLog("ALWM NowPlaying: Safari JS control returned %@", trimmed)
+        } else {
+            NSLog("ALWM NowPlaying: Safari JS control failed — falling back to keystroke")
+        }
+        return sendSafariKeystroke(for: command)
+    }
+
+    private func sendSafariKeystroke(for command: Command) -> Bool {
+        let key: String
+        switch command {
+        case .play, .pause, .togglePlayPause, .stop:
+            key = "k"
+        case .nextTrack:
+            key = "l"
+        case .previousTrack:
+            key = "j"
+        }
+        let script = """
+        tell application "Safari" to activate
+        delay 0.05
+        tell application "System Events"
+          tell process "Safari"
+            keystroke "\(key)"
+          end tell
+        end tell
+        """
+        return runAppleScript(script, timeout: 2.0) != nil
     }
 
     // MARK: - Sampling
@@ -268,22 +331,36 @@ public final class NowPlayingSampler: @unchecked Sendable {
     }
 
     /// Front Safari tab when it looks like a video site (YouTube, Vimeo, Twitch, …).
-    /// Play state uses URL heuristics — Safari JS requires a user setting we cannot rely on.
+    /// Playback timeline uses `<video>` via Safari JavaScript when the user has enabled
+    /// Develop → Allow JavaScript from Apple Events.
     private func sampleSafari() -> Snapshot? {
+        // Prefer a media tab anywhere in Safari (not only the frontmost tab).
         let script = """
         tell application "Safari"
           try
             if (count of windows) is 0 then return "none"
-            set tabName to name of current tab of front window
-            set tabURL to URL of current tab of front window
             set sep to character id 31
-            return tabName & sep & tabURL
+            set mediaTab to missing value
+            repeat with w in windows
+              repeat with t in tabs of w
+                try
+                  set u to URL of t as text
+                  if u contains "youtube.com/watch" or u contains "youtube.com/shorts" or u contains "youtu.be/" or u contains "youtube.com/embed" or u contains "youtube.com/live" or u contains "vimeo.com/" or u contains "twitch.tv/" then
+                    set mediaTab to t
+                    exit repeat
+                  end if
+                end try
+              end repeat
+              if mediaTab is not missing value then exit repeat
+            end repeat
+            if mediaTab is missing value then set mediaTab to current tab of front window
+            return (name of mediaTab) & sep & (URL of mediaTab)
           on error
             return "none"
           end try
         end tell
         """
-        guard let raw = runAppleScript(script, timeout: 2.0)?.trimmingCharacters(in: .whitespacesAndNewlines),
+        guard let raw = runAppleScript(script, timeout: 2.5)?.trimmingCharacters(in: .whitespacesAndNewlines),
               raw != "none", !raw.isEmpty
         else { return nil }
 
@@ -291,7 +368,22 @@ public final class NowPlayingSampler: @unchecked Sendable {
         guard parts.count >= 2 else { return nil }
         let pageTitle = clean(parts[0]) ?? ""
         let urlString = clean(parts[1]) ?? ""
-        guard let media = browserMedia(title: pageTitle, urlString: urlString) else { return nil }
+        guard var media = browserMedia(title: pageTitle, urlString: urlString) else { return nil }
+
+        lock.lock()
+        lastSafariMediaURL = urlString
+        lock.unlock()
+
+        if let playback = sampleSafariVideoPlayback(urlString: urlString) {
+            media.isPlaying = playback.isPlaying
+            media.duration = playback.duration
+            media.elapsed = playback.elapsed
+        }
+
+        var artwork: Data?
+        if let artURL = media.artworkURL {
+            artwork = artworkData(for: artURL)
+        }
 
         return Snapshot(
             present: true,
@@ -299,23 +391,189 @@ public final class NowPlayingSampler: @unchecked Sendable {
             title: media.title,
             artist: media.artist,
             album: nil,
-            artworkData: nil,
-            duration: nil,
-            elapsed: nil,
+            artworkData: artwork,
+            duration: media.duration,
+            elapsed: media.elapsed,
             appName: "Safari"
         )
+    }
+
+    private struct SafariPlayback {
+        var isPlaying: Bool
+        var duration: Double?
+        var elapsed: Double?
+    }
+
+    private func sampleSafariVideoPlayback(urlString: String) -> SafariPlayback? {
+        let js = "(function(){var v=document.querySelector('video');if(!v)return 'novideo';return (v.paused?'paused':'playing')+'|'+(Number.isFinite(v.duration)?v.duration:0)+'|'+(Number.isFinite(v.currentTime)?v.currentTime:0);})()"
+        guard let raw = runSafariJavaScript(js, inURL: urlString)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              raw != "novideo", !raw.isEmpty
+        else { return nil }
+        let parts = raw.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count >= 3 else { return nil }
+        let isPlaying = parts[0].lowercased() == "playing"
+        let duration = Double(parts[1].replacingOccurrences(of: ",", with: ".")) ?? 0
+        let elapsed = Double(parts[2].replacingOccurrences(of: ",", with: ".")) ?? 0
+        return SafariPlayback(
+            isPlaying: isPlaying,
+            duration: duration > 0 ? duration : nil,
+            elapsed: elapsed >= 0 ? elapsed : nil
+        )
+    }
+
+    /// Runs JS in the Safari tab matching `inURL` (or last media URL / front tab).
+    private func runSafariJavaScript(_ javaScript: String, inURL: String?) -> String? {
+        lock.lock()
+        let known = safariJavaScriptOK
+        let checkedAt = safariJavaScriptCheckedAt
+        let targetURL = inURL ?? lastSafariMediaURL
+        lock.unlock()
+        // Only briefly skip after a hard permission denial — user may enable Develop setting anytime.
+        if known == false, Date().timeIntervalSince(checkedAt) < 8 {
+            return nil
+        }
+
+        let escaped = javaScript
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let urlEscaped = (targetURL ?? "")
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+
+        let script: String
+        if !urlEscaped.isEmpty {
+            script = """
+            tell application "Safari"
+              try
+                set targetURL to "\(urlEscaped)"
+                set targetTab to missing value
+                repeat with w in windows
+                  repeat with t in tabs of w
+                    try
+                      if (URL of t as text) is targetURL then
+                        set targetTab to t
+                        exit repeat
+                      end if
+                    end try
+                  end repeat
+                  if targetTab is not missing value then exit repeat
+                end repeat
+                if targetTab is missing value then
+                  repeat with w in windows
+                    repeat with t in tabs of w
+                      try
+                        set u to URL of t as text
+                        if u contains "youtube.com" or u contains "youtu.be" or u contains "vimeo.com" then
+                          set targetTab to t
+                          exit repeat
+                        end if
+                      end try
+                    end repeat
+                    if targetTab is not missing value then exit repeat
+                  end repeat
+                end if
+                if targetTab is missing value then set targetTab to current tab of front window
+                set r to do JavaScript "\(escaped)" in targetTab
+                return r as text
+              on error errMsg
+                return "ERR:" & errMsg
+              end try
+            end tell
+            """
+        } else {
+            script = """
+            tell application "Safari"
+              try
+                set r to do JavaScript "\(escaped)" in current tab of front window
+                return r as text
+              on error errMsg
+                return "ERR:" & errMsg
+              end try
+            end tell
+            """
+        }
+
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("alwm-safari-\(UUID().uuidString).applescript")
+        defer { try? FileManager.default.removeItem(at: url) }
+        do {
+            try script.write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            return nil
+        }
+
+        guard let raw = runAppleScriptFile(url, timeout: 2.5)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty
+        else { return nil }
+
+        if raw.hasPrefix("ERR:") {
+            let lower = raw.lowercased()
+            if lower.contains("javascript from apple events") || lower.contains("allow javascript") {
+                lock.lock()
+                safariJavaScriptOK = false
+                safariJavaScriptCheckedAt = Date()
+                lock.unlock()
+            }
+            NSLog("ALWM NowPlaying: Safari JS error %@", raw)
+            return nil
+        }
+
+        lock.lock()
+        safariJavaScriptOK = true
+        safariJavaScriptCheckedAt = Date()
+        lock.unlock()
+        return raw
+    }
+
+    @discardableResult
+    private func runAppleScriptFile(_ url: URL, timeout: TimeInterval) -> String? {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        proc.arguments = [url.path]
+        let out = Pipe()
+        let err = Pipe()
+        proc.standardOutput = out
+        proc.standardError = err
+        do {
+            try proc.run()
+        } catch {
+            return nil
+        }
+
+        let deadline = Date().addingTimeInterval(timeout)
+        while proc.isRunning, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.03)
+        }
+        if proc.isRunning {
+            proc.terminate()
+            proc.waitUntilExit()
+            return nil
+        }
+        guard proc.terminationStatus == 0 else {
+            let errData = err.fileHandleForReading.readDataToEndOfFile()
+            if let s = String(data: errData, encoding: .utf8), !s.isEmpty {
+                NSLog("ALWM NowPlaying: osascript failed %@", s)
+            }
+            return nil
+        }
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8)
     }
 
     private struct BrowserMedia {
         var title: String
         var artist: String
         var isPlaying: Bool
+        var artworkURL: String?
+        var duration: Double?
+        var elapsed: Double?
     }
 
     private func browserMedia(title rawTitle: String, urlString: String) -> BrowserMedia? {
         guard let url = URL(string: urlString), let host = url.host?.lowercased() else { return nil }
-        let path = url.path.lowercased()
-        let query = url.query?.lowercased() ?? ""
+        let path = url.path
+        let pathLower = path.lowercased()
+        let query = url.query ?? ""
 
         enum Kind {
             case youtube, vimeo, twitch, netflix, otherVideo
@@ -344,17 +602,17 @@ public final class NowPlayingSampler: @unchecked Sendable {
         switch kind {
         case .youtube:
             isContent = host == "youtu.be"
-                || path.contains("/watch")
-                || path.contains("/shorts/")
-                || path.contains("/live")
-                || path.contains("/embed/")
-                || query.contains("v=")
+                || pathLower.contains("/watch")
+                || pathLower.contains("/shorts/")
+                || pathLower.contains("/live")
+                || pathLower.contains("/embed/")
+                || query.lowercased().contains("v=")
         case .vimeo:
             isContent = path.split(separator: "/").contains { Int($0) != nil }
         case .twitch:
-            isContent = path != "/" && !path.isEmpty
+            isContent = pathLower != "/" && !pathLower.isEmpty
         case .netflix, .otherVideo:
-            isContent = path.contains("/watch") || path.contains("/title") || path.contains("/video")
+            isContent = pathLower.contains("/watch") || pathLower.contains("/title") || pathLower.contains("/video")
         }
         guard isContent else { return nil }
 
@@ -370,8 +628,60 @@ public final class NowPlayingSampler: @unchecked Sendable {
         case .netflix: artist = "Netflix"
         case .otherVideo: artist = host.replacingOccurrences(of: "www.", with: "")
         }
+
+        let artworkURL: String?
+        if kind == .youtube, let videoID = youtubeVideoID(host: host, path: path, query: query) {
+            // hqdefault is reliably available; maxresdefault often 404s.
+            artworkURL = "https://i.ytimg.com/vi/\(videoID)/hqdefault.jpg"
+        } else {
+            artworkURL = nil
+        }
+
         // Without video element access, treat a content URL on the front tab as playing.
-        return BrowserMedia(title: title, artist: artist, isPlaying: true)
+        return BrowserMedia(
+            title: title,
+            artist: artist,
+            isPlaying: true,
+            artworkURL: artworkURL,
+            duration: nil,
+            elapsed: nil
+        )
+    }
+
+    /// Extract YouTube video id from watch / shorts / embed / youtu.be URLs.
+    private func youtubeVideoID(host: String, path: String, query: String) -> String? {
+        func validID(_ raw: String) -> String? {
+            let id = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Standard IDs are 11 chars; allow a bit of slack for edge formats.
+            guard (6...20).contains(id.count),
+                  id.unicodeScalars.allSatisfy({ CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_")).contains($0) })
+            else { return nil }
+            return id
+        }
+
+        if host == "youtu.be" {
+            let id = path.split(separator: "/").first.map(String.init) ?? ""
+            return validID(id)
+        }
+
+        let parts = path.split(separator: "/").map(String.init)
+        if let shortsIdx = parts.firstIndex(of: "shorts"), parts.index(after: shortsIdx) < parts.endIndex {
+            return validID(parts[parts.index(after: shortsIdx)])
+        }
+        if let embedIdx = parts.firstIndex(of: "embed"), parts.index(after: embedIdx) < parts.endIndex {
+            return validID(parts[parts.index(after: embedIdx)])
+        }
+        if let liveIdx = parts.firstIndex(of: "live"), parts.index(after: liveIdx) < parts.endIndex {
+            return validID(parts[parts.index(after: liveIdx)])
+        }
+
+        for pair in query.split(separator: "&") {
+            let kv = pair.split(separator: "=", maxSplits: 1).map(String.init)
+            guard kv.count == 2, kv[0] == "v" else { continue }
+            let decoded = kv[1].removingPercentEncoding ?? kv[1]
+            return validID(decoded)
+        }
+        return nil
     }
 
     private func stripBrowserChrome(_ raw: String) -> String {

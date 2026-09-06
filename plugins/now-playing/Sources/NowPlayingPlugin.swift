@@ -56,8 +56,14 @@ public final class NowPlayingPlugin: AlwmPlugin {
         _ = placement
         // Keep chip visible even when idle so users can open the panel.
         let scale = context?.barScale ?? 1
+        let snap = NowPlayingStore.shared.snapshot
+        let progress: CGFloat? = {
+            guard snap.present, let duration = snap.duration, duration > 0 else { return nil }
+            return CGFloat(snap.progress)
+        }()
         return NowPlayingBarChipView(
             label: NowPlayingStore.shared.barLabel,
+            progress: progress,
             scale: scale,
             tooltip: NowPlayingStore.shared.tooltip
         )
@@ -67,7 +73,9 @@ public final class NowPlayingPlugin: AlwmPlugin {
         let snap = NowPlayingStore.shared.snapshot
         let title = snap.title ?? ""
         let playing = snap.isPlaying ? 1 : 0
-        return "np:\(playing):\(title.hashValue):\(PluginL10n.currentCode)"
+        // Bucket progress so the chip timeline advances without rebuilding every pixel.
+        let prog = Int((snap.progress * 40).rounded())
+        return "np:\(playing):\(prog):\(title.hashValue):\(PluginL10n.currentCode)"
     }
 }
 
@@ -75,10 +83,12 @@ public final class NowPlayingPlugin: AlwmPlugin {
 
 private final class NowPlayingBarChipView: NSView {
     private let label: String
+    private let progress: CGFloat?
     private let scale: CGFloat
 
-    init(label: String, scale: CGFloat, tooltip: String) {
+    init(label: String, progress: CGFloat?, scale: CGFloat, tooltip: String) {
         self.label = label
+        self.progress = progress
         self.scale = scale
         super.init(frame: .zero)
         toolTip = tooltip
@@ -101,6 +111,11 @@ private final class NowPlayingBarChipView: NSView {
     private func build() {
         let fontSize = max(9, 10 * scale)
         let padX = max(5, 6 * scale)
+        // Keep the same single-line height as other chips — progress sits as a bottom overlay
+        // so the label is never clipped by the workspace-bar pill.
+        let chipH = max(14, 16 * scale)
+        let trackH = max(1.5, 2 * scale)
+
         let field = NSTextField(labelWithString: label)
         field.font = .systemFont(ofSize: fontSize, weight: .medium)
         field.textColor = .labelColor
@@ -109,14 +124,44 @@ private final class NowPlayingBarChipView: NSView {
         field.drawsBackground = false
         field.lineBreakMode = .byTruncatingTail
         field.maximumNumberOfLines = 1
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         field.translatesAutoresizingMaskIntoConstraints = false
         addSubview(field)
+
         NSLayoutConstraint.activate([
             field.leadingAnchor.constraint(equalTo: leadingAnchor, constant: padX),
             field.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -padX),
-            field.centerYAnchor.constraint(equalTo: centerYAnchor),
-            heightAnchor.constraint(greaterThanOrEqualToConstant: max(14, 16 * scale)),
+            field.centerYAnchor.constraint(equalTo: centerYAnchor, constant: progress == nil ? 0 : -0.5),
+            heightAnchor.constraint(equalToConstant: chipH),
             widthAnchor.constraint(lessThanOrEqualToConstant: max(160, 180 * scale))
+        ])
+
+        guard let progress else { return }
+
+        let track = NSView()
+        track.wantsLayer = true
+        track.layer?.cornerRadius = trackH / 2
+        track.layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.16).cgColor
+        track.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(track)
+
+        let fill = NSView()
+        fill.wantsLayer = true
+        fill.layer?.cornerRadius = trackH / 2
+        fill.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+        fill.translatesAutoresizingMaskIntoConstraints = false
+        track.addSubview(fill)
+
+        let clamped = min(max(progress, 0), 1)
+        NSLayoutConstraint.activate([
+            track.leadingAnchor.constraint(equalTo: leadingAnchor, constant: padX),
+            track.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -padX),
+            track.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1),
+            track.heightAnchor.constraint(equalToConstant: trackH),
+            fill.leadingAnchor.constraint(equalTo: track.leadingAnchor),
+            fill.topAnchor.constraint(equalTo: track.topAnchor),
+            fill.bottomAnchor.constraint(equalTo: track.bottomAnchor),
+            fill.widthAnchor.constraint(equalTo: track.widthAnchor, multiplier: max(clamped, 0.02))
         ])
     }
 }
