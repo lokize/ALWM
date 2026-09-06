@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "0.6.4",
+      "items": [
+        "Maintenance and fixes"
+      ]
+    },
+    {
       "version": "0.6.3",
       "items": [
         "Maintenance and fixes"
@@ -261,13 +267,6 @@
       "items": [
         "Option-Shift -/= height resize keeps the column fully filled",
         "Height resize no longer flips stacked tiles into tabbing / empty gaps"
-      ]
-    },
-    {
-      "version": "0.2.3",
-      "items": [
-        "Pre-commit logs What's New bumps clearly",
-        "Package warns when a commit skipped the version bump"
       ]
     }
   ]

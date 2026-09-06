@@ -79,11 +79,13 @@ public final class BluetoothSampler: @unchecked Sendable {
             for device in paired {
                 let address = Self.normalizeAddress(device.addressString ?? "")
                 guard !address.isEmpty else { continue }
-                let connected = device.isConnected()
+                let bat = batteries[address]
+                // Magic Keyboard / Apple HID often report isConnected()=false while the
+                // accessory is live in AppleDeviceManagementHIDEventService (battery).
+                let connected = device.isConnected() || (bat?.impliesConnected == true)
                 let rssiRaw = Int(device.rawRSSI())
                 // 127 = unavailable; 0 is common garbage when the link doesn't report RSSI.
                 let rssi = (!connected || rssiRaw == 127 || rssiRaw == 0) ? nil : rssiRaw
-                let bat = batteries[address]
                 devices.append(
                     Device(
                         name: device.nameOrAddress ?? address,
@@ -104,7 +106,7 @@ public final class BluetoothSampler: @unchecked Sendable {
                 Device(
                     name: info.name,
                     address: address,
-                    isConnected: true,
+                    isConnected: info.impliesConnected,
                     isPaired: true,
                     batteryPercent: info.percent,
                     category: info.category
@@ -134,6 +136,8 @@ public final class BluetoothSampler: @unchecked Sendable {
         var name: String
         var percent: Double
         var category: String?
+        /// Live HID / profiler "connected" list — Apple keyboards often lie to IOBluetooth.
+        var impliesConnected: Bool
     }
 
     private func batteryIndex() -> [String: BatteryInfo] {
@@ -145,10 +149,12 @@ public final class BluetoothSampler: @unchecked Sendable {
             let address = addressFromIO(dict)
             guard !address.isEmpty else { continue }
             let category = dict["Accessory Category"] as? String
+            // Presence in this IOKit service means the accessory is actively attached.
             map[address] = BatteryInfo(
                 name: name,
                 percent: min(max(Double(percentRaw) / 100.0, 0), 1),
-                category: category
+                category: category,
+                impliesConnected: true
             )
         }
 
@@ -170,7 +176,15 @@ public final class BluetoothSampler: @unchecked Sendable {
                 ].compactMap(parseBatteryValue)
                 guard let minLevel = levels.min() else { continue }
                 let name = (dict["Name"] as? String) ?? map[address]?.name ?? address
-                mergeBattery(&map, address: address, name: name, percent: minLevel, category: nil)
+                // Plist is a cache — do not invent "connected" from it alone.
+                mergeBattery(
+                    &map,
+                    address: address,
+                    name: name,
+                    percent: minLevel,
+                    category: nil,
+                    impliesConnected: false
+                )
             }
         }
 
@@ -182,7 +196,8 @@ public final class BluetoothSampler: @unchecked Sendable {
                 address: address,
                 name: info.name,
                 percent: info.percent,
-                category: info.category
+                category: info.category,
+                impliesConnected: info.impliesConnected
             )
         }
 
@@ -194,16 +209,23 @@ public final class BluetoothSampler: @unchecked Sendable {
         address: String,
         name: String,
         percent: Double,
-        category: String?
+        category: String?,
+        impliesConnected: Bool
     ) {
         if let existing = map[address] {
             map[address] = BatteryInfo(
                 name: existing.name.isEmpty ? name : existing.name,
                 percent: min(existing.percent, percent),
-                category: existing.category ?? category
+                category: existing.category ?? category,
+                impliesConnected: existing.impliesConnected || impliesConnected
             )
         } else {
-            map[address] = BatteryInfo(name: name, percent: percent, category: category)
+            map[address] = BatteryInfo(
+                name: name,
+                percent: percent,
+                category: category,
+                impliesConnected: impliesConnected
+            )
         }
     }
 
@@ -260,6 +282,7 @@ public final class BluetoothSampler: @unchecked Sendable {
         var map: [String: BatteryInfo] = [:]
         for section in sections {
             for listKey in ["device_connected", "device_not_connected"] {
+                let listConnected = listKey == "device_connected"
                 guard let list = section[listKey] as? [[String: Any]] else { continue }
                 for entry in list {
                     // Each entry is { "Device Name": { device_address, device_batteryLevelMain, … } }
@@ -281,7 +304,8 @@ public final class BluetoothSampler: @unchecked Sendable {
                             address: address,
                             name: name,
                             percent: minLevel,
-                            category: category
+                            category: category,
+                            impliesConnected: listConnected
                         )
                     }
                 }
