@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Combine
 import AlwmStatsKit
@@ -56,11 +57,21 @@ final class MemoryStore: ObservableObject, @unchecked Sendable {
         lock.lock()
         let pct = Int((snapshot.usageFraction * 100).rounded())
         lock.unlock()
-        return "RAM \(pct)%"
+        return "\(pct)"
+    }
+
+    var chipTint: NSColor {
+        lock.lock()
+        let usage = snapshot.usageFraction
+        lock.unlock()
+        return StatsBarChipPressure.tint(for: usage)
     }
 
     var tooltip: String {
         let loc = localeCode()
-        return "\(barLabel) — \(PluginL10n.t("plugin.common.click_to_open", locale: loc))"
+        lock.lock()
+        let pct = Int((snapshot.usageFraction * 100).rounded())
+        lock.unlock()
+        return "RAM \(pct)% — \(PluginL10n.t("plugin.common.click_to_open", locale: loc))"
     }
 }

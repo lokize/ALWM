@@ -89,17 +89,18 @@ final class NetworkStore: ObservableObject, @unchecked Sendable {
 
     var barLabel: String {
         lock.lock()
-        let down = StatsFormat.bytesPerSecond(snapshot.downloadBytesPerSec)
-        let up = StatsFormat.bytesPerSecond(snapshot.uploadBytesPerSec)
+        let down = StatsFormat.compactBytesPerSecond(snapshot.downloadBytesPerSec)
+        let up = StatsFormat.compactBytesPerSecond(snapshot.uploadBytesPerSec)
         lock.unlock()
-        // Compact chip: ↓x ↑y
-        let d = down.replacingOccurrences(of: " ", with: "")
-        let u = up.replacingOccurrences(of: " ", with: "")
-        return "↓\(d) ↑\(u)"
+        return "↓\(down) ↑\(up)"
     }
 
     var tooltip: String {
         let loc = localeCode()
-        return "\(barLabel) — \(PluginL10n.t("plugin.common.click_to_open", locale: loc))"
+        lock.lock()
+        let down = StatsFormat.bytesPerSecond(snapshot.downloadBytesPerSec)
+        let up = StatsFormat.bytesPerSecond(snapshot.uploadBytesPerSec)
+        lock.unlock()
+        return "↓\(down) ↑\(up) — \(PluginL10n.t("plugin.common.click_to_open", locale: loc))"
     }
 }

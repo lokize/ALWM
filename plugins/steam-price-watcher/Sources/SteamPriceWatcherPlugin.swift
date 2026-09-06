@@ -168,7 +168,7 @@ private final class SteamBarChipView: NSView {
 
         row.orientation = .horizontal
         row.alignment = .centerY
-        row.spacing = max(2, 3 * scale)
+        row.spacing = max(3, 3.5 * scale)
         row.translatesAutoresizingMaskIntoConstraints = false
         row.setHuggingPriority(.defaultLow, for: .horizontal)
         addSubview(row)
@@ -179,7 +179,7 @@ private final class SteamBarChipView: NSView {
             idleIcon.widthAnchor.constraint(equalToConstant: iconSide),
             idleIcon.heightAnchor.constraint(equalToConstant: iconSide)
         ])
-        idleLabel.font = .systemFont(ofSize: fontSize, weight: .medium)
+        idleLabel.font = .monospacedDigitSystemFont(ofSize: fontSize, weight: .semibold)
         idleLabel.textColor = .labelColor
         idleLabel.isEditable = false
         idleLabel.isBezeled = false
@@ -193,6 +193,7 @@ private final class SteamBarChipView: NSView {
         thumb.imageScaling = .scaleProportionallyUpOrDown
         thumb.wantsLayer = true
         thumb.layer?.cornerRadius = 2
+        thumb.layer?.cornerCurve = .continuous
         thumb.layer?.masksToBounds = true
         thumb.translatesAutoresizingMaskIntoConstraints = false
         let thumbW = PluginBarChipLayout.steamThumbWidth(scale: scale)
@@ -211,7 +212,7 @@ private final class SteamBarChipView: NSView {
         nameField.maximumNumberOfLines = 1
         nameField.widthAnchor.constraint(equalToConstant: PluginBarChipLayout.steamNameWidth(scale: scale)).isActive = true
 
-        priceField.font = .monospacedDigitSystemFont(ofSize: max(8, fontSize - 1), weight: .medium)
+        priceField.font = .monospacedDigitSystemFont(ofSize: max(8, fontSize - 1), weight: .semibold)
         priceField.textColor = .labelColor
         priceField.isEditable = false
         priceField.isBezeled = false
@@ -221,14 +222,15 @@ private final class SteamBarChipView: NSView {
         priceField.widthAnchor.constraint(equalToConstant: PluginBarChipLayout.steamPriceWidth(scale: scale)).isActive = true
 
         let badgeW = PluginBarChipLayout.badgeWidth(scale: scale)
-        badgeField.font = .systemFont(ofSize: max(8, fontSize - 1), weight: .bold)
+        badgeField.font = .monospacedDigitSystemFont(ofSize: max(8, fontSize - 1), weight: .bold)
         badgeField.textColor = .white
         badgeField.isEditable = false
         badgeField.isBezeled = false
         badgeField.drawsBackground = true
         badgeField.backgroundColor = .systemRed
         badgeField.wantsLayer = true
-        badgeField.layer?.cornerRadius = 6
+        badgeField.layer?.cornerRadius = max(5, 5.5 * scale)
+        badgeField.layer?.cornerCurve = .continuous
         badgeField.alignment = .center
         badgeField.widthAnchor.constraint(equalToConstant: badgeW).isActive = true
 
@@ -237,7 +239,7 @@ private final class SteamBarChipView: NSView {
             row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: padX),
             row.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -padX),
             row.centerYAnchor.constraint(equalTo: centerYAnchor),
-            heightAnchor.constraint(greaterThanOrEqualToConstant: max(14, 16 * scale))
+            heightAnchor.constraint(equalToConstant: max(14, 16 * scale))
         ])
     }
 

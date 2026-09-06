@@ -176,7 +176,7 @@ private final class GitHubBarChipView: NSView {
 
         row.orientation = .horizontal
         row.alignment = .centerY
-        row.spacing = max(3, 4 * scale)
+        row.spacing = max(3, 3.5 * scale)
         row.translatesAutoresizingMaskIntoConstraints = false
         row.setHuggingPriority(.defaultLow, for: .horizontal)
         addSubview(row)
@@ -185,7 +185,8 @@ private final class GitHubBarChipView: NSView {
             systemSymbolName: isRefreshing ? "arrow.triangle.2.circlepath" : "chevron.left.forwardslash.chevron.right",
             accessibilityDescription: PluginL10n.t("plugin.github.title", locale: locale)
         )
-        iconView.image = symbol
+        let iconConfig = NSImage.SymbolConfiguration(pointSize: PluginBarChipLayout.iconSide(scale: scale), weight: .semibold)
+        iconView.image = symbol?.withSymbolConfiguration(iconConfig)
         iconView.contentTintColor = hasToken ? .labelColor : .secondaryLabelColor
         iconView.translatesAutoresizingMaskIntoConstraints = false
         let iconSide = PluginBarChipLayout.iconSide(scale: scale)
@@ -195,14 +196,15 @@ private final class GitHubBarChipView: NSView {
         ])
 
         let badgeW = PluginBarChipLayout.badgeWidth(scale: scale)
-        badgeField.font = .systemFont(ofSize: max(8, fontSize - 1), weight: .bold)
+        badgeField.font = .monospacedDigitSystemFont(ofSize: max(8, fontSize - 1), weight: .bold)
         badgeField.textColor = .white
         badgeField.isEditable = false
         badgeField.isBezeled = false
         badgeField.drawsBackground = true
         badgeField.backgroundColor = .systemRed
         badgeField.wantsLayer = true
-        badgeField.layer?.cornerRadius = 6
+        badgeField.layer?.cornerRadius = max(5, 5.5 * scale)
+        badgeField.layer?.cornerCurve = .continuous
         badgeField.alignment = .center
         badgeField.widthAnchor.constraint(equalToConstant: badgeW).isActive = true
 
@@ -217,7 +219,7 @@ private final class GitHubBarChipView: NSView {
         titleField.widthAnchor.constraint(equalToConstant: titleW).isActive = true
 
         let subtitleW = PluginBarChipLayout.subtitleWidth(scale: scale)
-        subtitleField.font = .systemFont(ofSize: max(8, fontSize - 1))
+        subtitleField.font = .systemFont(ofSize: max(8, fontSize - 1), weight: .medium)
         subtitleField.textColor = .secondaryLabelColor
         subtitleField.isEditable = false
         subtitleField.isBezeled = false
@@ -231,7 +233,7 @@ private final class GitHubBarChipView: NSView {
             row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: padX),
             row.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -padX),
             row.centerYAnchor.constraint(equalTo: centerYAnchor),
-            heightAnchor.constraint(greaterThanOrEqualToConstant: max(14, 16 * scale))
+            heightAnchor.constraint(equalToConstant: max(14, 16 * scale))
         ])
     }
 

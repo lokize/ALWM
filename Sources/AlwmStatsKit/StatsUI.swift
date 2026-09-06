@@ -61,6 +61,17 @@ public enum StatsFormat {
         return String(format: "%.2f GB/s", bps / (1024 * 1024 * 1024))
     }
 
+    /// Compact rate for bar chips: `8.9M`, `443K`, `12B` (no `/s`).
+    public static func compactBytesPerSecond(_ bps: Double) -> String {
+        let abs = Swift.abs(bps)
+        if abs < 1024 { return String(format: "%.0fB", bps) }
+        if abs < 1024 * 1024 { return String(format: "%.0fK", bps / 1024) }
+        if abs < 1024 * 1024 * 1024 {
+            return String(format: "%.1fM", locale: Locale(identifier: "en_US_POSIX"), bps / (1024 * 1024))
+        }
+        return String(format: "%.2fG", locale: Locale(identifier: "en_US_POSIX"), bps / (1024 * 1024 * 1024))
+    }
+
     public static func bytes(_ value: UInt64, digits: Int = 1) -> String {
         let v = Double(value)
         if v < 1024 { return String(format: "%.0f B", v) }

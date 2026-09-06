@@ -3,6 +3,7 @@ import Foundation
 import AlwmPluginAPI
 import AlwmPluginABI
 import AlwmL10n
+import AlwmStatsKit
 
 /// Disk / SSD chip + Stats-like popover for the ALWM workspace bar.
 public final class StatsDiskPlugin: AlwmPlugin {
@@ -55,63 +56,26 @@ public final class StatsDiskPlugin: AlwmPlugin {
     public func barItem(placement: AlwmBarPlacement) -> NSView? {
         _ = placement
         let scale = context?.barScale ?? 1
-        return DiskBarChipView(
-            label: DiskStore.shared.barLabel,
+        let store = DiskStore.shared
+        let chip = StatsBarChipView(
+            symbolName: "internaldrive",
+            value: store.barLabel,
+            tint: store.chipTint,
             scale: scale,
-            tooltip: DiskStore.shared.tooltip
+            tooltip: store.tooltip
         )
+        chip.onClick = { [weak chip] in
+            guard let chip else { return }
+            Task { @MainActor in
+                DiskPanelController.toggle(relativeTo: chip)
+            }
+        }
+        return chip
     }
 
     public func barSignature() -> String {
         let pct = Int((DiskStore.shared.snapshot.usageFraction * 100).rounded())
         return "disk:\(pct):\(PluginL10n.currentCode)"
-    }
-}
-
-// MARK: - Chip
-
-private final class DiskBarChipView: NSView {
-    private let label: String
-    private let scale: CGFloat
-
-    init(label: String, scale: CGFloat, tooltip: String) {
-        self.label = label
-        self.scale = scale
-        super.init(frame: .zero)
-        toolTip = tooltip
-        wantsLayer = true
-        translatesAutoresizingMaskIntoConstraints = false
-        setContentHuggingPriority(.required, for: .horizontal)
-        setContentCompressionResistancePriority(.required, for: .horizontal)
-        build()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    override func mouseDown(with event: NSEvent) {
-        Task { @MainActor in
-            DiskPanelController.toggle(relativeTo: self)
-        }
-    }
-
-    private func build() {
-        let fontSize = max(9, 10 * scale)
-        let padX = max(5, 6 * scale)
-        let field = NSTextField(labelWithString: label)
-        field.font = .monospacedDigitSystemFont(ofSize: fontSize, weight: .medium)
-        field.textColor = .labelColor
-        field.isEditable = false
-        field.isBezeled = false
-        field.drawsBackground = false
-        field.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(field)
-        NSLayoutConstraint.activate([
-            field.leadingAnchor.constraint(equalTo: leadingAnchor, constant: padX),
-            field.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -padX),
-            field.centerYAnchor.constraint(equalTo: centerYAnchor),
-            heightAnchor.constraint(greaterThanOrEqualToConstant: max(14, 16 * scale))
-        ])
     }
 }
 

@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "0.6.7",
+      "items": [
+        "Maintenance and fixes"
+      ]
+    },
+    {
       "version": "0.6.6",
       "items": [
         "Maintenance and fixes"
@@ -253,17 +259,6 @@
         "Status menu toggles update live",
         "Steam Price Watcher localized like the rest of the app",
         "Release publish refuses to reuse an existing version tag (use --update to refresh)"
-      ]
-    },
-    {
-      "version": "0.2.7",
-      "items": [
-        "GitHub plugin: unread notifications, PRs, issues, and stars on the workspace bar",
-        "Plugins follow Settings → Language in all app locales",
-        "Keep Safari windows on their own workspace/monitor when switching",
-        "More reliable keyboard input in Quake Terminal and Notepad",
-        "Status menu toggles update live",
-        "Steam Price Watcher localized like the rest of the app"
       ]
     }
   ]

@@ -32,7 +32,7 @@ public final class WorkspaceBarController {
     private var menuWorkspaces: [(id: String, name: String)] = []
 
     private let accent = NSColor(hex: "#4FC3F7") ?? .systemTeal
-    private let separator = NSColor(calibratedWhite: 0.55, alpha: 0.5)
+    private let separator = NSColor.white.withAlphaComponent(0.12)
     /// Avoid NSWorkspace.iconForFile on every chrome rebuild (main-thread freeze).
     private var iconCache: [String: NSImage] = [:]
     /// Last render snapshots used to resolve multi-window app picks on icon click.
@@ -350,14 +350,60 @@ public final class WorkspaceBarController {
     // MARK: - Pieces
 
     private func makePill(height: CGFloat, alpha: CGFloat) -> NSView {
-        let v = NSView()
-        v.wantsLayer = true
-        v.layer?.backgroundColor = NSColor(calibratedWhite: 0.18, alpha: alpha).cgColor
-        v.layer?.cornerRadius = height / 2
-        v.clipsToBounds = true
-        v.translatesAutoresizingMaskIntoConstraints = false
-        v.heightAnchor.constraint(equalToConstant: height).isActive = true
-        return v
+        // alpha 0 → readable glass; alpha 1 → more solid (settings.backgroundOpacity).
+        let solid = min(1, max(0, alpha))
+        let container = NSView()
+        container.wantsLayer = true
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.heightAnchor.constraint(equalToConstant: height).isActive = true
+
+        let effect = NSVisualEffectView()
+        effect.material = .hudWindow
+        effect.blendingMode = .withinWindow
+        effect.state = .active
+        effect.wantsLayer = true
+        effect.layer?.cornerRadius = height / 2
+        effect.layer?.cornerCurve = .continuous
+        effect.layer?.masksToBounds = true
+        effect.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(effect)
+
+        let fill = NSView()
+        fill.wantsLayer = true
+        fill.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.20 + solid * 0.42).cgColor
+        fill.layer?.cornerRadius = height / 2
+        fill.layer?.cornerCurve = .continuous
+        fill.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(fill)
+
+        let border = NSView()
+        border.wantsLayer = true
+        border.layer?.cornerRadius = height / 2
+        border.layer?.cornerCurve = .continuous
+        border.layer?.borderWidth = 0.5
+        border.layer?.borderColor = NSColor.white.withAlphaComponent(0.16 + solid * 0.08).cgColor
+        border.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(border)
+
+        container.layer?.cornerRadius = height / 2
+        container.layer?.cornerCurve = .continuous
+        container.clipsToBounds = true
+
+        NSLayoutConstraint.activate([
+            effect.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            effect.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            effect.topAnchor.constraint(equalTo: container.topAnchor),
+            effect.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            fill.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            fill.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            fill.topAnchor.constraint(equalTo: container.topAnchor),
+            fill.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            border.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            border.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            border.topAnchor.constraint(equalTo: container.topAnchor),
+            border.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+        ])
+        return container
     }
 
     private func makeWorkspaceCluster(
@@ -377,7 +423,7 @@ public final class WorkspaceBarController {
         let pillStack = NSStackView()
         pillStack.orientation = .horizontal
         pillStack.alignment = .centerY
-        pillStack.spacing = 0
+        pillStack.spacing = max(2, 3 * scale)
         // gravityAreas keeps chips at intrinsic width — `.fill` expands one chip into empty space.
         pillStack.distribution = .gravityAreas
         pillStack.translatesAutoresizingMaskIntoConstraints = false
@@ -675,11 +721,12 @@ public final class WorkspaceBarController {
         chip.bezelStyle = .inline
         chip.isBordered = false
         chip.wantsLayer = true
-        chip.layer?.cornerRadius = max(5, 6 * scale)
+        chip.layer?.cornerRadius = max(6, 7 * scale)
+        chip.layer?.cornerCurve = .continuous
         chip.clipsToBounds = true
         chip.layer?.borderWidth = max(1, 1.0 * scale)
         chip.layer?.borderColor = separator.cgColor
-        chip.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.18).cgColor
+        chip.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.12).cgColor
         chip.identifier = NSUserInterfaceItemIdentifier("float|\(monitorID)")
         chip.toolTip = tooltip.isEmpty ? "Floating" : "Floating: \(tooltip)"
 
@@ -765,16 +812,17 @@ public final class WorkspaceBarController {
         let v = NSView()
         v.wantsLayer = true
         v.layer?.backgroundColor = separator.cgColor
+        v.layer?.cornerRadius = 0.5
         v.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            v.widthAnchor.constraint(equalToConstant: 1),
-            v.heightAnchor.constraint(equalToConstant: max(10, 12 * scale))
+            v.widthAnchor.constraint(equalToConstant: max(0.5, 0.75 * scale)),
+            v.heightAnchor.constraint(equalToConstant: max(8, 10 * scale))
         ])
         let wrap = NSView()
         wrap.translatesAutoresizingMaskIntoConstraints = false
         wrap.addSubview(v)
         NSLayoutConstraint.activate([
-            wrap.widthAnchor.constraint(equalToConstant: max(6, 7 * scale)),
+            wrap.widthAnchor.constraint(equalToConstant: max(3, 4 * scale)),
             v.centerXAnchor.constraint(equalTo: wrap.centerXAnchor),
             v.centerYAnchor.constraint(equalTo: wrap.centerYAnchor)
         ])
@@ -797,9 +845,11 @@ public final class WorkspaceBarController {
         // Container (not a single button) so app icons can receive their own clicks.
         let chip = WorkspaceChipHoverView()
         chip.wantsLayer = true
-        chip.layer?.cornerRadius = max(5, 6 * scale)
+        chip.layer?.cornerRadius = max(6, 7 * scale)
+        chip.layer?.cornerCurve = .continuous
         chip.clipsToBounds = true
         chip.isActiveWorkspace = active
+        chip.accentColor = accent
         chip.applyHoverAppearance()
 
         let row = NSStackView()
@@ -1405,10 +1455,11 @@ public final class WorkspaceBarController {
     }
 }
 
-/// Workspace chip with dark charcoal hover (quieter fill when active and not hovered).
+/// Workspace chip with soft accent when active and translucent hover (Control Center–like).
 /// Hover via `WorkspaceChipHoverTracker` — AppKit enter/exit isn't always on the MainActor executor.
 private final class WorkspaceChipHoverView: NSView {
     var isActiveWorkspace = false
+    var accentColor: NSColor = .systemTeal
     private var isHovered = false
     private var tracking: NSTrackingArea?
     private let hoverTracker = WorkspaceChipHoverTracker()
@@ -1416,6 +1467,7 @@ private final class WorkspaceChipHoverView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
+        layer?.cornerCurve = .continuous
         hoverTracker.chip = self
     }
 
@@ -1451,13 +1503,13 @@ private final class WorkspaceChipHoverView: NSView {
 
     func applyHoverAppearance(animated: Bool = false) {
         wantsLayer = true
+        layer?.cornerCurve = .continuous
         let color: NSColor = {
             if isHovered {
-                // Dark charcoal hover (covers label + icons).
-                return NSColor(calibratedWhite: 0.16, alpha: 0.92)
+                return NSColor.white.withAlphaComponent(0.14)
             }
             if isActiveWorkspace {
-                return NSColor.black.withAlphaComponent(0.32)
+                return accentColor.withAlphaComponent(0.28)
             }
             return .clear
         }()

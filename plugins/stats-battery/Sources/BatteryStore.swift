@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Combine
 import AlwmStatsKit
@@ -64,19 +65,41 @@ final class BatteryStore: ObservableObject, @unchecked Sendable {
         lock.lock()
         let snap = snapshot
         lock.unlock()
-        guard snap.present else { return "BAT —" }
+        guard snap.present else { return "—" }
         let pct = Int((snap.percent * 100).rounded())
-        if snap.isCharging {
-            return "BAT \(pct)% ⚡"
-        }
-        if snap.isACPowered {
-            return "BAT \(pct)% ⌁"
-        }
-        return "BAT \(pct)%"
+        return "\(pct)"
+    }
+
+    var chipSymbol: String {
+        lock.lock()
+        let snap = snapshot
+        lock.unlock()
+        guard snap.present else { return "battery.0" }
+        let pct = Int((snap.percent * 100).rounded())
+        return StatsBarChipPressure.batterySymbol(percent: pct, charging: snap.isCharging || snap.isACPowered)
+    }
+
+    var chipTint: NSColor {
+        lock.lock()
+        let snap = snapshot
+        lock.unlock()
+        guard snap.present else { return .secondaryLabelColor }
+        let pct = Int((snap.percent * 100).rounded())
+        return StatsBarChipPressure.batteryTint(percent: pct, charging: snap.isCharging)
     }
 
     var tooltip: String {
         let loc = localeCode()
-        return "\(barLabel) — \(PluginL10n.t("plugin.common.click_to_open", locale: loc))"
+        lock.lock()
+        let snap = snapshot
+        lock.unlock()
+        guard snap.present else {
+            return "BAT — \(PluginL10n.t("plugin.common.click_to_open", locale: loc))"
+        }
+        let pct = Int((snap.percent * 100).rounded())
+        var label = "BAT \(pct)%"
+        if snap.isCharging { label += " ⚡" }
+        else if snap.isACPowered { label += " ⌁" }
+        return "\(label) — \(PluginL10n.t("plugin.common.click_to_open", locale: loc))"
     }
 }

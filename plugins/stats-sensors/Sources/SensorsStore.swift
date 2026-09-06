@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Combine
 import AlwmStatsKit
@@ -61,6 +62,16 @@ final class SensorsStore: ObservableObject, @unchecked Sendable {
         let primary = snapshot.primaryCelsius
         lock.unlock()
         return StatsFormat.temperatureChip(primary)
+    }
+
+    var chipTint: NSColor {
+        lock.lock()
+        let c = snapshot.primaryCelsius
+        lock.unlock()
+        guard let c else { return .secondaryLabelColor }
+        if c >= 90 { return .systemRed }
+        if c >= 75 { return .systemOrange }
+        return .labelColor
     }
 
     var tooltip: String {

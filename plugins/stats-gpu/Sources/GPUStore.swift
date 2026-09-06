@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Combine
 import AlwmStatsKit
@@ -64,13 +65,29 @@ final class GPUStore: ObservableObject, @unchecked Sendable {
         lock.lock()
         let snap = snapshot
         lock.unlock()
-        guard snap.present else { return "GPU —" }
+        guard snap.present else { return "—" }
         let pct = Int((snap.utilization * 100).rounded())
-        return "GPU \(pct)%"
+        return "\(pct)"
+    }
+
+    var chipTint: NSColor {
+        lock.lock()
+        let usage = snapshot.utilization
+        let present = snapshot.present
+        lock.unlock()
+        guard present else { return .secondaryLabelColor }
+        return StatsBarChipPressure.tint(for: usage)
     }
 
     var tooltip: String {
         let loc = localeCode()
-        return "\(barLabel) — \(PluginL10n.t("plugin.common.click_to_open", locale: loc))"
+        lock.lock()
+        let snap = snapshot
+        lock.unlock()
+        guard snap.present else {
+            return "GPU — \(PluginL10n.t("plugin.common.click_to_open", locale: loc))"
+        }
+        let pct = Int((snap.utilization * 100).rounded())
+        return "GPU \(pct)% — \(PluginL10n.t("plugin.common.click_to_open", locale: loc))"
     }
 }

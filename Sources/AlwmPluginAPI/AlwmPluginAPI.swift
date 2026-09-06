@@ -150,43 +150,43 @@ public enum PluginBarChipLayout {
     public static let cycleInterval: TimeInterval = 7.0
 
     public static func chipWidth(scale: CGFloat) -> CGFloat {
-        max(156, 172 * scale)
+        max(132, 146 * scale)
     }
 
     public static func iconSide(scale: CGFloat) -> CGFloat {
-        max(11, 12 * scale)
-    }
-
-    public static func badgeWidth(scale: CGFloat) -> CGFloat {
-        max(22, 24 * scale)
-    }
-
-    public static func titleWidth(scale: CGFloat) -> CGFloat {
-        max(54, 60 * scale)
-    }
-
-    public static func subtitleWidth(scale: CGFloat) -> CGFloat {
-        max(50, 56 * scale)
-    }
-
-    public static func steamThumbWidth(scale: CGFloat) -> CGFloat {
-        max(22, 26 * scale)
-    }
-
-    public static func steamThumbHeight(scale: CGFloat) -> CGFloat {
         max(10, 11 * scale)
     }
 
+    public static func badgeWidth(scale: CGFloat) -> CGFloat {
+        max(18, 20 * scale)
+    }
+
+    public static func titleWidth(scale: CGFloat) -> CGFloat {
+        max(46, 52 * scale)
+    }
+
+    public static func subtitleWidth(scale: CGFloat) -> CGFloat {
+        max(42, 48 * scale)
+    }
+
+    public static func steamThumbWidth(scale: CGFloat) -> CGFloat {
+        max(20, 24 * scale)
+    }
+
+    public static func steamThumbHeight(scale: CGFloat) -> CGFloat {
+        max(9, 10 * scale)
+    }
+
     public static func steamNameWidth(scale: CGFloat) -> CGFloat {
-        max(52, 58 * scale)
+        max(44, 50 * scale)
     }
 
     public static func steamPriceWidth(scale: CGFloat) -> CGFloat {
-        max(40, 44 * scale)
+        max(36, 40 * scale)
     }
 
     public static func steamPlusWidth(scale: CGFloat) -> CGFloat {
-        max(18, 20 * scale)
+        max(16, 18 * scale)
     }
 
     /// Truncate for fixed-width bar labels.

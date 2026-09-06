@@ -3,6 +3,7 @@ import Foundation
 import AlwmPluginAPI
 import AlwmPluginABI
 import AlwmL10n
+import AlwmStatsKit
 
 /// Battery chip + Stats-like popover. Hidden on desktop Macs without a battery.
 public final class StatsBatteryPlugin: AlwmPlugin {
@@ -54,14 +55,23 @@ public final class StatsBatteryPlugin: AlwmPlugin {
 
     public func barItem(placement: AlwmBarPlacement) -> NSView? {
         _ = placement
-        // Auto-hide on desktops / no internal battery.
         guard BatteryStore.shared.isPresent else { return nil }
         let scale = context?.barScale ?? 1
-        return BatteryBarChipView(
-            label: BatteryStore.shared.barLabel,
+        let store = BatteryStore.shared
+        let chip = StatsBarChipView(
+            symbolName: store.chipSymbol,
+            value: store.barLabel,
+            tint: store.chipTint,
             scale: scale,
-            tooltip: BatteryStore.shared.tooltip
+            tooltip: store.tooltip
         )
+        chip.onClick = { [weak chip] in
+            guard let chip else { return }
+            Task { @MainActor in
+                BatteryPanelController.toggle(relativeTo: chip)
+            }
+        }
+        return chip
     }
 
     public func barSignature() -> String {
@@ -72,53 +82,6 @@ public final class StatsBatteryPlugin: AlwmPlugin {
         let pct = Int((store.snapshot.percent * 100).rounded())
         let ch = store.snapshot.isCharging ? 1 : 0
         return "bat:\(pct):\(ch):\(PluginL10n.currentCode)"
-    }
-}
-
-// MARK: - Chip
-
-private final class BatteryBarChipView: NSView {
-    private let label: String
-    private let scale: CGFloat
-
-    init(label: String, scale: CGFloat, tooltip: String) {
-        self.label = label
-        self.scale = scale
-        super.init(frame: .zero)
-        toolTip = tooltip
-        wantsLayer = true
-        translatesAutoresizingMaskIntoConstraints = false
-        setContentHuggingPriority(.required, for: .horizontal)
-        setContentCompressionResistancePriority(.required, for: .horizontal)
-        build()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    override func mouseDown(with event: NSEvent) {
-        Task { @MainActor in
-            BatteryPanelController.toggle(relativeTo: self)
-        }
-    }
-
-    private func build() {
-        let fontSize = max(9, 10 * scale)
-        let padX = max(5, 6 * scale)
-        let field = NSTextField(labelWithString: label)
-        field.font = .monospacedDigitSystemFont(ofSize: fontSize, weight: .medium)
-        field.textColor = .labelColor
-        field.isEditable = false
-        field.isBezeled = false
-        field.drawsBackground = false
-        field.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(field)
-        NSLayoutConstraint.activate([
-            field.leadingAnchor.constraint(equalTo: leadingAnchor, constant: padX),
-            field.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -padX),
-            field.centerYAnchor.constraint(equalTo: centerYAnchor),
-            heightAnchor.constraint(greaterThanOrEqualToConstant: max(14, 16 * scale))
-        ])
     }
 }
 

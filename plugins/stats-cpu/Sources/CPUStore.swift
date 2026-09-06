@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Combine
 import AlwmStatsKit
@@ -57,11 +58,21 @@ final class CPUStore: ObservableObject, @unchecked Sendable {
         lock.lock()
         let pct = Int((snapshot.totalUsage * 100).rounded())
         lock.unlock()
-        return "CPU \(pct)%"
+        return "\(pct)"
+    }
+
+    var chipTint: NSColor {
+        lock.lock()
+        let usage = snapshot.totalUsage
+        lock.unlock()
+        return StatsBarChipPressure.tint(for: usage)
     }
 
     var tooltip: String {
         let loc = localeCode()
-        return "\(barLabel) — \(PluginL10n.t("plugin.common.click_to_open", locale: loc))"
+        lock.lock()
+        let pct = Int((snapshot.totalUsage * 100).rounded())
+        lock.unlock()
+        return "CPU \(pct)% — \(PluginL10n.t("plugin.common.click_to_open", locale: loc))"
     }
 }

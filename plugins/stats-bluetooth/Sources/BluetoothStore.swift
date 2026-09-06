@@ -59,19 +59,32 @@ final class BluetoothStore: ObservableObject, @unchecked Sendable {
         lock.lock()
         let snap = snapshot
         lock.unlock()
-        guard snap.poweredOn else { return "BT —" }
+        guard snap.poweredOn else { return "—" }
         if let bat = snap.primaryBattery {
-            return "BT \(Int((bat * 100).rounded()))%"
+            return "\(Int((bat * 100).rounded()))"
         }
         let connected = snap.connected.count
         if connected > 0 {
-            return "BT \(connected)"
+            return "\(connected)"
         }
-        return "BT"
+        return "·"
     }
 
     var tooltip: String {
         let loc = localeCode()
-        return "\(barLabel) — \(PluginL10n.t("plugin.common.click_to_open", locale: loc))"
+        lock.lock()
+        let snap = snapshot
+        lock.unlock()
+        let detail: String
+        if !snap.poweredOn {
+            detail = "BT —"
+        } else if let bat = snap.primaryBattery {
+            detail = "BT \(Int((bat * 100).rounded()))%"
+        } else if snap.connected.count > 0 {
+            detail = "BT \(snap.connected.count)"
+        } else {
+            detail = "BT"
+        }
+        return "\(detail) — \(PluginL10n.t("plugin.common.click_to_open", locale: loc))"
     }
 }

@@ -110,14 +110,36 @@ private final class NowPlayingBarChipView: NSView {
 
     private func build() {
         let fontSize = max(9, 10 * scale)
-        let padX = max(5, 6 * scale)
+        let iconSize = max(10, 11 * scale)
+        let padX = max(4, 5 * scale)
+        let gap = max(3, 3.5 * scale)
         // Keep the same single-line height as other chips — progress sits as a bottom overlay
         // so the label is never clipped by the workspace-bar pill.
         let chipH = max(14, 16 * scale)
         let trackH = max(1.5, 2 * scale)
 
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = gap
+        row.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(row)
+
+        let config = NSImage.SymbolConfiguration(pointSize: iconSize, weight: .semibold)
+        let icon = NSImageView()
+        icon.image = NSImage(systemSymbolName: "music.note", accessibilityDescription: nil)?
+            .withSymbolConfiguration(config)
+        icon.contentTintColor = .labelColor
+        icon.imageScaling = .scaleProportionallyUpOrDown
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            icon.widthAnchor.constraint(equalToConstant: iconSize + 1),
+            icon.heightAnchor.constraint(equalToConstant: iconSize + 1)
+        ])
+        row.addArrangedSubview(icon)
+
         let field = NSTextField(labelWithString: label)
-        field.font = .systemFont(ofSize: fontSize, weight: .medium)
+        field.font = .systemFont(ofSize: fontSize, weight: .semibold)
         field.textColor = .labelColor
         field.isEditable = false
         field.isBezeled = false
@@ -125,15 +147,14 @@ private final class NowPlayingBarChipView: NSView {
         field.lineBreakMode = .byTruncatingTail
         field.maximumNumberOfLines = 1
         field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        field.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(field)
+        row.addArrangedSubview(field)
 
         NSLayoutConstraint.activate([
-            field.leadingAnchor.constraint(equalTo: leadingAnchor, constant: padX),
-            field.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -padX),
-            field.centerYAnchor.constraint(equalTo: centerYAnchor, constant: progress == nil ? 0 : -0.5),
+            row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: padX),
+            row.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -padX),
+            row.centerYAnchor.constraint(equalTo: centerYAnchor, constant: progress == nil ? 0 : -0.5),
             heightAnchor.constraint(equalToConstant: chipH),
-            widthAnchor.constraint(lessThanOrEqualToConstant: max(160, 180 * scale))
+            widthAnchor.constraint(lessThanOrEqualToConstant: max(148, 164 * scale))
         ])
 
         guard let progress else { return }

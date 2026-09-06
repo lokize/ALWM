@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Combine
 import AlwmStatsKit
@@ -59,16 +60,48 @@ final class FansStore: ObservableObject, @unchecked Sendable {
         lock.lock()
         let snap = snapshot
         lock.unlock()
-        guard snap.present, let rpm = snap.primaryRPM else { return "FAN —" }
+        guard snap.present, let rpm = snap.primaryRPM else { return "—" }
         if let frac = snap.primaryFraction, frac > 0 {
-            let pct = Int((frac * 100).rounded())
-            return "FAN \(pct)%"
+            return "\(Int((frac * 100).rounded()))"
         }
-        return "FAN \(Int(rpm.rounded()))"
+        return "\(Int(rpm.rounded()))"
+    }
+
+    var chipUnit: String? {
+        lock.lock()
+        let snap = snapshot
+        lock.unlock()
+        guard snap.present, snap.primaryRPM != nil else { return nil }
+        if let frac = snap.primaryFraction, frac > 0 { return nil }
+        return "rpm"
+    }
+
+    var chipTint: NSColor {
+        lock.lock()
+        let snap = snapshot
+        lock.unlock()
+        guard snap.present else { return .secondaryLabelColor }
+        if let frac = snap.primaryFraction {
+            return StatsBarChipPressure.tint(for: frac)
+        }
+        return .labelColor
     }
 
     var tooltip: String {
         let loc = localeCode()
-        return "\(barLabel) — \(PluginL10n.t("plugin.common.click_to_open", locale: loc))"
+        lock.lock()
+        let snap = snapshot
+        lock.unlock()
+        let detail: String
+        if !snap.present || snap.primaryRPM == nil {
+            detail = "FAN —"
+        } else if let frac = snap.primaryFraction, frac > 0 {
+            detail = "FAN \(Int((frac * 100).rounded()))%"
+        } else if let rpm = snap.primaryRPM {
+            detail = "FAN \(Int(rpm.rounded())) rpm"
+        } else {
+            detail = "FAN —"
+        }
+        return "\(detail) — \(PluginL10n.t("plugin.common.click_to_open", locale: loc))"
     }
 }

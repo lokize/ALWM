@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Combine
 import AlwmStatsKit
@@ -57,11 +58,21 @@ final class DiskStore: ObservableObject, @unchecked Sendable {
         let frac = snapshot.usageFraction
         lock.unlock()
         let pct = Int((frac * 100).rounded())
-        return "SSD \(pct)%"
+        return "\(pct)"
+    }
+
+    var chipTint: NSColor {
+        lock.lock()
+        let usage = snapshot.usageFraction
+        lock.unlock()
+        return StatsBarChipPressure.tint(for: usage)
     }
 
     var tooltip: String {
         let loc = localeCode()
-        return "\(barLabel) — \(PluginL10n.t("plugin.common.click_to_open", locale: loc))"
+        lock.lock()
+        let pct = Int((snapshot.usageFraction * 100).rounded())
+        lock.unlock()
+        return "SSD \(pct)% — \(PluginL10n.t("plugin.common.click_to_open", locale: loc))"
     }
 }

@@ -3,6 +3,7 @@ import Foundation
 import AlwmPluginAPI
 import AlwmPluginABI
 import AlwmL10n
+import AlwmStatsKit
 
 /// Temperature sensors chip + Stats-like grouped list for the ALWM workspace bar.
 public final class StatsSensorsPlugin: AlwmPlugin {
@@ -56,11 +57,21 @@ public final class StatsSensorsPlugin: AlwmPlugin {
         _ = placement
         guard SensorsStore.shared.isPresent else { return nil }
         let scale = context?.barScale ?? 1
-        return SensorsBarChipView(
-            label: SensorsStore.shared.barLabel,
+        let store = SensorsStore.shared
+        let chip = StatsBarChipView(
+            symbolName: "thermometer",
+            value: store.barLabel,
+            tint: store.chipTint,
             scale: scale,
-            tooltip: SensorsStore.shared.tooltip
+            tooltip: store.tooltip
         )
+        chip.onClick = { [weak chip] in
+            guard let chip else { return }
+            Task { @MainActor in
+                SensorsPanelController.toggle(relativeTo: chip)
+            }
+        }
+        return chip
     }
 
     public func barSignature() -> String {
@@ -70,53 +81,6 @@ public final class StatsSensorsPlugin: AlwmPlugin {
         }
         let chip = Int((store.snapshot.primaryCelsius ?? 0).rounded())
         return "sens:\(chip):\(PluginL10n.currentCode)"
-    }
-}
-
-// MARK: - Chip
-
-private final class SensorsBarChipView: NSView {
-    private let label: String
-    private let scale: CGFloat
-
-    init(label: String, scale: CGFloat, tooltip: String) {
-        self.label = label
-        self.scale = scale
-        super.init(frame: .zero)
-        toolTip = tooltip
-        wantsLayer = true
-        translatesAutoresizingMaskIntoConstraints = false
-        setContentHuggingPriority(.required, for: .horizontal)
-        setContentCompressionResistancePriority(.required, for: .horizontal)
-        build()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    override func mouseDown(with event: NSEvent) {
-        Task { @MainActor in
-            SensorsPanelController.toggle(relativeTo: self)
-        }
-    }
-
-    private func build() {
-        let fontSize = max(9, 10 * scale)
-        let padX = max(5, 6 * scale)
-        let field = NSTextField(labelWithString: label)
-        field.font = .monospacedDigitSystemFont(ofSize: fontSize, weight: .medium)
-        field.textColor = .labelColor
-        field.isEditable = false
-        field.isBezeled = false
-        field.drawsBackground = false
-        field.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(field)
-        NSLayoutConstraint.activate([
-            field.leadingAnchor.constraint(equalTo: leadingAnchor, constant: padX),
-            field.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -padX),
-            field.centerYAnchor.constraint(equalTo: centerYAnchor),
-            heightAnchor.constraint(greaterThanOrEqualToConstant: max(14, 16 * scale))
-        ])
     }
 }
 
