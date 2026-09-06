@@ -3,6 +3,7 @@ import ApplicationServices
 import Foundation
 import SwiftUI
 import AlwmIPC
+import AlwmPluginAPI
 
 @MainActor
 public final class WindowManager: NSObject, AXTrackerDelegate {
@@ -34,6 +35,8 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
     private var mouseMoveEventBridge: AppKitEventMonitorBridge?
     private var ffmWorkItem: DispatchWorkItem?
     private var ffmLastRun = Date.distantPast
+    /// Cache for expensive CG/AX popup scans while focus-follows-mouse is active.
+    private var appPopupOpenCache: (at: Date, value: Bool)?
     private var quakeClickMonitor: Any?
     private var quakeClickLocalMonitor: Any?
     /// Overlay dismiss NSEvent bridge.
@@ -3277,8 +3280,43 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
             overlaysCaptureFocus: overlaysCaptureFocus,
             paletteVisible: palette.isVisible,
             overviewVisible: overview.isVisible,
-            settingsVisible: settingsUI.isVisible
+            settingsVisible: settingsUI.isVisible,
+            statusPopoverVisible: statusPopover.isShown,
+            appTransientPopupOpen: focusedAppHasTransientPopupOpen()
         )
+    }
+
+    /// WhatsApp sticker/emoji pickers, Discord menus, and similar app toggles.
+    /// While any are open, pause focus-follows-mouse so the neighbor tile is not raised over them.
+    private func focusedAppHasTransientPopupOpen() -> Bool {
+        if let cached = appPopupOpenCache, Date().timeIntervalSince(cached.at) < 0.15 {
+            return cached.value
+        }
+        let value = computeFocusedAppHasTransientPopupOpen()
+        appPopupOpenCache = (Date(), value)
+        return value
+    }
+
+    private func computeFocusedAppHasTransientPopupOpen() -> Bool {
+        let pid = axFocusedWindowID?.pid
+            ?? NSWorkspace.shared.frontmostApplication?.processIdentifier
+        guard let pid else { return false }
+
+        let monitorFrames = monitors.monitors.map(\.frame)
+        for (id, win) in windowsByID {
+            guard id.pid == pid, !win.isIgnored else { continue }
+            if id == quake.windowID || isQuakeOwned(id) || win.isScratchpad { continue }
+            guard win.isFloating || floatingOverrides.contains(id) else { continue }
+            let frame = lastFrames[id] ?? win.frame
+            guard OffscreenParking.isUsableOnscreenFrame(frame, monitors: monitorFrames) else { continue }
+            let usable = usableAreaNear(frame)
+            // Small / non-main floats = sticker pickers, emoji panels, context menus.
+            if !looksLikeMainTiledWindow(frame, usable: usable) {
+                return true
+            }
+        }
+
+        return AlwmChromeFocus.cgProcessHasPopupLayerWindow(pid: pid)
     }
 
     private func scheduleFocusWindowUnderMouse() {
@@ -8350,6 +8388,14 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
             border.hide()
             return
         }
+        // Plugin / status / menu-bar chrome sits over tiles — keep the focus ring hidden so it
+        // doesn't cut through translucent panels or open  / File menus.
+        if PluginPanelOutsideClick.hasVisiblePanel
+            || statusPopover.isShown
+            || AlwmChromeFocus.menuBarMenuIsOpen() {
+            border.hide()
+            return
+        }
         let mainHeight = Double(NSScreen.screens.first?.frame.height ?? 900)
         guard let mon = primaryMonitor() else {
             border.hide()
@@ -8376,9 +8422,32 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
             border.hide()
             return
         }
+        // App transient popups (sticker pickers, etc.): don't ring the popup itself —
+        // ring the owning main window when possible.
+        let borderTarget: WindowID = {
+            guard let win = windowsByID[focused],
+                  win.isFloating || floatingOverrides.contains(focused),
+                  !win.isScratchpad
+            else { return focused }
+            let usable = usableAreaNear(lastFrames[focused] ?? win.frame)
+            guard !looksLikeMainTiledWindow(lastFrames[focused] ?? win.frame, usable: usable) else {
+                return focused
+            }
+            // Prefer a tiled sibling of the same app on the active workspace.
+            if let main = windowsByID.keys.first(where: { id in
+                guard id.pid == focused.pid, id != focused else { return false }
+                guard let candidate = windowsByID[id], !candidate.isIgnored else { return false }
+                if candidate.isFloating || floatingOverrides.contains(id) { return false }
+                return windowIsOnActiveWorkspace(id, monitor: mon)
+            }) {
+                return main
+            }
+            return focused
+        }()
+
         // Always hug the live AX chrome — tile targets often oversize apps that refuse the
         // exact frame (Electron/WhatsApp), which left the stroke floating outside the window.
-        let frame = ax.currentFrame(of: focused) ?? windowsByID[focused]?.frame
+        let frame = ax.currentFrame(of: borderTarget) ?? windowsByID[borderTarget]?.frame
         let monitors = monitors.monitors.map(\.frame)
         guard let frame,
               OffscreenParking.isUsableOnscreenFrame(frame, monitors: monitors)
@@ -8388,7 +8457,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         }
         border.show(
             around: frame,
-            windowNumber: focused.windowNumber,
+            windowNumber: borderTarget.windowNumber,
             monitors: monitors,
             monitorMainHeight: mainHeight
         )

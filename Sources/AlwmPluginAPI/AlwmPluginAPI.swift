@@ -209,6 +209,12 @@ public enum PluginPanelOutsideClick {
     private static var onDismiss: (() -> Void)?
     private static var generation = 0
 
+    /// True while a plugin/Settings panel is open and watched for outside-click dismiss.
+    public static var hasVisiblePanel: Bool {
+        guard let window = watched else { return false }
+        return window.isVisible && !window.isMiniaturized
+    }
+
     /// Start watching `window`. Closes any previously watched window.
     /// Install is deferred one turn so the opening click does not dismiss immediately.
     /// - Parameter onDismiss: Custom close (e.g. Settings controller). Default: `orderOut`.
