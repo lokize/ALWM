@@ -10,13 +10,31 @@ private struct SettingsPluginItem: Identifiable, Equatable {
     var isInstalled: Bool
     var isEnabled: Bool
     var isBusy: Bool
+}
 
-    var canUninstall: Bool {
-        guard let url = discovered?.bundleURL else { return false }
-        let root = PluginInstallService.userPlugInsURL.standardizedFileURL.path
-        let path = url.standardizedFileURL.path
-        return path == root || path.hasPrefix(root + "/")
+/// Whether a discovered bundle lives under the user PlugIns directory.
+private func isUserInstalledBundle(_ url: URL) -> Bool {
+    let root = PluginInstallService.userPlugInsURL.standardizedFileURL.path
+    let path = url.standardizedFileURL.path
+    return path == root || path.hasPrefix(root + "/")
+}
+
+/// Installed for UI: user PlugIns on disk, or bundled unless soft-uninstalled.
+private func resolveInstalled(
+    onDisk: Bool,
+    bundleURL: URL?,
+    state: PluginUserState,
+    hasPersistedState: Bool
+) -> Bool {
+    if let bundleURL, isUserInstalledBundle(bundleURL) {
+        return onDisk
     }
+    if onDisk {
+        // Bundled / dist copy: honor soft-uninstall (`installed = false` in plugins.toml).
+        if hasPersistedState { return state.installed }
+        return true
+    }
+    return state.installed
 }
 
 /// Settings → Plugins.
@@ -66,85 +84,94 @@ struct PluginsSettingsPane: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                publishBlock
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    publishBlock
 
-                if installer.isRestoring {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        Text(L10n.t("plugins.restoring"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    if installer.isRestoring {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text(L10n.t("plugins.restoring"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
-                }
 
-                if let err = installer.lastError, !err.isEmpty {
-                    Text(err)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                }
+                    if let err = installer.lastError, !err.isEmpty {
+                        Text(err)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
 
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(L10n.t("plugins.catalog"))
-                        .font(.headline)
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(L10n.t("plugins.catalog"))
+                            .font(.headline)
 
-                    if items.isEmpty {
-                        Text(L10n.t("plugins.empty"))
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.vertical, 8)
-                    } else {
-                        pluginSearchBar
-                        categoryFilterBar
-
-                        if filteredItems.isEmpty {
-                            Text(L10n.t("plugins.search.empty"))
+                        if items.isEmpty {
+                            Text(L10n.t("plugins.empty"))
                                 .foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.vertical, 12)
+                                .padding(.vertical, 8)
                         } else {
-                            LazyVGrid(
-                                columns: [
-                                    GridItem(.flexible(), spacing: cardGap),
-                                    GridItem(.flexible(), spacing: cardGap)
-                                ],
-                                spacing: cardGap
-                            ) {
-                                ForEach(filteredItems) { item in
-                                    PluginCardRow(
-                                        item: item,
-                                        onToggle: { enabled in
-                                            Task { await setEnabled(enabled, item: item) }
-                                        },
-                                        onDownload: {
-                                            Task { await download(item) }
-                                        },
-                                        onUninstall: {
-                                            uninstall(item)
-                                        },
-                                        onOpen: { detail = item }
-                                    )
+                            pluginSearchBar
+                            categoryFilterBar
+
+                            if filteredItems.isEmpty {
+                                Text(L10n.t("plugins.search.empty"))
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.vertical, 12)
+                            } else {
+                                LazyVGrid(
+                                    columns: [
+                                        GridItem(.flexible(), spacing: cardGap),
+                                        GridItem(.flexible(), spacing: cardGap)
+                                    ],
+                                    spacing: cardGap
+                                ) {
+                                    ForEach(filteredItems) { item in
+                                        PluginCardRow(
+                                            item: item,
+                                            onToggle: { enabled in
+                                                Task { await setEnabled(enabled, item: item) }
+                                            },
+                                            onDownload: {
+                                                Task { await download(item) }
+                                            },
+                                            onUninstall: {
+                                                uninstall(item)
+                                            },
+                                            onOpen: { detail = item }
+                                        )
+                                    }
                                 }
                             }
                         }
 
-                        if !orderedInstalledItems.isEmpty {
-                            pluginOrderBlock
-                        }
+                        Text(L10n.t("plugins.footer"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 2)
                     }
-
-                    Text(L10n.t("plugins.footer"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 2)
                 }
+                .padding(.horizontal, contentInset)
+                .padding(.vertical, 16)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, contentInset)
-            .padding(.vertical, 16)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .id(loc.revision)
+
+            // Order lives outside the catalog ScrollView so LazyVGrid remounts
+            // never reset the viewport when barOrderIDs changes.
+            if !orderedInstalledItems.isEmpty {
+                Divider()
+                pluginOrderBlock
+                    .padding(.horizontal, contentInset)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.bar)
+            }
         }
-        .id(loc.revision)
         .onAppear { Task { await reloadAsync() } }
         .onChange(of: tick) { _, _ in Task { await reloadAsync() } }
         .onChange(of: installer.remoteCatalog) { _, _ in rebuildItems() }
@@ -289,7 +316,7 @@ struct PluginsSettingsPane: View {
         .buttonStyle(.plain)
     }
 
-    /// Stable VStack (no nested List) so reorder does not reset the outer ScrollView.
+    /// Fixed footer order panel (not inside the catalog ScrollView).
     private var pluginOrderBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L10n.t("plugins.order"))
@@ -299,76 +326,81 @@ struct PluginsSettingsPane: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            VStack(spacing: 0) {
-                ForEach(Array(orderedInstalledItems.enumerated()), id: \.element.id) { index, item in
-                    HStack(spacing: 10) {
-                        Image(systemName: "line.3.horizontal")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 16)
-                            .help(L10n.t("plugins.order.drag"))
-                        Text(item.manifest.name)
-                            .font(.system(size: 13, weight: .medium))
-                            .lineLimit(1)
-                        Spacer(minLength: 8)
-                        if item.isEnabled {
-                            Text(L10n.t("menu.on"))
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Capsule().fill(Color.primary.opacity(0.08)))
-                        }
-                        Button {
-                            moveInstalled(from: index, to: index - 1)
-                        } label: {
-                            Image(systemName: "chevron.up")
-                        }
-                        .buttonStyle(.borderless)
-                        .disabled(index == 0)
-                        .help(L10n.t("plugins.order.move_up"))
+            let rows = orderedInstalledItems
+            let listHeight = min(240, CGFloat(max(rows.count, 1)) * 36)
 
-                        Button {
-                            moveInstalled(from: index, to: index + 1)
-                        } label: {
-                            Image(systemName: "chevron.down")
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, item in
+                        HStack(spacing: 10) {
+                            Image(systemName: "line.3.horizontal")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 16)
+                                .help(L10n.t("plugins.order.drag"))
+                            Text(item.manifest.name)
+                                .font(.system(size: 13, weight: .medium))
+                                .lineLimit(1)
+                            Spacer(minLength: 8)
+                            if item.isEnabled {
+                                Text(L10n.t("menu.on"))
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Capsule().fill(Color.primary.opacity(0.08)))
+                            }
+                            Button {
+                                moveInstalled(from: index, to: index - 1)
+                            } label: {
+                                Image(systemName: "chevron.up")
+                            }
+                            .buttonStyle(.borderless)
+                            .disabled(index == 0)
+                            .help(L10n.t("plugins.order.move_up"))
+
+                            Button {
+                                moveInstalled(from: index, to: index + 1)
+                            } label: {
+                                Image(systemName: "chevron.down")
+                            }
+                            .buttonStyle(.borderless)
+                            .disabled(index >= rows.count - 1)
+                            .help(L10n.t("plugins.order.move_down"))
                         }
-                        .buttonStyle(.borderless)
-                        .disabled(index >= orderedInstalledItems.count - 1)
-                        .help(L10n.t("plugins.order.move_down"))
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(draggingOrderID == item.id ? Color.accentColor.opacity(0.12) : Color.clear)
-                    )
-                    .contentShape(Rectangle())
-                    .onDrag {
-                        draggingOrderID = item.id
-                        return NSItemProvider(object: item.id as NSString)
-                    }
-                    .onDrop(
-                        of: [.text],
-                        delegate: PluginOrderDropDelegate(
-                            targetID: item.id,
-                            orderedIDs: orderedInstalledItems.map(\.id),
-                            draggingID: $draggingOrderID,
-                            onMove: { from, to in moveInstalled(from: from, to: to) }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(draggingOrderID == item.id ? Color.accentColor.opacity(0.12) : Color.clear)
                         )
-                    )
-                    if index < orderedInstalledItems.count - 1 {
-                        Divider().opacity(0.35)
+                        .contentShape(Rectangle())
+                        .onDrag {
+                            draggingOrderID = item.id
+                            return NSItemProvider(object: item.id as NSString)
+                        }
+                        .onDrop(
+                            of: [.text],
+                            delegate: PluginOrderDropDelegate(
+                                targetID: item.id,
+                                orderedIDs: rows.map(\.id),
+                                draggingID: $draggingOrderID,
+                                onMove: { from, to in moveInstalled(from: from, to: to) }
+                            )
+                        )
+                        if index < rows.count - 1 {
+                            Divider().opacity(0.35)
+                        }
                     }
                 }
             }
+            .frame(height: listHeight)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Color.primary.opacity(0.04))
             )
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
-        .padding(.bottom, 4)
     }
 
     private static let publishDocsURL =
@@ -391,33 +423,42 @@ struct PluginsSettingsPane: View {
         for remote in installer.remoteCatalog {
             let disc = discovered[remote.id]
             let onDisk = disc.map { FileManager.default.fileExists(atPath: $0.bundleURL.path) } ?? false
-            let state = settings.state(
-                for: remote.id,
-                defaultPlacement: AlwmBarPlacement(rawString: remote.defaultPlacement) ?? .afterWorkspaces
+            let def = AlwmBarPlacement(rawString: remote.defaultPlacement) ?? .afterWorkspaces
+            let hasState = settings.states[remote.id] != nil
+            let state = settings.state(for: remote.id, defaultPlacement: def)
+            let installed = resolveInstalled(
+                onDisk: onDisk,
+                bundleURL: disc?.bundleURL,
+                state: state,
+                hasPersistedState: hasState
             )
-            let installed = onDisk || state.installed
             byID[remote.id] = SettingsPluginItem(
                 id: remote.id,
                 manifest: remote.manifest,
                 discovered: disc,
                 isInstalled: installed,
-                isEnabled: state.enabled && onDisk,
+                isEnabled: state.enabled && onDisk && installed,
                 isBusy: installer.busyIDs.contains(remote.id)
             )
         }
 
         for disc in discovered.values where byID[disc.id] == nil {
-            let state = settings.state(
-                for: disc.id,
-                defaultPlacement: AlwmBarPlacement(rawString: disc.manifest.defaultPlacement) ?? .afterWorkspaces
-            )
+            let def = AlwmBarPlacement(rawString: disc.manifest.defaultPlacement) ?? .afterWorkspaces
+            let hasState = settings.states[disc.id] != nil
+            let state = settings.state(for: disc.id, defaultPlacement: def)
             let onDisk = FileManager.default.fileExists(atPath: disc.bundleURL.path)
+            let installed = resolveInstalled(
+                onDisk: onDisk,
+                bundleURL: disc.bundleURL,
+                state: state,
+                hasPersistedState: hasState
+            )
             byID[disc.id] = SettingsPluginItem(
                 id: disc.id,
                 manifest: disc.manifest,
                 discovered: disc,
-                isInstalled: onDisk || state.installed,
-                isEnabled: state.enabled && onDisk,
+                isInstalled: installed,
+                isEnabled: state.enabled && onDisk && installed,
                 isBusy: installer.busyIDs.contains(disc.id)
             )
         }
@@ -448,8 +489,12 @@ struct PluginsSettingsPane: View {
         barOrderIDs = order
 
         let rest = items.map(\.id).filter { !installed.contains($0) }
-        PluginManager.shared.reorderBarPlugins(order + rest)
-        // Do not mutate `items` / tick / reload — that rebuilds the LazyVGrid and resets scroll.
+        // Persist order; refresh the workspace bar after a beat so Settings layout
+        // is not invalidated in the same turn as the local list update.
+        PluginManager.shared.reorderBarPlugins(order + rest, refreshBar: false)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            PluginManager.shared.requestBarRefresh()
+        }
     }
 
     private func download(_ item: SettingsPluginItem) async {
@@ -659,12 +704,8 @@ private struct PluginCardRow: View {
                     Button(L10n.t("plugins.install")) { onDownload() }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
-                } else if item.canUninstall {
-                    Button(L10n.t("plugins.uninstall")) { onUninstall() }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
                 } else {
-                    Button(L10n.t("plugins.details")) { onOpen() }
+                    Button(L10n.t("plugins.uninstall")) { onUninstall() }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                 }
@@ -763,12 +804,6 @@ private struct PluginDetailSheet: View {
     @State private var monitors: [MonitorInfo] = []
     @State private var galleryIndex: Int?
 
-    private var canUninstall: Bool {
-        let root = PluginInstallService.userPlugInsURL.standardizedFileURL.path
-        let path = plugin.bundleURL.standardizedFileURL.path
-        return path == root || path.hasPrefix(root + "/")
-    }
-
     var body: some View {
         ZStack {
             VStack(spacing: 0) {
@@ -809,9 +844,7 @@ private struct PluginDetailSheet: View {
                                 get: { enabled },
                                 set: { onEnabled($0) }
                             ))
-                            if canUninstall {
-                                Button(L10n.t("plugins.uninstall"), role: .destructive, action: onUninstall)
-                            }
+                            Button(L10n.t("plugins.uninstall"), role: .destructive, action: onUninstall)
                         } else {
                             Button(L10n.t("plugins.install"), action: onDownload)
                                 .buttonStyle(.borderedProminent)

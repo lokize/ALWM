@@ -4,7 +4,9 @@ import Foundation
 public enum PluginCategory: String, Sendable, CaseIterable, Identifiable, Codable {
     case system
     case media
+    case games
     case integrations
+    case developer
     case utilities
 
     public var id: String { rawValue }

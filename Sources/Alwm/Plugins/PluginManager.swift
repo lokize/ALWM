@@ -99,6 +99,10 @@ public final class PluginManager {
             let defPlacement = AlwmBarPlacement(rawString: plugin.manifest.defaultPlacement) ?? .afterWorkspaces
             let state = settings.state(for: plugin.id, defaultPlacement: defPlacement)
             guard state.enabled else { continue }
+            // Soft-uninstall (bundled copy still on disk, but user removed it in Settings).
+            if let persisted = settings.states[plugin.id], persisted.installed == false {
+                continue
+            }
             guard plugin.manifest.apiVersion <= alwmPluginAPIVersion else {
                 NSLog("ALWM plugins: skip \(plugin.id) — apiVersion \(plugin.manifest.apiVersion) > \(alwmPluginAPIVersion)")
                 continue
@@ -207,9 +211,11 @@ public final class PluginManager {
         requestBarRefresh()
     }
 
-    public func reorderBarPlugins(_ ids: [String]) {
+    public func reorderBarPlugins(_ ids: [String], refreshBar: Bool = true) {
         settings.reorder(ids)
-        requestBarRefresh()
+        if refreshBar {
+            requestBarRefresh()
+        }
     }
 
     public func orderedCatalog() -> [DiscoveredPlugin] {

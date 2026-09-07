@@ -65,7 +65,7 @@ bash scripts/verify-plugin-l10n.sh
 
 Placement: `beforeWorkspaces` | `afterWorkspaces`. Users can change placement and monitor in Settings.
 
-Category (`category`): `system` | `media` | `integrations` | `utilities` — used in Settings → Plugins search and filters.
+Category (`category`): `system` | `media` | `games` | `integrations` | `developer` | `utilities` — used in Settings → Plugins search and filters.
 
 ## Packaging & publish
 

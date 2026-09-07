@@ -6,7 +6,7 @@
   "apiVersion": 1,
   "license": "GPL-3.0",
   "summary": "Monitor Nintendo eShop prices via Deku Deals, set targets, and get notified.",
-  "category": "integrations",
+  "category": "games",
   "preview": "previews/card.png",
   "screenshots": [
     "previews/01.png"
