@@ -4,11 +4,15 @@ import AlwmL10n
 /// Localized catalog copy (summary + README) for Settings → Plugins.
 enum PluginCatalogCopy {
     static func summary(for plugin: DiscoveredPlugin) -> String {
-        if let key = catalogKey(for: plugin.id, suffix: "summary"),
+        summary(id: plugin.id, fallback: plugin.manifest.summary)
+    }
+
+    static func summary(id: String, fallback: String) -> String {
+        if let key = catalogKey(for: id, suffix: "summary"),
            let text = localized(key) {
             return text
         }
-        return plugin.manifest.summary
+        return fallback
     }
 
     static func readmeText(for plugin: DiscoveredPlugin, locale: String = PluginL10n.currentCode) -> String? {

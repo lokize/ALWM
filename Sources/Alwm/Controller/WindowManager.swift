@@ -233,7 +233,8 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         }
         // Defer so the first chrome paint isn't blocked by plugin dlopen/SMC/HID.
         DispatchQueue.main.async {
-            PluginManager.shared.reloadFromSettings()
+            PluginInstallService.shared.ensureUserPlugInsDir()
+            PluginInstallService.shared.restoreInstalledIfNeeded()
         }
 
         AppUpdateService.shared.onPrepareQuitForUpdate = { [weak self] in

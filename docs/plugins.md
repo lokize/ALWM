@@ -1,17 +1,28 @@
 # Plugins
 
-ALWM ships plugins inside the app (`Contents/PlugIns/*.alwmplugin`). There is no separate store yet — new plugins land through pull requests. Bundled plugins and the plugin API are **GPL-3.0**, same as the host app.
+ALWM releases ship a **slim app** without bundled plugins. Users download the plugins they want from **Settings → Plugins**; bundles live in `~/.config/alwm/PlugIns/` and survive app updates. Preferences (`enabled`, `order`, `placement`, `display`, `installed`) are stored in `~/.config/alwm/plugins.toml`.
+
+Local **debug** builds (`./scripts/package.sh`) still embed plugins in `Contents/PlugIns` for faster iteration. **Release** builds leave `PlugIns` empty and publish each plugin as a zip plus `plugins-index.json` on the same GitHub Release as the DMG.
+
+The plugin API is **GPL-3.0**, same as the host app.
 
 **Stats-style system chips roadmap:** [plugins-stats-roadmap.md](plugins-stats-roadmap.md) (CPU, RAM, network, battery, …).
 
-## Add one
+## User flow
+
+1. Install / update ALWM (DMG has no plugins by default).
+2. Open **Settings → Plugins** → **Download** the ones you want (optionally enable).
+3. Reorder with the up/down controls under **Bar order**.
+4. After an app update, ALWM re-downloads any plugin marked `installed = true` in `plugins.toml` and restores enablement + order.
+
+## Add one (developers)
 
 1. Fork [ALWM](https://github.com/lokize/ALWM---Tiling-window-manager-for-macOS) and copy `plugins/sample-clock/` (or use `steam-price-watcher` as a fuller example).
 2. Set a unique `id` in `plugin.json` (`dev.you.something`).
 3. Implement `AlwmPlugin`, export `alwm_plugin_create` via `AlwmPluginExport.makeVTable`.
 4. Register the dynamic library in `Package.swift` and `scripts/package.sh`.
-5. `./scripts/package.sh` → enable it under **Settings → Plugins**.
-6. Open a PR to `main`.
+5. `./scripts/package.sh` (debug embeds the plugin) → enable under **Settings → Plugins**.
+6. Open a PR to `main`. Release packaging produces `dist/plugins/<Name>.alwmplugin.zip` and updates `dist/plugins-index.json`.
 
 ## Layout
 
@@ -56,6 +67,22 @@ Placement: `beforeWorkspaces` | `afterWorkspaces`. Users can change placement an
 
 Category (`category`): `system` | `media` | `integrations` | `utilities` — used in Settings → Plugins search and filters.
 
+## Packaging & publish
+
+```bash
+# Debug — plugins embedded in the .app
+./scripts/package.sh
+
+# Release slim app + dist/plugins/*.zip + plugins-index.json
+ALWM_CONFIG=release ALWM_DIST_ONLY=1 ./scripts/package.sh
+
+# Force embedding plugins in a release build (optional)
+ALWM_CONFIG=release ALWM_BUNDLE_PLUGINS=1 ./scripts/package.sh
+
+# Publish DMG + plugin zips + index to GitHub Releases
+bash scripts/publish-github-release.sh
+```
+
 ## Entry point
 
 ```swift
@@ -98,17 +125,11 @@ swift scripts/generate-plugin-strings.swift
 4. For SwiftUI panels, wrap with `.pluginLocalized()` so they refresh when the language changes.
 5. Include `PluginL10n.currentCode` in `barSignature()` so the workspace bar rebuilds chips after a language switch.
 6. Add **`l10n/{locale}.md`** for every app language (see `scripts/generate-plugin-catalog-l10n.swift`) plus **`plugin.*.catalog.summary`** keys in `scripts/generate-plugin-strings.swift` for the Settings catalog blurb.
-7. Run `bash scripts/verify-plugin-l10n.sh` before opening a PR.
 
-`PluginLocaleBridge` is stored in **UserDefaults** (`dev.alwm.languageCode`) so host and plugin dylibs share the same language (SPM links `AlwmL10n` statically into each binary). Prefer `PluginL10n.t` / `context.localeIdentifier` so plugins stay in sync.
+## Persistence
 
-## Package wiring
-
-- `Package.swift`: dynamic library product + target under `plugins/my-plugin` (exclude `plugin.json`, `README.md`, `previews`, `Resources`); depend on `AlwmL10n` if the plugin has UI strings.
-- `scripts/package.sh`: another `package_plugin …` line next to SampleClock / SteamPriceWatcher / GitHub.
-
-## Before you PR
-
-Unique id, README, preview image, builds clean, chip works with enable/placement/monitor settings, no secrets. Plugins run in-process with ALWM — keep that in mind when reviewing.
-
-[Compare & open a PR](https://github.com/lokize/ALWM---Tiling-window-manager-for-macOS/compare)
+| Path | Role |
+|------|------|
+| `~/.config/alwm/plugins.toml` | `installed`, `version`, `enabled`, `placement`, `display`, `order` |
+| `~/.config/alwm/PlugIns/*.alwmplugin` | Downloaded bundles |
+| `~/.config/alwm/plugins/<id>.json` | Per-plugin data (tokens, watchlists, …) |

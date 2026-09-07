@@ -40,6 +40,9 @@ public enum PluginBarDisplay: Equatable, Sendable, Hashable {
 public struct PluginUserState: Equatable, Sendable, Identifiable {
     public var id: String
     public var enabled: Bool
+    /// User chose to keep this plugin (download / restore across app updates).
+    public var installed: Bool
+    public var installedVersion: String?
     public var placement: AlwmBarPlacement
     public var display: PluginBarDisplay
     /// Lower values appear first on the workspace bar (within the same placement).
@@ -48,12 +51,16 @@ public struct PluginUserState: Equatable, Sendable, Identifiable {
     public init(
         id: String,
         enabled: Bool = false,
+        installed: Bool = false,
+        installedVersion: String? = nil,
         placement: AlwmBarPlacement = .afterWorkspaces,
         display: PluginBarDisplay = .all,
         order: Int = 0
     ) {
         self.id = id
         self.enabled = enabled
+        self.installed = installed
+        self.installedVersion = installedVersion
         self.placement = placement
         self.display = display
         self.order = order
@@ -81,6 +88,7 @@ public final class PluginSettingsStore: @unchecked Sendable {
         return PluginUserState(
             id: id,
             enabled: false,
+            installed: false,
             placement: Self.normalized(defaultPlacement),
             display: .all,
             order: nextOrder()
@@ -93,6 +101,24 @@ public final class PluginSettingsStore: @unchecked Sendable {
             s.order = nextOrder()
         }
         s.enabled = enabled
+        if enabled { s.installed = true }
+        states[id] = s
+        save()
+    }
+
+    public func setInstalled(
+        _ installed: Bool,
+        version: String? = nil,
+        for id: String,
+        defaultPlacement: AlwmBarPlacement = .afterWorkspaces
+    ) {
+        var s = state(for: id, defaultPlacement: defaultPlacement)
+        if states[id] == nil {
+            s.order = nextOrder()
+        }
+        s.installed = installed
+        if let version { s.installedVersion = version }
+        if !installed { s.enabled = false }
         states[id] = s
         save()
     }
@@ -120,6 +146,19 @@ public final class PluginSettingsStore: @unchecked Sendable {
     public func upsert(_ state: PluginUserState) {
         states[state.id] = state
         save()
+    }
+
+    /// Legacy TOML without `installed`: treat previously enabled plugins as installed.
+    public func migrateInstalledFlags() {
+        var changed = false
+        for (id, var s) in states {
+            if s.enabled && !s.installed {
+                s.installed = true
+                states[id] = s
+                changed = true
+            }
+        }
+        if changed { save() }
     }
 
     /// Stable bar order for catalog IDs (unknown ids append at the end).
@@ -155,6 +194,8 @@ public final class PluginSettingsStore: @unchecked Sendable {
         states[id]?.order ?? Int.max / 2
     }
 
+    public func nextOrderPublic() -> Int { nextOrder() }
+
     public func load() {
         guard let text = try? String(contentsOf: url, encoding: .utf8) else {
             states = [:]
@@ -163,6 +204,8 @@ public final class PluginSettingsStore: @unchecked Sendable {
         var next: [String: PluginUserState] = [:]
         var currentID: String?
         var enabled = false
+        var installed: Bool?
+        var installedVersion: String?
         var placement = AlwmBarPlacement.afterWorkspaces
         var display = PluginBarDisplay.all
         var order: Int?
@@ -170,9 +213,12 @@ public final class PluginSettingsStore: @unchecked Sendable {
 
         func flush() {
             guard let id = currentID else { return }
+            let resolvedInstalled = installed ?? enabled
             next[id] = PluginUserState(
                 id: id,
                 enabled: enabled,
+                installed: resolvedInstalled,
+                installedVersion: installedVersion,
                 placement: Self.normalized(placement),
                 display: display,
                 order: order ?? fileIndex
@@ -180,6 +226,8 @@ public final class PluginSettingsStore: @unchecked Sendable {
             fileIndex += 1
             currentID = nil
             enabled = false
+            installed = nil
+            installedVersion = nil
             placement = .afterWorkspaces
             display = .all
             order = nil
@@ -196,6 +244,10 @@ public final class PluginSettingsStore: @unchecked Sendable {
                 currentID = Self.stringValue(line)
             } else if line.hasPrefix("enabled") {
                 enabled = Self.boolValue(line)
+            } else if line.hasPrefix("installed") {
+                installed = Self.boolValue(line)
+            } else if line.hasPrefix("version") || line.hasPrefix("installedVersion") {
+                installedVersion = Self.stringValue(line)
             } else if line.hasPrefix("placement"),
                       let raw = Self.stringValue(line),
                       let p = AlwmBarPlacement(rawString: raw) {
@@ -221,6 +273,10 @@ public final class PluginSettingsStore: @unchecked Sendable {
         for s in ordered {
             lines.append("[[plugins]]")
             lines.append("id = \"\(s.id)\"")
+            lines.append("installed = \(s.installed)")
+            if let version = s.installedVersion, !version.isEmpty {
+                lines.append("version = \"\(version)\"")
+            }
             lines.append("enabled = \(s.enabled)")
             lines.append("placement = \"\(Self.normalized(s.placement).rawString)\"")
             lines.append("display = \"\(s.display.rawString)\"")

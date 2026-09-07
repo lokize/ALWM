@@ -91,7 +91,7 @@ public final class PluginManager {
             NSLog("ALWM plugins: auto-disabled \(crashedID) after previous load crash")
         }
 
-        let allowedRoot = Bundle.main.builtInPlugInsURL?.standardizedFileURL
+        let allowedRoots = Self.loadableRoots()
 
         var wanted: Set<String> = []
         var toLoad: [DiscoveredPlugin] = []
@@ -103,10 +103,8 @@ public final class PluginManager {
                 NSLog("ALWM plugins: skip \(plugin.id) — apiVersion \(plugin.manifest.apiVersion) > \(alwmPluginAPIVersion)")
                 continue
             }
-            guard let allowedRoot,
-                  isUnder(plugin.bundleURL, root: allowedRoot)
-            else {
-                NSLog("ALWM plugins: \(plugin.id) not under PlugIns — enable after packaging")
+            guard allowedRoots.contains(where: { isUnder(plugin.bundleURL, root: $0) }) else {
+                NSLog("ALWM plugins: \(plugin.id) not under loadable PlugIns — download or package first")
                 continue
             }
             wanted.insert(plugin.id)
@@ -362,7 +360,16 @@ public final class PluginManager {
 
     private func isUnder(_ url: URL, root: URL) -> Bool {
         let path = url.standardizedFileURL.path
-        let rootPath = root.path
+        let rootPath = root.standardizedFileURL.path
         return path == rootPath || path.hasPrefix(rootPath + "/")
+    }
+
+    private static func loadableRoots() -> [URL] {
+        var roots: [URL] = []
+        roots.append(PluginInstallService.userPlugInsURL.standardizedFileURL)
+        if let builtIn = Bundle.main.builtInPlugInsURL?.standardizedFileURL {
+            roots.append(builtIn)
+        }
+        return roots
     }
 }

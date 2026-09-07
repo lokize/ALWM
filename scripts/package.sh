@@ -10,6 +10,15 @@ CONFIG="${ALWM_CONFIG:-debug}"
 RELAUNCH="${ALWM_RELAUNCH:-1}"
 DIST_ONLY="${ALWM_DIST_ONLY:-0}"
 FAST_RELEASE="${ALWM_FAST_RELEASE:-0}"
+# Release ships a slim app (no PlugIns). Debug bundles plugins for local DX.
+# Override: ALWM_BUNDLE_PLUGINS=1|0
+if [[ -n "${ALWM_BUNDLE_PLUGINS:-}" ]]; then
+  BUNDLE_PLUGINS="$ALWM_BUNDLE_PLUGINS"
+elif [[ "$CONFIG" == "release" ]]; then
+  BUNDLE_PLUGINS=0
+else
+  BUNDLE_PLUGINS=1
+fi
 
 if [[ "$DIST_ONLY" == "1" ]]; then
   RELAUNCH=0
@@ -120,8 +129,10 @@ chmod +x "$MACOS/ALWM"
 step "Package PlugIns"
 FRAMEWORKS="$CONTENTS/Frameworks"
 PLUGINS_DIR="$CONTENTS/PlugIns"
-mkdir -p "$FRAMEWORKS" "$PLUGINS_DIR"
+DIST_PLUGINS="$ROOT/dist/plugins"
+mkdir -p "$FRAMEWORKS" "$PLUGINS_DIR" "$DIST_PLUGINS"
 rm -rf "$PLUGINS_DIR"/*.alwmplugin 2>/dev/null || true
+rm -rf "$DIST_PLUGINS"/*.alwmplugin "$DIST_PLUGINS"/*.zip 2>/dev/null || true
 
 API_DYLIB="$(find "$BIN_ROOT" -path "*/$CONFIG/libAlwmPluginAPI.dylib" -type f 2>/dev/null | head -1)"
 if [[ -z "${API_DYLIB:-}" || ! -f "$API_DYLIB" ]]; then
@@ -161,6 +172,8 @@ if [[ -f "$API_DYLIB" ]]; then
 fi
 stage_shared_dylib "libAlwmL10n.dylib"
 stage_shared_dylib "libAlwmStatsKit.dylib"
+
+# Always stage under dist/plugins. Optionally copy into the .app for local debug.
 package_plugin() {
   local src_dir="$1"
   local product_dylib_name="$2"
@@ -177,7 +190,7 @@ package_plugin() {
     return 0
   fi
 
-  local bundle="$PLUGINS_DIR/${bundle_name}.alwmplugin"
+  local bundle="$DIST_PLUGINS/${bundle_name}.alwmplugin"
   local macos_dir="$bundle/Contents/MacOS"
   local resources_dir="$bundle/Contents/Resources"
   rm -rf "$bundle"
@@ -224,13 +237,22 @@ package_plugin() {
 PLIST
 
   install_name_tool -id "@rpath/${bundle_name}" "$macos_dir/${bundle_name}" 2>/dev/null || true
+  # Bundled: relative to Contents/PlugIns. User-installed: resolve via host Frameworks.
   install_name_tool -add_rpath "@loader_path/../../../Frameworks" "$macos_dir/${bundle_name}" 2>/dev/null || true
+  install_name_tool -add_rpath "@executable_path/../Frameworks" "$macos_dir/${bundle_name}" 2>/dev/null || true
   for shared in libAlwmPluginAPI.dylib libAlwmL10n.dylib libAlwmStatsKit.dylib; do
     otool -L "$macos_dir/${bundle_name}" | awk -v n="$shared" 'index($1, n) {print $1}' | while read -r old; do
       install_name_tool -change "$old" "@rpath/${shared}" "$macos_dir/${bundle_name}" 2>/dev/null || true
     done
   done
-  echo "  PlugIn: ${bundle_name}.alwmplugin"
+
+  if [[ "$BUNDLE_PLUGINS" == "1" ]]; then
+    rm -rf "$PLUGINS_DIR/${bundle_name}.alwmplugin"
+    cp -R "$bundle" "$PLUGINS_DIR/${bundle_name}.alwmplugin"
+    echo "  PlugIn: ${bundle_name}.alwmplugin (bundled)"
+  else
+    echo "  PlugIn: ${bundle_name}.alwmplugin (dist only)"
+  fi
 }
 
 # Sample plugins
@@ -338,6 +360,52 @@ if [[ -d "$ROOT/plugins/stats-uptime" ]]; then
     "libStatsUptimePlugin.dylib" \
     "StatsUptime" \
     "dev.alwm.stats-uptime"
+fi
+
+# Catalog index for on-demand installs (also copied into the app for offline fallback).
+step "Write plugins-index.json"
+ROOT="$ROOT" python3 - <<'PY'
+import json, os, pathlib
+root = pathlib.Path(os.environ["ROOT"])
+dist = root / "dist" / "plugins"
+plugins = []
+for bundle in sorted(dist.glob("*.alwmplugin")):
+    manifest = bundle / "Contents" / "Resources" / "plugin.json"
+    if not manifest.is_file():
+        continue
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    name = bundle.name  # StatsCPU.alwmplugin
+    plugins.append({
+        "id": data.get("id", ""),
+        "name": data.get("name", name),
+        "version": data.get("version", "0.0.0"),
+        "bundle": name,
+        "category": data.get("category", "utilities"),
+        "summary": data.get("summary", ""),
+        "apiVersion": data.get("apiVersion", 1),
+        "asset": f"{name}.zip",
+        "defaultPlacement": data.get("defaultPlacement", "afterWorkspaces"),
+        "author": data.get("author", ""),
+        "preview": data.get("preview"),
+        "screenshots": data.get("screenshots") or [],
+    })
+index = {"schemaVersion": 1, "plugins": plugins}
+out = root / "dist" / "plugins-index.json"
+out.write_text(json.dumps(index, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+print(f"  {out} ({len(plugins)} plugins)")
+# Zip each plugin for GitHub release assets
+for bundle in sorted(dist.glob("*.alwmplugin")):
+    zip_path = dist / f"{bundle.name}.zip"
+    if zip_path.exists():
+        zip_path.unlink()
+    # ditto -c -k produces a Finder-compatible zip of the .alwmplugin directory
+    os.system(f'ditto -c -k --sequesterRsrc --keepParent "{bundle}" "{zip_path}"')
+    print(f"  zip: {zip_path.name}")
+PY
+cp -f "$ROOT/dist/plugins-index.json" "$CONTENTS/Resources/plugins-index.json"
+
+if [[ "$BUNDLE_PLUGINS" != "1" ]]; then
+  echo "  Slim app: Contents/PlugIns left empty (download on demand)"
 fi
 
 sign_app() {

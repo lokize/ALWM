@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "0.7.1",
+      "items": [
+        "Maintenance and fixes"
+      ]
+    },
+    {
       "version": "0.7.0",
       "items": [
         "Maintenance and fixes"
@@ -236,15 +242,6 @@
       "version": "0.3.2",
       "items": [
         "Fix plugin catalog localization build on CI"
-      ]
-    },
-    {
-      "version": "0.3.1",
-      "items": [
-        "Reflow tile columns immediately when a window is closed",
-        "Plugin catalog and panels localized in all app languages",
-        "GitHub plugin gallery slider and localized About section",
-        "Plugin l10n verification script for all bundled plugins"
       ]
     }
   ]

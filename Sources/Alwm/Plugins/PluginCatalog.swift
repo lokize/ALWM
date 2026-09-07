@@ -66,6 +66,11 @@ public enum PluginCatalog {
 
     private static func searchRoots() -> [URL] {
         var roots: [URL] = []
+        // User-installed plugins first (wins over bundled copies of the same id).
+        let user = PluginInstallService.userPlugInsURL
+        if FileManager.default.fileExists(atPath: user.path) {
+            roots.append(user)
+        }
         if let plugins = Bundle.main.builtInPlugInsURL {
             roots.append(plugins)
         }
@@ -77,6 +82,12 @@ public enum PluginCatalog {
             .appendingPathComponent("plugins", isDirectory: true)
         if FileManager.default.fileExists(atPath: cwd.path) {
             roots.append(cwd)
+        }
+        // dist/plugins from a local package (debug / restore without GitHub).
+        let distPlugins = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+            .appendingPathComponent("dist/plugins", isDirectory: true)
+        if FileManager.default.fileExists(atPath: distPlugins.path) {
+            roots.append(distPlugins)
         }
         if let exe = Bundle.main.executableURL?
             .deletingLastPathComponent() // MacOS

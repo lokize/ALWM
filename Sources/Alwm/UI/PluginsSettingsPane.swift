@@ -2,27 +2,50 @@ import AppKit
 import SwiftUI
 import AlwmPluginAPI
 
+/// Merged remote + local plugin row for Settings → Plugins.
+private struct SettingsPluginItem: Identifiable, Equatable {
+    var id: String
+    var manifest: PluginManifest
+    var discovered: DiscoveredPlugin?
+    var isInstalled: Bool
+    var isEnabled: Bool
+    var isBusy: Bool
+
+    var canUninstall: Bool {
+        guard let url = discovered?.bundleURL else { return false }
+        let root = PluginInstallService.userPlugInsURL.standardizedFileURL.path
+        let path = url.standardizedFileURL.path
+        return path == root || path.hasPrefix(root + "/")
+    }
+}
+
 /// Settings → Plugins.
 struct PluginsSettingsPane: View {
     @ObservedObject private var loc = LocalizationController.shared
-    @State private var plugins: [DiscoveredPlugin] = []
-    @State private var detail: DiscoveredPlugin?
+    @ObservedObject private var installer = PluginInstallService.shared
+    @State private var items: [SettingsPluginItem] = []
+    @State private var detail: SettingsPluginItem?
     @State private var tick = 0
     @State private var searchText = ""
     @State private var categoryFilter: PluginCategory? = nil
+    @State private var draggingOrderID: String? = nil
 
     private let contentInset: CGFloat = 20
     private let cardGap: CGFloat = 12
 
-    private var filteredPlugins: [DiscoveredPlugin] {
+    private var filteredItems: [SettingsPluginItem] {
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return plugins.filter { plugin in
-            if let categoryFilter, plugin.manifest.resolvedCategory != categoryFilter {
+        return items.filter { item in
+            if let categoryFilter, item.manifest.resolvedCategory != categoryFilter {
                 return false
             }
             guard !q.isEmpty else { return true }
-            return pluginMatches(plugin, query: q)
+            return itemMatches(item, query: q)
         }
+    }
+
+    private var installedItems: [SettingsPluginItem] {
+        items.filter(\.isInstalled)
     }
 
     var body: some View {
@@ -30,11 +53,26 @@ struct PluginsSettingsPane: View {
             VStack(alignment: .leading, spacing: 20) {
                 publishBlock
 
+                if installer.isRestoring {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text(L10n.t("plugins.restoring"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if let err = installer.lastError, !err.isEmpty {
+                    Text(err)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+
                 VStack(alignment: .leading, spacing: 10) {
                     Text(L10n.t("plugins.catalog"))
                         .font(.headline)
 
-                    if plugins.isEmpty {
+                    if items.isEmpty {
                         Text(L10n.t("plugins.empty"))
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -43,7 +81,7 @@ struct PluginsSettingsPane: View {
                         pluginSearchBar
                         categoryFilterBar
 
-                        if filteredPlugins.isEmpty {
+                        if filteredItems.isEmpty {
                             Text(L10n.t("plugins.search.empty"))
                                 .foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -56,22 +94,27 @@ struct PluginsSettingsPane: View {
                                 ],
                                 spacing: cardGap
                             ) {
-                                ForEach(filteredPlugins) { plugin in
+                                ForEach(filteredItems) { item in
                                     PluginCardRow(
-                                        plugin: plugin,
-                                        enabled: isEnabled(plugin),
+                                        item: item,
                                         onToggle: { enabled in
-                                            PluginManager.shared.setEnabled(enabled, id: plugin.id)
-                                            tick &+= 1
+                                            Task { await setEnabled(enabled, item: item) }
                                         },
-                                        onOpen: { detail = plugin }
+                                        onDownload: {
+                                            Task { await download(item) }
+                                        },
+                                        onUninstall: {
+                                            uninstall(item)
+                                        },
+                                        onOpen: { detail = item }
                                     )
                                 }
                             }
                         }
 
-                        // Order list after the catalog grid so search/filters stay above cards.
-                        pluginOrderBlock
+                        if !installedItems.isEmpty {
+                            pluginOrderBlock
+                        }
                     }
 
                     Text(L10n.t("plugins.footer"))
@@ -85,28 +128,49 @@ struct PluginsSettingsPane: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .id(loc.revision)
-        .onAppear(perform: reload)
-        .onChange(of: tick) { _, _ in reload() }
-        .sheet(item: $detail) { plugin in
-            PluginDetailSheet(
-                plugin: plugin,
-                enabled: isEnabled(plugin),
-                placement: placement(for: plugin),
-                display: display(for: plugin),
-                onEnabled: { enabled in
-                    PluginManager.shared.setEnabled(enabled, id: plugin.id)
-                    tick &+= 1
-                },
-                onPlacement: { placement in
-                    PluginManager.shared.setPlacement(placement, id: plugin.id)
-                    tick &+= 1
-                },
-                onDisplay: { display in
-                    PluginManager.shared.setDisplay(display, id: plugin.id)
-                    tick &+= 1
-                },
-                onClose: { detail = nil }
-            )
+        .onAppear { Task { await reloadAsync() } }
+        .onChange(of: tick) { _, _ in Task { await reloadAsync() } }
+        .onChange(of: installer.remoteCatalog) { _, _ in rebuildItems() }
+        .onChange(of: installer.busyIDs) { _, _ in rebuildItems() }
+        .onChange(of: installer.isRestoring) { _, _ in rebuildItems() }
+        .sheet(item: $detail) { item in
+            if let discovered = item.discovered {
+                PluginDetailSheet(
+                    plugin: discovered,
+                    enabled: item.isEnabled,
+                    installed: item.isInstalled,
+                    busy: item.isBusy,
+                    placement: placement(for: item),
+                    display: display(for: item),
+                    onEnabled: { enabled in
+                        Task { await setEnabled(enabled, item: item) }
+                    },
+                    onDownload: {
+                        Task { await download(item) }
+                    },
+                    onUninstall: {
+                        uninstall(item)
+                        detail = nil
+                    },
+                    onPlacement: { placement in
+                        PluginManager.shared.setPlacement(placement, id: item.id)
+                        tick &+= 1
+                    },
+                    onDisplay: { display in
+                        PluginManager.shared.setDisplay(display, id: item.id)
+                        tick &+= 1
+                    },
+                    onClose: { detail = nil }
+                )
+            } else {
+                PluginRemoteDetailSheet(
+                    item: item,
+                    onDownload: {
+                        Task { await download(item) }
+                    },
+                    onClose: { detail = nil }
+                )
+            }
         }
     }
 
@@ -208,6 +272,7 @@ struct PluginsSettingsPane: View {
         .buttonStyle(.plain)
     }
 
+    /// Stable VStack (no nested List) so reorder does not reset the outer ScrollView.
     private var pluginOrderBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L10n.t("plugins.order"))
@@ -217,41 +282,69 @@ struct PluginsSettingsPane: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            List {
-                ForEach(plugins) { plugin in
+            VStack(spacing: 0) {
+                ForEach(Array(installedItems.enumerated()), id: \.element.id) { index, item in
                     HStack(spacing: 10) {
                         Image(systemName: "line.3.horizontal")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(.secondary)
                             .frame(width: 16)
                             .help(L10n.t("plugins.order.drag"))
-                        Text(plugin.manifest.name)
+                        Text(item.manifest.name)
                             .font(.system(size: 13, weight: .medium))
                             .lineLimit(1)
                         Spacer(minLength: 8)
-                        if isEnabled(plugin) {
+                        if item.isEnabled {
                             Text(L10n.t("menu.on"))
                                 .font(.caption2.weight(.semibold))
                                 .foregroundStyle(.secondary)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
-                                .background(
-                                    Capsule().fill(Color.primary.opacity(0.08))
-                                )
+                                .background(Capsule().fill(Color.primary.opacity(0.08)))
                         }
+                        Button {
+                            moveInstalled(from: index, to: index - 1)
+                        } label: {
+                            Image(systemName: "chevron.up")
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(index == 0)
+                        .help(L10n.t("plugins.order.move_up"))
+
+                        Button {
+                            moveInstalled(from: index, to: index + 1)
+                        } label: {
+                            Image(systemName: "chevron.down")
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(index >= installedItems.count - 1)
+                        .help(L10n.t("plugins.order.move_down"))
                     }
-                    .padding(.vertical, 2)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(draggingOrderID == item.id ? Color.accentColor.opacity(0.12) : Color.clear)
+                    )
                     .contentShape(Rectangle())
-                    .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
-                    .listRowSeparator(.visible)
-                    .listRowBackground(Color.clear)
+                    .onDrag {
+                        draggingOrderID = item.id
+                        return NSItemProvider(object: item.id as NSString)
+                    }
+                    .onDrop(
+                        of: [.text],
+                        delegate: PluginOrderDropDelegate(
+                            targetID: item.id,
+                            orderedIDs: installedItems.map(\.id),
+                            draggingID: $draggingOrderID,
+                            onMove: { from, to in moveInstalled(from: from, to: to) }
+                        )
+                    )
+                    if index < installedItems.count - 1 {
+                        Divider().opacity(0.35)
+                    }
                 }
-                .onMove(perform: movePlugins)
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .environment(\.defaultMinListRowHeight, 32)
-            .frame(height: max(40, CGFloat(plugins.count) * 36))
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Color.primary.opacity(0.04))
@@ -264,58 +357,162 @@ struct PluginsSettingsPane: View {
     private static let publishDocsURL =
         "https://github.com/lokize/ALWM/blob/main/docs/plugins.md"
 
-    private func reload() {
+    private func reloadAsync() async {
+        await installer.refreshCatalog()
         PluginManager.shared.refreshCatalog()
-        plugins = PluginManager.shared.orderedCatalog()
+        rebuildItems()
     }
 
-    private func movePlugins(from source: IndexSet, to destination: Int) {
-        // Update local order only — bumping `tick` / reload() rebuilds the outer
-        // ScrollView and jumps scroll position back to the top.
-        plugins.move(fromOffsets: source, toOffset: destination)
-        PluginManager.shared.reorderBarPlugins(plugins.map(\.id))
+    private func rebuildItems() {
+        PluginManager.shared.refreshCatalog()
+        let discovered = Dictionary(
+            uniqueKeysWithValues: PluginManager.shared.catalog.map { ($0.id, $0) }
+        )
+        let settings = PluginManager.shared.settings
+        var byID: [String: SettingsPluginItem] = [:]
+
+        for remote in installer.remoteCatalog {
+            let disc = discovered[remote.id]
+            let onDisk = disc.map { FileManager.default.fileExists(atPath: $0.bundleURL.path) } ?? false
+            let state = settings.state(
+                for: remote.id,
+                defaultPlacement: AlwmBarPlacement(rawString: remote.defaultPlacement) ?? .afterWorkspaces
+            )
+            let installed = onDisk || state.installed
+            byID[remote.id] = SettingsPluginItem(
+                id: remote.id,
+                manifest: remote.manifest,
+                discovered: disc,
+                isInstalled: installed,
+                isEnabled: state.enabled && onDisk,
+                isBusy: installer.busyIDs.contains(remote.id)
+            )
+        }
+
+        for disc in discovered.values where byID[disc.id] == nil {
+            let state = settings.state(
+                for: disc.id,
+                defaultPlacement: AlwmBarPlacement(rawString: disc.manifest.defaultPlacement) ?? .afterWorkspaces
+            )
+            let onDisk = FileManager.default.fileExists(atPath: disc.bundleURL.path)
+            byID[disc.id] = SettingsPluginItem(
+                id: disc.id,
+                manifest: disc.manifest,
+                discovered: disc,
+                isInstalled: onDisk || state.installed,
+                isEnabled: state.enabled && onDisk,
+                isBusy: installer.busyIDs.contains(disc.id)
+            )
+        }
+
+        let ids = settings.orderedIDs(catalogIDs: Array(byID.keys))
+        items = ids.compactMap { byID[$0] }
     }
 
-    private func pluginMatches(_ plugin: DiscoveredPlugin, query: String) -> Bool {
-        let m = plugin.manifest
+    private func moveInstalled(from index: Int, to newIndex: Int) {
+        var order = installedItems
+        guard order.indices.contains(index),
+              newIndex >= 0,
+              newIndex < order.count
+        else { return }
+        let item = order.remove(at: index)
+        order.insert(item, at: newIndex)
+        // Keep non-installed ids after, preserve relative order of the rest.
+        let installedIDs = Set(order.map(\.id))
+        let rest = items.map(\.id).filter { !installedIDs.contains($0) }
+        let newOrder = order.map(\.id) + rest
+        PluginManager.shared.reorderBarPlugins(newOrder)
+        // Local reorder without tick/reload — preserves outer ScrollView offset.
+        let map = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
+        items = newOrder.compactMap { map[$0] }
+    }
+
+    private func download(_ item: SettingsPluginItem) async {
+        do {
+            try await installer.install(id: item.id, enable: true)
+            tick &+= 1
+        } catch {
+            // lastError already set on service for network failures from install path
+        }
+        rebuildItems()
+    }
+
+    private func uninstall(_ item: SettingsPluginItem) {
+        installer.uninstall(id: item.id)
+        tick &+= 1
+    }
+
+    private func setEnabled(_ enabled: Bool, item: SettingsPluginItem) async {
+        if enabled && !item.isInstalled {
+            await download(item)
+            return
+        }
+        let onDisk = item.discovered.map { FileManager.default.fileExists(atPath: $0.bundleURL.path) } ?? false
+        if enabled && !onDisk {
+            await download(item)
+            return
+        }
+        PluginManager.shared.setEnabled(enabled, id: item.id)
+        tick &+= 1
+    }
+
+    private func itemMatches(_ item: SettingsPluginItem, query: String) -> Bool {
+        let m = item.manifest
         let category = m.resolvedCategory
         let haystack = [
-            m.id,
-            m.name,
-            m.author,
-            m.summary,
-            m.version,
-            m.license ?? "",
-            m.category,
-            category.rawValue,
-            L10n.t(category.l10nKey)
+            m.id, m.name, m.author, m.summary, m.version,
+            m.license ?? "", m.category, category.rawValue, L10n.t(category.l10nKey)
         ]
         .joined(separator: " ")
         .lowercased()
         return haystack.contains(query)
     }
 
-    private func isEnabled(_ plugin: DiscoveredPlugin) -> Bool {
-        let def = AlwmBarPlacement(rawString: plugin.manifest.defaultPlacement) ?? .afterWorkspaces
-        return PluginManager.shared.settings.state(for: plugin.id, defaultPlacement: def).enabled
+    private func placement(for item: SettingsPluginItem) -> AlwmBarPlacement {
+        let def = AlwmBarPlacement(rawString: item.manifest.defaultPlacement) ?? .afterWorkspaces
+        return PluginManager.shared.settings.state(for: item.id, defaultPlacement: def).placement
     }
 
-    private func placement(for plugin: DiscoveredPlugin) -> AlwmBarPlacement {
-        let def = AlwmBarPlacement(rawString: plugin.manifest.defaultPlacement) ?? .afterWorkspaces
-        return PluginManager.shared.settings.state(for: plugin.id, defaultPlacement: def).placement
+    private func display(for item: SettingsPluginItem) -> PluginBarDisplay {
+        let def = AlwmBarPlacement(rawString: item.manifest.defaultPlacement) ?? .afterWorkspaces
+        return PluginManager.shared.settings.state(for: item.id, defaultPlacement: def).display
+    }
+}
+
+/// Drop target for bar-order rows — updates local order only (no ScrollView rebuild).
+private struct PluginOrderDropDelegate: DropDelegate {
+    let targetID: String
+    let orderedIDs: [String]
+    @Binding var draggingID: String?
+    let onMove: (Int, Int) -> Void
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
     }
 
-    private func display(for plugin: DiscoveredPlugin) -> PluginBarDisplay {
-        let def = AlwmBarPlacement(rawString: plugin.manifest.defaultPlacement) ?? .afterWorkspaces
-        return PluginManager.shared.settings.state(for: plugin.id, defaultPlacement: def).display
+    func performDrop(info: DropInfo) -> Bool {
+        // Reorder already applied in `dropEntered` while dragging.
+        draggingID = nil
+        return true
+    }
+
+    func dropEntered(info: DropInfo) {
+        guard let fromID = draggingID,
+              fromID != targetID,
+              let from = orderedIDs.firstIndex(of: fromID),
+              let to = orderedIDs.firstIndex(of: targetID),
+              from != to
+        else { return }
+        onMove(from, to)
     }
 }
 
 private struct PluginCardRow: View {
     @ObservedObject private var loc = LocalizationController.shared
-    let plugin: DiscoveredPlugin
-    let enabled: Bool
+    let item: SettingsPluginItem
     var onToggle: (Bool) -> Void
+    var onDownload: () -> Void
+    var onUninstall: () -> Void
     var onOpen: () -> Void
 
     var body: some View {
@@ -327,10 +524,10 @@ private struct PluginCardRow: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
-                        Text(plugin.manifest.name)
+                        Text(item.manifest.name)
                             .font(.system(size: 13, weight: .semibold))
                             .lineLimit(1)
-                        Text("v\(plugin.manifest.version)")
+                        Text("v\(item.manifest.version)")
                             .font(.caption2.weight(.semibold))
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
@@ -338,14 +535,14 @@ private struct PluginCardRow: View {
                             .clipShape(Capsule())
                     }
                     HStack(spacing: 6) {
-                        Text(L10n.t(plugin.manifest.resolvedCategory.l10nKey))
+                        Text(L10n.t(item.manifest.resolvedCategory.l10nKey))
                             .font(.caption2.weight(.semibold))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 1)
                             .background(Color.accentColor.opacity(0.15))
                             .foregroundStyle(Color.accentColor)
                             .clipShape(Capsule())
-                        Text(plugin.manifest.author)
+                        Text(item.manifest.author)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -353,7 +550,7 @@ private struct PluginCardRow: View {
                 }
                 Spacer(minLength: 0)
 
-                if enabled {
+                if item.isEnabled {
                     Text(L10n.t("plugins.badge.active"))
                         .font(.caption2.weight(.bold))
                         .padding(.horizontal, 7)
@@ -361,7 +558,14 @@ private struct PluginCardRow: View {
                         .background(Color.green.opacity(0.22))
                         .foregroundStyle(Color.green)
                         .clipShape(Capsule())
-                        .accessibilityLabel(L10n.t("plugins.badge.active"))
+                } else if item.isInstalled {
+                    Text(L10n.t("plugins.badge.installed"))
+                        .font(.caption2.weight(.bold))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(Color.secondary.opacity(0.18))
+                        .foregroundStyle(.secondary)
+                        .clipShape(Capsule())
                 }
             }
 
@@ -375,13 +579,27 @@ private struct PluginCardRow: View {
             }
 
             HStack(spacing: 10) {
-                Toggle(L10n.t("plugins.enable"), isOn: Binding(
-                    get: { enabled },
-                    set: { onToggle($0) }
-                ))
-                .toggleStyle(.switch)
-                .labelsHidden()
-                .help(L10n.t("plugins.enable"))
+                if item.isBusy {
+                    ProgressView().controlSize(.small)
+                } else if item.isInstalled {
+                    Toggle(L10n.t("plugins.enable"), isOn: Binding(
+                        get: { item.isEnabled },
+                        set: { onToggle($0) }
+                    ))
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                    .help(L10n.t("plugins.enable"))
+
+                    if item.canUninstall {
+                        Button(L10n.t("plugins.uninstall")) { onUninstall() }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                    }
+                } else {
+                    Button(L10n.t("plugins.download")) { onDownload() }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                }
 
                 Spacer(minLength: 0)
 
@@ -399,8 +617,8 @@ private struct PluginCardRow: View {
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(
-                    enabled ? Color.green.opacity(0.35) : Color.primary.opacity(0.06),
-                    lineWidth: enabled ? 1.5 : 1
+                    item.isEnabled ? Color.green.opacity(0.35) : Color.primary.opacity(0.06),
+                    lineWidth: item.isEnabled ? 1.5 : 1
                 )
         )
         .contentShape(Rectangle())
@@ -409,12 +627,12 @@ private struct PluginCardRow: View {
 
     private var catalogSummary: String {
         _ = loc.revision
-        return PluginCatalogCopy.summary(for: plugin)
+        return PluginCatalogCopy.summary(id: item.id, fallback: item.manifest.summary)
     }
 
     @ViewBuilder
     private var previewThumb: some View {
-        if let url = plugin.previewURL,
+        if let url = item.discovered?.previewURL,
            let img = NSImage(contentsOf: url) {
             Image(nsImage: img)
                 .resizable()
@@ -430,12 +648,48 @@ private struct PluginCardRow: View {
     }
 }
 
+private struct PluginRemoteDetailSheet: View {
+    let item: SettingsPluginItem
+    var onDownload: () -> Void
+    var onClose: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.manifest.name).font(.title2.weight(.semibold))
+                    Text("\(item.manifest.author) · v\(item.manifest.version)")
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button(L10n.t("plugins.close")) { onClose() }
+                    .keyboardShortcut(.cancelAction)
+            }
+            Text(PluginCatalogCopy.summary(id: item.id, fallback: item.manifest.summary))
+                .foregroundStyle(.secondary)
+            if item.isBusy {
+                ProgressView().controlSize(.small)
+            } else {
+                Button(L10n.t("plugins.download")) { onDownload() }
+                    .buttonStyle(.borderedProminent)
+            }
+            Spacer()
+        }
+        .padding(20)
+        .frame(minWidth: 420, minHeight: 240)
+    }
+}
+
 private struct PluginDetailSheet: View {
     let plugin: DiscoveredPlugin
     let enabled: Bool
+    let installed: Bool
+    let busy: Bool
     let placement: AlwmBarPlacement
     let display: PluginBarDisplay
     var onEnabled: (Bool) -> Void
+    var onDownload: () -> Void
+    var onUninstall: () -> Void
     var onPlacement: (AlwmBarPlacement) -> Void
     var onDisplay: (PluginBarDisplay) -> Void
     var onClose: () -> Void
@@ -443,6 +697,12 @@ private struct PluginDetailSheet: View {
     @ObservedObject private var loc = LocalizationController.shared
     @State private var monitors: [MonitorInfo] = []
     @State private var galleryIndex: Int?
+
+    private var canUninstall: Bool {
+        let root = PluginInstallService.userPlugInsURL.standardizedFileURL.path
+        let path = plugin.bundleURL.standardizedFileURL.path
+        return path == root || path.hasPrefix(root + "/")
+    }
 
     var body: some View {
         ZStack {
@@ -476,35 +736,47 @@ private struct PluginDetailSheet: View {
                             galleryStrip
                         }
 
-                        Toggle(L10n.t("plugins.enable"), isOn: Binding(
-                            get: { enabled },
-                            set: { onEnabled($0) }
-                        ))
-
-                        Picker(L10n.t("plugins.placement"), selection: Binding(
-                            get: { placement == .afterCommand ? .afterWorkspaces : placement },
-                            set: { onPlacement($0) }
-                        )) {
-                            Text(L10n.t("plugins.placement.before")).tag(AlwmBarPlacement.beforeWorkspaces)
-                            Text(L10n.t("plugins.placement.after_ws")).tag(AlwmBarPlacement.afterWorkspaces)
-                        }
-                        .pickerStyle(.segmented)
-
-                        Picker(L10n.t("plugins.display"), selection: Binding(
-                            get: { display.rawString },
-                            set: { onDisplay(PluginBarDisplay(rawString: $0)) }
-                        )) {
-                            Text(L10n.t("plugins.display.all")).tag(PluginBarDisplay.all.rawString)
-                            ForEach(Array(monitors.enumerated()), id: \.element.id) { index, mon in
-                                Text(monitorLabel(mon, index: index)).tag(PluginBarDisplay.display(mon.id).rawString)
+                        if busy {
+                            ProgressView().controlSize(.small)
+                        } else if installed {
+                            Toggle(L10n.t("plugins.enable"), isOn: Binding(
+                                get: { enabled },
+                                set: { onEnabled($0) }
+                            ))
+                            if canUninstall {
+                                Button(L10n.t("plugins.uninstall"), role: .destructive, action: onUninstall)
                             }
+                        } else {
+                            Button(L10n.t("plugins.download"), action: onDownload)
+                                .buttonStyle(.borderedProminent)
                         }
 
-                        if case .display(let id) = display,
-                           !monitors.contains(where: { $0.id == id }) {
-                            Text(L10n.t("plugins.display.missing"))
-                                .font(.caption)
-                                .foregroundStyle(.orange)
+                        if installed {
+                            Picker(L10n.t("plugins.placement"), selection: Binding(
+                                get: { placement == .afterCommand ? .afterWorkspaces : placement },
+                                set: { onPlacement($0) }
+                            )) {
+                                Text(L10n.t("plugins.placement.before")).tag(AlwmBarPlacement.beforeWorkspaces)
+                                Text(L10n.t("plugins.placement.after_ws")).tag(AlwmBarPlacement.afterWorkspaces)
+                            }
+                            .pickerStyle(.segmented)
+
+                            Picker(L10n.t("plugins.display"), selection: Binding(
+                                get: { display.rawString },
+                                set: { onDisplay(PluginBarDisplay(rawString: $0)) }
+                            )) {
+                                Text(L10n.t("plugins.display.all")).tag(PluginBarDisplay.all.rawString)
+                                ForEach(Array(monitors.enumerated()), id: \.element.id) { index, mon in
+                                    Text(monitorLabel(mon, index: index)).tag(PluginBarDisplay.display(mon.id).rawString)
+                                }
+                            }
+
+                            if case .display(let id) = display,
+                               !monitors.contains(where: { $0.id == id }) {
+                                Text(L10n.t("plugins.display.missing"))
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            }
                         }
 
                         if let readme = readmeText {

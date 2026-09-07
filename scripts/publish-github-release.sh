@@ -72,9 +72,20 @@ trap cleanup EXIT
 
 bash scripts/release-notes.sh > "$NOTES_FILE"
 
+PLUGIN_ASSETS=()
+INDEX="dist/plugins-index.json"
+if [[ -f "$INDEX" ]]; then
+  PLUGIN_ASSETS+=("$INDEX")
+fi
+shopt -s nullglob
+for z in dist/plugins/*.alwmplugin.zip; do
+  PLUGIN_ASSETS+=("$z")
+done
+shopt -u nullglob
+
 if gh release view "$TAG" >/dev/null 2>&1; then
-  echo "→ Release $TAG exists — uploading DMG and refreshing notes (--update)"
-  gh release upload "$TAG" "$DMG" --clobber
+  echo "→ Release $TAG exists — uploading DMG/plugins and refreshing notes (--update)"
+  gh release upload "$TAG" "$DMG" "${PLUGIN_ASSETS[@]}" --clobber
   gh release edit "$TAG" --notes-file "$NOTES_FILE"
 else
   echo "→ Creating release $TAG"
@@ -83,10 +94,13 @@ else
     git tag "$TAG"
     git push origin "$TAG" 2>/dev/null || true
   fi
-  gh release create "$TAG" "$DMG" \
+  gh release create "$TAG" "$DMG" "${PLUGIN_ASSETS[@]}" \
     --title "ALWM ${VERSION}" \
     --notes-file "$NOTES_FILE" \
     --latest
 fi
 
 echo "Done: $(gh release view "$TAG" --json url -q .url)"
+if ((${#PLUGIN_ASSETS[@]})); then
+  echo "Plugin assets: ${#PLUGIN_ASSETS[@]} (index + zips)"
+fi
