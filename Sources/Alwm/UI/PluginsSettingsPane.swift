@@ -24,6 +24,9 @@ struct PluginsSettingsPane: View {
     @ObservedObject private var loc = LocalizationController.shared
     @ObservedObject private var installer = PluginInstallService.shared
     @State private var items: [SettingsPluginItem] = []
+    /// Bar chip order only — kept separate so reordering does not reshuffle the catalog grid
+    /// (which was resetting the outer ScrollView to the top).
+    @State private var barOrderIDs: [String] = []
     @State private var detail: SettingsPluginItem?
     @State private var tick = 0
     @State private var searchText = ""
@@ -44,8 +47,22 @@ struct PluginsSettingsPane: View {
         }
     }
 
-    private var installedItems: [SettingsPluginItem] {
-        items.filter(\.isInstalled)
+    private var installedByID: [String: SettingsPluginItem] {
+        Dictionary(uniqueKeysWithValues: items.filter(\.isInstalled).map { ($0.id, $0) })
+    }
+
+    private var orderedInstalledItems: [SettingsPluginItem] {
+        let map = installedByID
+        var seen = Set<String>()
+        var result: [SettingsPluginItem] = []
+        for id in barOrderIDs {
+            guard let item = map[id], seen.insert(id).inserted else { continue }
+            result.append(item)
+        }
+        for item in items where item.isInstalled && !seen.contains(item.id) {
+            result.append(item)
+        }
+        return result
     }
 
     var body: some View {
@@ -112,7 +129,7 @@ struct PluginsSettingsPane: View {
                             }
                         }
 
-                        if !installedItems.isEmpty {
+                        if !orderedInstalledItems.isEmpty {
                             pluginOrderBlock
                         }
                     }
@@ -283,7 +300,7 @@ struct PluginsSettingsPane: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             VStack(spacing: 0) {
-                ForEach(Array(installedItems.enumerated()), id: \.element.id) { index, item in
+                ForEach(Array(orderedInstalledItems.enumerated()), id: \.element.id) { index, item in
                     HStack(spacing: 10) {
                         Image(systemName: "line.3.horizontal")
                             .font(.system(size: 12, weight: .semibold))
@@ -317,7 +334,7 @@ struct PluginsSettingsPane: View {
                             Image(systemName: "chevron.down")
                         }
                         .buttonStyle(.borderless)
-                        .disabled(index >= installedItems.count - 1)
+                        .disabled(index >= orderedInstalledItems.count - 1)
                         .help(L10n.t("plugins.order.move_down"))
                     }
                     .padding(.horizontal, 10)
@@ -335,12 +352,12 @@ struct PluginsSettingsPane: View {
                         of: [.text],
                         delegate: PluginOrderDropDelegate(
                             targetID: item.id,
-                            orderedIDs: installedItems.map(\.id),
+                            orderedIDs: orderedInstalledItems.map(\.id),
                             draggingID: $draggingOrderID,
                             onMove: { from, to in moveInstalled(from: from, to: to) }
                         )
                     )
-                    if index < installedItems.count - 1 {
+                    if index < orderedInstalledItems.count - 1 {
                         Divider().opacity(0.35)
                     }
                 }
@@ -405,26 +422,34 @@ struct PluginsSettingsPane: View {
             )
         }
 
-        let ids = settings.orderedIDs(catalogIDs: Array(byID.keys))
-        items = ids.compactMap { byID[$0] }
+        // Catalog grid stays name-sorted — never tied to bar order.
+        items = byID.values.sorted {
+            $0.manifest.name.localizedCaseInsensitiveCompare($1.manifest.name) == .orderedAscending
+        }
+        let installedIDs = items.filter(\.isInstalled).map(\.id)
+        barOrderIDs = settings.orderedIDs(catalogIDs: installedIDs)
+            .filter { installedIDs.contains($0) }
     }
 
     private func moveInstalled(from index: Int, to newIndex: Int) {
-        var order = installedItems
+        var order = barOrderIDs.isEmpty ? orderedInstalledItems.map(\.id) : barOrderIDs
+        // Keep only ids that are still installed.
+        let installed = Set(items.filter(\.isInstalled).map(\.id))
+        order = order.filter { installed.contains($0) }
+        for id in installed where !order.contains(id) {
+            order.append(id)
+        }
         guard order.indices.contains(index),
               newIndex >= 0,
               newIndex < order.count
         else { return }
-        let item = order.remove(at: index)
-        order.insert(item, at: newIndex)
-        // Keep non-installed ids after, preserve relative order of the rest.
-        let installedIDs = Set(order.map(\.id))
-        let rest = items.map(\.id).filter { !installedIDs.contains($0) }
-        let newOrder = order.map(\.id) + rest
-        PluginManager.shared.reorderBarPlugins(newOrder)
-        // Local reorder without tick/reload — preserves outer ScrollView offset.
-        let map = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
-        items = newOrder.compactMap { map[$0] }
+        let id = order.remove(at: index)
+        order.insert(id, at: newIndex)
+        barOrderIDs = order
+
+        let rest = items.map(\.id).filter { !installed.contains($0) }
+        PluginManager.shared.reorderBarPlugins(order + rest)
+        // Do not mutate `items` / tick / reload — that rebuilds the LazyVGrid and resets scroll.
     }
 
     private func download(_ item: SettingsPluginItem) async {
@@ -507,6 +532,44 @@ private struct PluginOrderDropDelegate: DropDelegate {
     }
 }
 
+private struct PluginAuthorLabel: View {
+    enum Style {
+        case card
+        case detail
+    }
+
+    let author: String
+    var style: Style = .card
+
+    private var isOfficial: Bool {
+        let name = author.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.caseInsensitiveCompare("Lokize") == .orderedSame
+            || name.caseInsensitiveCompare("ALWM") == .orderedSame
+    }
+
+    var body: some View {
+        if isOfficial {
+            HStack(spacing: 3) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(style == .card ? .caption2 : .caption)
+                Text(L10n.t("plugins.badge.official"))
+                    .font(style == .card ? .caption2.weight(.bold) : .caption.weight(.semibold))
+            }
+            .padding(.horizontal, style == .card ? 6 : 8)
+            .padding(.vertical, style == .card ? 1 : 2)
+            .background(Color.blue.opacity(0.18))
+            .foregroundStyle(Color.blue)
+            .clipShape(Capsule())
+            .accessibilityLabel(L10n.t("plugins.badge.official"))
+        } else {
+            Text(author)
+                .font(style == .card ? .caption : .body)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+    }
+}
+
 private struct PluginCardRow: View {
     @ObservedObject private var loc = LocalizationController.shared
     let item: SettingsPluginItem
@@ -542,10 +605,7 @@ private struct PluginCardRow: View {
                             .background(Color.accentColor.opacity(0.15))
                             .foregroundStyle(Color.accentColor)
                             .clipShape(Capsule())
-                        Text(item.manifest.author)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                        PluginAuthorLabel(author: item.manifest.author, style: .card)
                     }
                 }
                 Spacer(minLength: 0)
@@ -589,23 +649,25 @@ private struct PluginCardRow: View {
                     .toggleStyle(.switch)
                     .labelsHidden()
                     .help(L10n.t("plugins.enable"))
-
-                    if item.canUninstall {
-                        Button(L10n.t("plugins.uninstall")) { onUninstall() }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                    }
-                } else {
-                    Button(L10n.t("plugins.download")) { onDownload() }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
                 }
 
                 Spacer(minLength: 0)
 
-                Button(L10n.t("plugins.details")) { onOpen() }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                if item.isBusy {
+                    EmptyView()
+                } else if !item.isInstalled {
+                    Button(L10n.t("plugins.install")) { onDownload() }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                } else if item.canUninstall {
+                    Button(L10n.t("plugins.uninstall")) { onUninstall() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                } else {
+                    Button(L10n.t("plugins.details")) { onOpen() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                }
             }
         }
         .padding(12)
@@ -658,8 +720,11 @@ private struct PluginRemoteDetailSheet: View {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(item.manifest.name).font(.title2.weight(.semibold))
-                    Text("\(item.manifest.author) · v\(item.manifest.version)")
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        PluginAuthorLabel(author: item.manifest.author, style: .detail)
+                        Text("v\(item.manifest.version)")
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 Spacer()
                 Button(L10n.t("plugins.close")) { onClose() }
@@ -670,7 +735,7 @@ private struct PluginRemoteDetailSheet: View {
             if item.isBusy {
                 ProgressView().controlSize(.small)
             } else {
-                Button(L10n.t("plugins.download")) { onDownload() }
+                Button(L10n.t("plugins.install")) { onDownload() }
                     .buttonStyle(.borderedProminent)
             }
             Spacer()
@@ -718,7 +783,8 @@ private struct PluginDetailSheet: View {
                                 .background(Color.accentColor.opacity(0.15))
                                 .foregroundStyle(Color.accentColor)
                                 .clipShape(Capsule())
-                            Text("\(plugin.manifest.author) · v\(plugin.manifest.version)")
+                            PluginAuthorLabel(author: plugin.manifest.author, style: .detail)
+                            Text("v\(plugin.manifest.version)")
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -747,7 +813,7 @@ private struct PluginDetailSheet: View {
                                 Button(L10n.t("plugins.uninstall"), role: .destructive, action: onUninstall)
                             }
                         } else {
-                            Button(L10n.t("plugins.download"), action: onDownload)
+                            Button(L10n.t("plugins.install"), action: onDownload)
                                 .buttonStyle(.borderedProminent)
                         }
 

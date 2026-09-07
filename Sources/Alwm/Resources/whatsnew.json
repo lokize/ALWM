@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "0.7.2",
+      "items": [
+        "Maintenance and fixes"
+      ]
+    },
+    {
       "version": "0.7.1",
       "items": [
         "Maintenance and fixes"
@@ -236,12 +242,6 @@
         "Column widths persist after manual resize when switching workspaces",
         "Stack columns reflow vertically with correct frames after layout changes",
         "Duplicate workspace-move requests are deduplicated"
-      ]
-    },
-    {
-      "version": "0.3.2",
-      "items": [
-        "Fix plugin catalog localization build on CI"
       ]
     }
   ]
