@@ -84,94 +84,90 @@ struct PluginsSettingsPane: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    publishBlock
+        // One ScrollView only — a VStack + unbounded inner ScrollView + fixed
+        // order footer overflowed the detail pane and clipped the catalog mid-grid.
+        // Bar order stays in `barOrderIDs` (not tied to catalog sort) so reorder
+        // does not reshuffle/remount the LazyVGrid.
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                publishBlock
 
-                    if installer.isRestoring {
-                        HStack(spacing: 8) {
-                            ProgressView().controlSize(.small)
-                            Text(L10n.t("plugins.restoring"))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    if let err = installer.lastError, !err.isEmpty {
-                        Text(err)
+                if installer.isRestoring {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text(L10n.t("plugins.restoring"))
                             .font(.caption)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(.secondary)
                     }
+                }
 
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(L10n.t("plugins.catalog"))
-                            .font(.headline)
+                if let err = installer.lastError, !err.isEmpty {
+                    Text(err)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
 
-                        if items.isEmpty {
-                            Text(L10n.t("plugins.empty"))
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(L10n.t("plugins.catalog"))
+                        .font(.headline)
+
+                    if items.isEmpty {
+                        Text(L10n.t("plugins.empty"))
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 8)
+                    } else {
+                        pluginSearchBar
+                        categoryFilterBar
+
+                        if filteredItems.isEmpty {
+                            Text(L10n.t("plugins.search.empty"))
                                 .foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.vertical, 8)
+                                .padding(.vertical, 12)
                         } else {
-                            pluginSearchBar
-                            categoryFilterBar
-
-                            if filteredItems.isEmpty {
-                                Text(L10n.t("plugins.search.empty"))
-                                    .foregroundStyle(.secondary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.vertical, 12)
-                            } else {
-                                LazyVGrid(
-                                    columns: [
-                                        GridItem(.flexible(), spacing: cardGap),
-                                        GridItem(.flexible(), spacing: cardGap)
-                                    ],
-                                    spacing: cardGap
-                                ) {
-                                    ForEach(filteredItems) { item in
-                                        PluginCardRow(
-                                            item: item,
-                                            onToggle: { enabled in
-                                                Task { await setEnabled(enabled, item: item) }
-                                            },
-                                            onDownload: {
-                                                Task { await download(item) }
-                                            },
-                                            onUninstall: {
-                                                uninstall(item)
-                                            },
-                                            onOpen: { detail = item }
-                                        )
-                                    }
+                            LazyVGrid(
+                                columns: [
+                                    GridItem(.flexible(), spacing: cardGap),
+                                    GridItem(.flexible(), spacing: cardGap)
+                                ],
+                                spacing: cardGap
+                            ) {
+                                ForEach(filteredItems) { item in
+                                    PluginCardRow(
+                                        item: item,
+                                        onToggle: { enabled in
+                                            Task { await setEnabled(enabled, item: item) }
+                                        },
+                                        onDownload: {
+                                            Task { await download(item) }
+                                        },
+                                        onUninstall: {
+                                            uninstall(item)
+                                        },
+                                        onOpen: { detail = item }
+                                    )
                                 }
                             }
                         }
-
-                        Text(L10n.t("plugins.footer"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.top, 2)
                     }
-                }
-                .padding(.horizontal, contentInset)
-                .padding(.vertical, 16)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .id(loc.revision)
 
-            // Order lives outside the catalog ScrollView so LazyVGrid remounts
-            // never reset the viewport when barOrderIDs changes.
-            if !orderedInstalledItems.isEmpty {
-                Divider()
-                pluginOrderBlock
-                    .padding(.horizontal, contentInset)
-                    .padding(.vertical, 12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.bar)
+                    Text(L10n.t("plugins.footer"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 2)
+                }
+
+                if !orderedInstalledItems.isEmpty {
+                    pluginOrderBlock
+                }
             }
+            .padding(.horizontal, contentInset)
+            .padding(.vertical, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .id(loc.revision)
         .onAppear { Task { await reloadAsync() } }
         .onChange(of: tick) { _, _ in Task { await reloadAsync() } }
         .onChange(of: installer.remoteCatalog) { _, _ in rebuildItems() }
@@ -316,7 +312,7 @@ struct PluginsSettingsPane: View {
         .buttonStyle(.plain)
     }
 
-    /// Fixed footer order panel (not inside the catalog ScrollView).
+    /// Bar chip order — lives in the same ScrollView as the catalog (local `barOrderIDs` only).
     private var pluginOrderBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L10n.t("plugins.order"))
