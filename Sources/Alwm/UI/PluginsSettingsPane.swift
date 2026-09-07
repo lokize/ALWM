@@ -84,11 +84,9 @@ struct PluginsSettingsPane: View {
     }
 
     var body: some View {
-        // One ScrollView only — a VStack + unbounded inner ScrollView + fixed
-        // order footer overflowed the detail pane and clipped the catalog mid-grid.
-        // Bar order stays in `barOrderIDs` (not tied to catalog sort) so reorder
-        // does not reshuffle/remount the LazyVGrid.
-        ScrollView {
+        // AppKit scroll view preserves clip origin across SwiftUI content updates
+        // (SwiftUI `ScrollView` jumps to top whenever bar order rows move).
+        MacAlwaysScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 publishBlock
 
@@ -126,29 +124,22 @@ struct PluginsSettingsPane: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.vertical, 12)
                         } else {
-                            LazyVGrid(
-                                columns: [
-                                    GridItem(.flexible(), spacing: cardGap),
-                                    GridItem(.flexible(), spacing: cardGap)
-                                ],
-                                spacing: cardGap
-                            ) {
-                                ForEach(filteredItems) { item in
-                                    PluginCardRow(
-                                        item: item,
-                                        onToggle: { enabled in
-                                            Task { await setEnabled(enabled, item: item) }
-                                        },
-                                        onDownload: {
-                                            Task { await download(item) }
-                                        },
-                                        onUninstall: {
-                                            uninstall(item)
-                                        },
-                                        onOpen: { detail = item }
-                                    )
+                            PluginsCatalogGrid(
+                                items: filteredItems,
+                                cardGap: cardGap,
+                                onToggle: { item, enabled in
+                                    Task { await setEnabled(enabled, item: item) }
+                                },
+                                onDownload: { item in
+                                    Task { await download(item) }
+                                },
+                                onUninstall: { item in
+                                    uninstall(item)
+                                },
+                                onOpen: { item in
+                                    detail = item
                                 }
-                            }
+                            )
                         }
                     }
 
@@ -312,7 +303,7 @@ struct PluginsSettingsPane: View {
         .buttonStyle(.plain)
     }
 
-    /// Bar chip order — lives in the same ScrollView as the catalog (local `barOrderIDs` only).
+    /// Bar chip order — expands in the window ScrollView (no nested scroller).
     private var pluginOrderBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L10n.t("plugins.order"))
@@ -323,74 +314,69 @@ struct PluginsSettingsPane: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             let rows = orderedInstalledItems
-            let listHeight = min(240, CGFloat(max(rows.count, 1)) * 36)
-
-            ScrollView {
-                VStack(spacing: 0) {
-                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, item in
-                        HStack(spacing: 10) {
-                            Image(systemName: "line.3.horizontal")
-                                .font(.system(size: 12, weight: .semibold))
+            VStack(spacing: 0) {
+                ForEach(Array(rows.enumerated()), id: \.element.id) { index, item in
+                    HStack(spacing: 10) {
+                        Image(systemName: "line.3.horizontal")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 16)
+                            .help(L10n.t("plugins.order.drag"))
+                        Text(item.manifest.name)
+                            .font(.system(size: 13, weight: .medium))
+                            .lineLimit(1)
+                        Spacer(minLength: 8)
+                        if item.isEnabled {
+                            Text(L10n.t("menu.on"))
+                                .font(.caption2.weight(.semibold))
                                 .foregroundStyle(.secondary)
-                                .frame(width: 16)
-                                .help(L10n.t("plugins.order.drag"))
-                            Text(item.manifest.name)
-                                .font(.system(size: 13, weight: .medium))
-                                .lineLimit(1)
-                            Spacer(minLength: 8)
-                            if item.isEnabled {
-                                Text(L10n.t("menu.on"))
-                                    .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Capsule().fill(Color.primary.opacity(0.08)))
-                            }
-                            Button {
-                                moveInstalled(from: index, to: index - 1)
-                            } label: {
-                                Image(systemName: "chevron.up")
-                            }
-                            .buttonStyle(.borderless)
-                            .disabled(index == 0)
-                            .help(L10n.t("plugins.order.move_up"))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(Color.primary.opacity(0.08)))
+                        }
+                        Button {
+                            moveInstalled(from: index, to: index - 1)
+                        } label: {
+                            Image(systemName: "chevron.up")
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(index == 0)
+                        .help(L10n.t("plugins.order.move_up"))
 
-                            Button {
-                                moveInstalled(from: index, to: index + 1)
-                            } label: {
-                                Image(systemName: "chevron.down")
-                            }
-                            .buttonStyle(.borderless)
-                            .disabled(index >= rows.count - 1)
-                            .help(L10n.t("plugins.order.move_down"))
+                        Button {
+                            moveInstalled(from: index, to: index + 1)
+                        } label: {
+                            Image(systemName: "chevron.down")
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(draggingOrderID == item.id ? Color.accentColor.opacity(0.12) : Color.clear)
+                        .buttonStyle(.borderless)
+                        .disabled(index >= rows.count - 1)
+                        .help(L10n.t("plugins.order.move_down"))
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(draggingOrderID == item.id ? Color.accentColor.opacity(0.12) : Color.clear)
+                    )
+                    .contentShape(Rectangle())
+                    .onDrag {
+                        draggingOrderID = item.id
+                        return NSItemProvider(object: item.id as NSString)
+                    }
+                    .onDrop(
+                        of: [.text],
+                        delegate: PluginOrderDropDelegate(
+                            targetID: item.id,
+                            orderedIDs: rows.map(\.id),
+                            draggingID: $draggingOrderID,
+                            onMove: { from, to in moveInstalled(from: from, to: to) }
                         )
-                        .contentShape(Rectangle())
-                        .onDrag {
-                            draggingOrderID = item.id
-                            return NSItemProvider(object: item.id as NSString)
-                        }
-                        .onDrop(
-                            of: [.text],
-                            delegate: PluginOrderDropDelegate(
-                                targetID: item.id,
-                                orderedIDs: rows.map(\.id),
-                                draggingID: $draggingOrderID,
-                                onMove: { from, to in moveInstalled(from: from, to: to) }
-                            )
-                        )
-                        if index < rows.count - 1 {
-                            Divider().opacity(0.35)
-                        }
+                    )
+                    if index < rows.count - 1 {
+                        Divider().opacity(0.35)
                     }
                 }
             }
-            .frame(height: listHeight)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Color.primary.opacity(0.04))
@@ -545,7 +531,37 @@ struct PluginsSettingsPane: View {
     }
 }
 
-/// Drop target for bar-order rows — updates local order only (no ScrollView rebuild).
+/// Catalog grid extracted so bar-order list updates do not rebuild card closures inline.
+private struct PluginsCatalogGrid: View {
+    let items: [SettingsPluginItem]
+    let cardGap: CGFloat
+    let onToggle: (SettingsPluginItem, Bool) -> Void
+    let onDownload: (SettingsPluginItem) -> Void
+    let onUninstall: (SettingsPluginItem) -> Void
+    let onOpen: (SettingsPluginItem) -> Void
+
+    var body: some View {
+        LazyVGrid(
+            columns: [
+                GridItem(.flexible(), spacing: cardGap),
+                GridItem(.flexible(), spacing: cardGap)
+            ],
+            spacing: cardGap
+        ) {
+            ForEach(items) { item in
+                PluginCardRow(
+                    item: item,
+                    onToggle: { onToggle(item, $0) },
+                    onDownload: { onDownload(item) },
+                    onUninstall: { onUninstall(item) },
+                    onOpen: { onOpen(item) }
+                )
+            }
+        }
+    }
+}
+
+/// Drop target for bar-order rows — updates local order only.
 private struct PluginOrderDropDelegate: DropDelegate {
     let targetID: String
     let orderedIDs: [String]
