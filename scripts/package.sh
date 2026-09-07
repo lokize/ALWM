@@ -248,6 +248,13 @@ if [[ -d "$ROOT/plugins/steam-price-watcher" ]]; then
     "SteamPriceWatcher" \
     "dev.alwm.steam-price-watcher"
 fi
+if [[ -d "$ROOT/plugins/nintendo-price-watcher" ]]; then
+  package_plugin \
+    "$ROOT/plugins/nintendo-price-watcher" \
+    "libNintendoPriceWatcherPlugin.dylib" \
+    "NintendoPriceWatcher" \
+    "dev.alwm.nintendo-price-watcher"
+fi
 if [[ -d "$ROOT/plugins/github" ]]; then
   package_plugin \
     "$ROOT/plugins/github" \

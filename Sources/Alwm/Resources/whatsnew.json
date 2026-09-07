@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "0.7.0",
+      "items": [
+        "Maintenance and fixes"
+      ]
+    },
+    {
       "version": "0.6.9",
       "items": [
         "Maintenance and fixes"
@@ -239,15 +245,6 @@
         "Plugin catalog and panels localized in all app languages",
         "GitHub plugin gallery slider and localized About section",
         "Plugin l10n verification script for all bundled plugins"
-      ]
-    },
-    {
-      "version": "0.3.0",
-      "items": [
-        "Update .github/workflows/release.yml",
-        "Scripts: ensure-version-bump.sh",
-        "Scripts: install-git-hooks.sh",
-        "Scripts: verify-release-ready.sh"
       ]
     }
   ]

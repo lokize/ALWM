@@ -51,6 +51,7 @@ enum PluginCatalogCopy {
         switch id {
         case "dev.alwm.github": return "plugin.github"
         case "dev.alwm.steam-price-watcher": return "plugin.steam"
+        case "dev.alwm.nintendo-price-watcher": return "plugin.nintendo"
         case "dev.alwm.sample-clock": return "plugin.clock"
         default: return nil
         }

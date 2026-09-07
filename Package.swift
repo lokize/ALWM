@@ -20,6 +20,7 @@ let package = Package(
         .executable(name: "alwmctl", targets: ["AlwmCtl"]),
         .library(name: "SampleClockPlugin", type: .dynamic, targets: ["SampleClockPlugin"]),
         .library(name: "SteamPriceWatcherPlugin", type: .dynamic, targets: ["SteamPriceWatcherPlugin"]),
+        .library(name: "NintendoPriceWatcherPlugin", type: .dynamic, targets: ["NintendoPriceWatcherPlugin"]),
         .library(name: "GitHubPlugin", type: .dynamic, targets: ["GitHubPlugin"]),
         .library(name: "StatsCPUPlugin", type: .dynamic, targets: ["StatsCPUPlugin"]),
         .library(name: "StatsMemoryPlugin", type: .dynamic, targets: ["StatsMemoryPlugin"]),
@@ -63,6 +64,26 @@ let package = Package(
                 "README.md",
                 "previews",
                 "Resources"
+            ],
+            swiftSettings: [
+                .swiftLanguageMode(.v6)
+            ],
+            linkerSettings: [
+                .linkedFramework("AppKit"),
+                .linkedFramework("SwiftUI"),
+                .linkedFramework("UserNotifications")
+            ]
+        ),
+        .target(
+            name: "NintendoPriceWatcherPlugin",
+            dependencies: [sharedAPI, sharedABI, sharedL10n],
+            path: "plugins/nintendo-price-watcher",
+            exclude: [
+                "plugin.json",
+                "README.md",
+                "previews",
+                "Resources",
+                "l10n"
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6)

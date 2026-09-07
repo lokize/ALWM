@@ -89,6 +89,7 @@ collect_from_paths() {
     case "$line" in
       plugins/github/*) BULLETS+=("GitHub plugin: notifications, PRs, issues, and stars on the workspace bar") ;;
       plugins/steam-price-watcher/*) BULLETS+=("Steam Price Watcher plugin updates") ;;
+      plugins/nintendo-price-watcher/*) BULLETS+=("Nintendo Price Watcher plugin updates") ;;
       plugins/sample-clock/*) BULLETS+=("Sample Clock plugin updates") ;;
       plugins/*) BULLETS+=("Plugins: ${line#plugins/}") ;;
       Sources/AlwmL10n/*) BULLETS+=("Localization: ${base%.swift}") ;;
