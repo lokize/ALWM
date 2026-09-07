@@ -190,6 +190,18 @@ public final class PluginManager {
         let plugin = catalog.first(where: { $0.id == id })
         let def = AlwmBarPlacement(rawString: plugin?.manifest.defaultPlacement ?? "") ?? .afterWorkspaces
         settings.setEnabled(enabled, for: id, defaultPlacement: def)
+        if enabled {
+            // Copy into ~/.config/alwm/PlugIns so the next app update keeps this plugin.
+            Task { @MainActor in
+                do {
+                    try await PluginInstallService.shared.ensurePersistedBundle(id: id, enable: true)
+                } catch {
+                    NSLog("ALWM plugins: persist failed for \(id): \(error.localizedDescription)")
+                }
+                reloadFromSettings()
+            }
+            return
+        }
         reloadFromSettings()
     }
 

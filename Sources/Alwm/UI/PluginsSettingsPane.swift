@@ -49,7 +49,6 @@ struct PluginsSettingsPane: View {
     @State private var tick = 0
     @State private var searchText = ""
     @State private var categoryFilter: PluginCategory? = nil
-    @State private var draggingOrderID: String? = nil
 
     private let contentInset: CGFloat = 20
     private let cardGap: CGFloat = 12
@@ -84,8 +83,8 @@ struct PluginsSettingsPane: View {
     }
 
     var body: some View {
-        // AppKit scroll view preserves clip origin across SwiftUI content updates
-        // (SwiftUI `ScrollView` jumps to top whenever bar order rows move).
+        // One full-height AppKit scroller (catalog + order). A pinned order footer
+        // clipped the legacy scrollbar; button focus was also scrolling the pane.
         MacAlwaysScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 publishBlock
@@ -156,6 +155,7 @@ struct PluginsSettingsPane: View {
             .padding(.horizontal, contentInset)
             .padding(.vertical, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .focusEffectDisabled()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .id(loc.revision)
@@ -303,7 +303,7 @@ struct PluginsSettingsPane: View {
         .buttonStyle(.plain)
     }
 
-    /// Bar chip order — expands in the window ScrollView (no nested scroller).
+    /// Bar chip order — pinned below the catalog scroller (arrows only; no drag).
     private var pluginOrderBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L10n.t("plugins.order"))
@@ -317,11 +317,10 @@ struct PluginsSettingsPane: View {
             VStack(spacing: 0) {
                 ForEach(Array(rows.enumerated()), id: \.element.id) { index, item in
                     HStack(spacing: 10) {
-                        Image(systemName: "line.3.horizontal")
-                            .font(.system(size: 12, weight: .semibold))
+                        Text("\(index + 1)")
+                            .font(.system(size: 11, weight: .semibold).monospacedDigit())
                             .foregroundStyle(.secondary)
-                            .frame(width: 16)
-                            .help(L10n.t("plugins.order.drag"))
+                            .frame(width: 18, alignment: .trailing)
                         Text(item.manifest.name)
                             .font(.system(size: 13, weight: .medium))
                             .lineLimit(1)
@@ -340,6 +339,8 @@ struct PluginsSettingsPane: View {
                             Image(systemName: "chevron.up")
                         }
                         .buttonStyle(.borderless)
+                        .focusable(false)
+                        .focusEffectDisabled()
                         .disabled(index == 0)
                         .help(L10n.t("plugins.order.move_up"))
 
@@ -349,29 +350,13 @@ struct PluginsSettingsPane: View {
                             Image(systemName: "chevron.down")
                         }
                         .buttonStyle(.borderless)
+                        .focusable(false)
+                        .focusEffectDisabled()
                         .disabled(index >= rows.count - 1)
                         .help(L10n.t("plugins.order.move_down"))
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(draggingOrderID == item.id ? Color.accentColor.opacity(0.12) : Color.clear)
-                    )
-                    .contentShape(Rectangle())
-                    .onDrag {
-                        draggingOrderID = item.id
-                        return NSItemProvider(object: item.id as NSString)
-                    }
-                    .onDrop(
-                        of: [.text],
-                        delegate: PluginOrderDropDelegate(
-                            targetID: item.id,
-                            orderedIDs: rows.map(\.id),
-                            draggingID: $draggingOrderID,
-                            onMove: { from, to in moveInstalled(from: from, to: to) }
-                        )
-                    )
                     if index < rows.count - 1 {
                         Divider().opacity(0.35)
                     }
@@ -468,12 +453,13 @@ struct PluginsSettingsPane: View {
         else { return }
         let id = order.remove(at: index)
         order.insert(id, at: newIndex)
+        // Drop keyboard focus so the scroll view does not jump to the focused button.
+        NSApp.keyWindow?.makeFirstResponder(nil)
         barOrderIDs = order
 
-        let rest = items.map(\.id).filter { !installed.contains($0) }
-        // Persist order; refresh the workspace bar after a beat so Settings layout
-        // is not invalidated in the same turn as the local list update.
-        PluginManager.shared.reorderBarPlugins(order + rest, refreshBar: false)
+        // Persist order only for installed plugins; refresh the bar later so this
+        // pane is not invalidated in the same turn as the local list update.
+        PluginManager.shared.reorderBarPlugins(order, refreshBar: false)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             PluginManager.shared.requestBarRefresh()
         }
@@ -558,34 +544,6 @@ private struct PluginsCatalogGrid: View {
                 )
             }
         }
-    }
-}
-
-/// Drop target for bar-order rows — updates local order only.
-private struct PluginOrderDropDelegate: DropDelegate {
-    let targetID: String
-    let orderedIDs: [String]
-    @Binding var draggingID: String?
-    let onMove: (Int, Int) -> Void
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        // Reorder already applied in `dropEntered` while dragging.
-        draggingID = nil
-        return true
-    }
-
-    func dropEntered(info: DropInfo) {
-        guard let fromID = draggingID,
-              fromID != targetID,
-              let from = orderedIDs.firstIndex(of: fromID),
-              let to = orderedIDs.firstIndex(of: targetID),
-              from != to
-        else { return }
-        onMove(from, to)
     }
 }
 
@@ -701,10 +659,15 @@ private struct PluginCardRow: View {
                 } else if item.isInstalled {
                     Toggle(L10n.t("plugins.enable"), isOn: Binding(
                         get: { item.isEnabled },
-                        set: { onToggle($0) }
+                        set: {
+                            onToggle($0)
+                            NSApp.keyWindow?.makeFirstResponder(nil)
+                        }
                     ))
                     .toggleStyle(.switch)
                     .labelsHidden()
+                    .focusable(false)
+                    .focusEffectDisabled()
                     .help(L10n.t("plugins.enable"))
                 }
 
@@ -713,13 +676,23 @@ private struct PluginCardRow: View {
                 if item.isBusy {
                     EmptyView()
                 } else if !item.isInstalled {
-                    Button(L10n.t("plugins.install")) { onDownload() }
+                    Button(L10n.t("plugins.install")) {
+                        onDownload()
+                        NSApp.keyWindow?.makeFirstResponder(nil)
+                    }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
+                        .focusable(false)
+                        .focusEffectDisabled()
                 } else {
-                    Button(L10n.t("plugins.uninstall")) { onUninstall() }
+                    Button(L10n.t("plugins.uninstall")) {
+                        onUninstall()
+                        NSApp.keyWindow?.makeFirstResponder(nil)
+                    }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+                        .focusable(false)
+                        .focusEffectDisabled()
                 }
             }
         }

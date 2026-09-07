@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "0.7.6",
+      "items": [
+        "Maintenance and fixes"
+      ]
+    },
+    {
       "version": "0.7.5",
       "items": [
         "Maintenance and fixes"
@@ -231,12 +237,6 @@
     },
     {
       "version": "0.3.7",
-      "items": [
-        "Maintenance and fixes"
-      ]
-    },
-    {
-      "version": "0.3.6",
       "items": [
         "Maintenance and fixes"
       ]

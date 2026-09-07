@@ -183,7 +183,8 @@ public final class PluginSettingsStore: @unchecked Sendable {
     /// Persist a full bar order (catalog order from the settings UI).
     public func reorder(_ ids: [String]) {
         for (index, id) in ids.enumerated() {
-            var s = state(for: id)
+            // Only update existing entries — never invent `enabled=false` rows for catalog ids.
+            guard var s = states[id] else { continue }
             s.order = index
             states[id] = s
         }

@@ -397,6 +397,15 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         settingsUI.onApplyRulesNow = { [weak self] in
             self?.applyAppRulesNow()
         }
+        settingsUI.onVisibilityChange = { [weak self] visible in
+            guard let self else { return }
+            // Same pause as palette / plugin panels / quake: no FFM chase, no focus ring.
+            if visible {
+                self.border.hide()
+            } else {
+                self.refreshBorder()
+            }
+        }
 
         setupStatusItem()
         notepad.store.onIndexChanged = { [weak self] in
@@ -8415,9 +8424,10 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
             border.hide()
             return
         }
-        // Plugin / status / menu-bar / quake / notepad chrome sits over tiles — keep the
-        // focus ring hidden so it doesn't cut through overlays.
+        // Plugin / status / menu-bar / settings / quake / notepad chrome sits over tiles —
+        // keep the focus ring hidden so it doesn't cut through overlays.
         if overlaysCaptureFocus
+            || settingsUI.isVisible
             || PluginPanelOutsideClick.hasVisiblePanel
             || statusPopover.isShown
             || AlwmChromeFocus.menuBarMenuIsOpen() {

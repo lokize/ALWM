@@ -92,8 +92,25 @@ public final class PluginInstallService: ObservableObject {
         Self.userPlugInsURL.appendingPathComponent(remote.bundle, isDirectory: true)
     }
 
+    /// True only when a real `.alwmplugin` for this id lives under `~/.config/alwm/PlugIns`
+    /// (survives app updates). Source tree / app `Contents/PlugIns` / `dist` do not count.
     public func isOnDisk(id: String) -> Bool {
-        PluginCatalog.discover().contains { $0.id == id && FileManager.default.fileExists(atPath: $0.bundleURL.path) }
+        userInstalledBundleURL(id: id) != nil
+    }
+
+    /// Promote / download so an installed plugin survives the next app update.
+    public func ensurePersistedBundle(id: String, enable: Bool? = nil) async throws {
+        ensureUserPlugInsDir()
+        if isOnDisk(id: id) {
+            if let enable {
+                var state = PluginManager.shared.settings.state(for: id)
+                state.installed = true
+                if enable { state.enabled = true }
+                PluginManager.shared.settings.upsert(state)
+            }
+            return
+        }
+        try await install(id: id, enable: enable ?? (PluginManager.shared.settings.states[id]?.enabled ?? true))
     }
 
     /// Refresh remote index (GitHub latest release) with bundled `plugins-index.json` fallback.
@@ -119,16 +136,32 @@ public final class PluginInstallService: ObservableObject {
         }
     }
 
-    /// Install from remote (or copy from dist in debug if asset missing). Enables by default.
+    /// Install from remote, app Resources zips, Contents/PlugIns, or dist. Preserves order/display.
     public func install(id: String, enable: Bool = true) async throws {
         busyIDs.insert(id)
         defer { busyIDs.remove(id) }
         lastError = nil
         ensureUserPlugInsDir()
 
-        guard let info = remoteCatalog.first(where: { $0.id == id })
-                ?? loadBundledIndex()?.plugins.first(where: { $0.id == id })
-        else {
+        let info = remoteCatalog.first(where: { $0.id == id })
+            ?? loadBundledIndex()?.plugins.first(where: { $0.id == id })
+
+        // Prefer copying an already-built bundle (app PlugIns / discover) before network.
+        if let source = findPromotableBundle(id: id) {
+            let destName = info?.bundle ?? source.lastPathComponent
+            let dest = Self.userPlugInsURL.appendingPathComponent(destName, isDirectory: true)
+            try replaceItem(at: dest, withCopyOf: source)
+            try adHocSign(plugin: dest)
+            if let info {
+                markInstalled(info, enable: enable)
+            } else {
+                markInstalledPromoted(id: id, version: nil, enable: enable)
+            }
+            PluginManager.shared.reloadFromSettings()
+            return
+        }
+
+        guard let info else {
             throw InstallError.unknownPlugin(id)
         }
 
@@ -168,7 +201,8 @@ public final class PluginInstallService: ObservableObject {
         PluginManager.shared.reloadFromSettings()
     }
 
-    /// Re-download missing installed plugins (after slim app update / first migration).
+    /// Re-materialize installed plugins under `~/.config/alwm/PlugIns` after an app update.
+    /// Preserves `enabled`, `order`, `placement`, and `display` from `plugins.toml`.
     public func restoreInstalledIfNeeded() {
         restoreTask?.cancel()
         restoreTask = Task { await performRestore() }
@@ -181,27 +215,76 @@ public final class PluginInstallService: ObservableObject {
         await refreshCatalog()
 
         let settings = PluginManager.shared.settings
-        let needed = settings.states.values.filter(\.installed).map(\.id)
+        let needed = settings.states.values.filter(\.installed)
         guard !needed.isEmpty else {
             PluginManager.shared.reloadFromSettings()
             return
         }
 
-        for id in needed {
+        for state in needed.sorted(by: { $0.order < $1.order }) {
             if Task.isCancelled { return }
-            if isOnDisk(id: id) { continue }
+            if isOnDisk(id: state.id) { continue }
             do {
-                let enable = settings.states[id]?.enabled ?? true
-                try await install(id: id, enable: enable)
+                try await install(id: state.id, enable: state.enabled)
             } catch {
                 lastError = error.localizedDescription
-                NSLog("ALWM plugins: restore failed for \(id): \(error.localizedDescription)")
+                NSLog("ALWM plugins: restore failed for \(state.id): \(error.localizedDescription)")
             }
         }
         PluginManager.shared.reloadFromSettings()
     }
 
     // MARK: - Private
+
+    private func userInstalledBundleURL(id: String) -> URL? {
+        let root = Self.userPlugInsURL
+        guard let urls = try? FileManager.default.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else { return nil }
+        for url in urls where url.pathExtension == "alwmplugin" {
+            guard let plugin = PluginCatalog.load(from: url), plugin.id == id else { continue }
+            return url
+        }
+        return nil
+    }
+
+    /// Bundles that can be copied into the user PlugIns dir (not already there).
+    private func findPromotableBundle(id: String) -> URL? {
+        let userRoot = Self.userPlugInsURL.standardizedFileURL
+        // App Contents/PlugIns first (debug / ALWM_BUNDLE_PLUGINS builds).
+        if let builtIn = Bundle.main.builtInPlugInsURL,
+           let urls = try? FileManager.default.contentsOfDirectory(
+               at: builtIn,
+               includingPropertiesForKeys: nil,
+               options: [.skipsHiddenFiles]
+           ) {
+            for url in urls where url.pathExtension == "alwmplugin" {
+                if let plugin = PluginCatalog.load(from: url), plugin.id == id {
+                    return url
+                }
+            }
+        }
+        // Any discovered copy outside the user dir (dist / repo during local runs).
+        for plugin in PluginCatalog.discover() where plugin.id == id {
+            let path = plugin.bundleURL.standardizedFileURL.path
+            let root = userRoot.path
+            if path == root || path.hasPrefix(root + "/") { continue }
+            if plugin.bundleURL.pathExtension == "alwmplugin",
+               FileManager.default.fileExists(atPath: plugin.bundleURL.path) {
+                return plugin.bundleURL
+            }
+        }
+        return nil
+    }
+
+    private func replaceItem(at dest: URL, withCopyOf source: URL) throws {
+        if FileManager.default.fileExists(atPath: dest.path) {
+            try FileManager.default.removeItem(at: dest)
+        }
+        try FileManager.default.copyItem(at: source, to: dest)
+    }
 
     private func markInstalled(_ info: RemotePluginInfo, enable: Bool) {
         var state = PluginManager.shared.settings.state(
@@ -213,6 +296,20 @@ public final class PluginInstallService: ObservableObject {
         }
         state.installed = true
         state.installedVersion = info.version
+        if enable {
+            state.enabled = true
+        }
+        // Never clear enabled/order/placement/display when restoring an existing entry.
+        PluginManager.shared.settings.upsert(state)
+    }
+
+    private func markInstalledPromoted(id: String, version: String?, enable: Bool) {
+        var state = PluginManager.shared.settings.state(for: id)
+        if PluginManager.shared.settings.states[id] == nil {
+            state.order = PluginManager.shared.settings.nextOrderPublic()
+        }
+        state.installed = true
+        if let version { state.installedVersion = version }
         if enable { state.enabled = true }
         PluginManager.shared.settings.upsert(state)
     }
@@ -273,23 +370,28 @@ public final class PluginInstallService: ObservableObject {
     }
 
     private func localDistZip(named asset: String) -> URL? {
-        let candidates = [
+        let candidates: [URL?] = [
+            // Shipped inside the .app for offline restore after slim updates.
+            Bundle.main.resourceURL?.appendingPathComponent("plugins/\(asset)"),
+            Bundle.main.bundleURL
+                .appendingPathComponent("Contents/Resources/plugins/\(asset)"),
             URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
                 .appendingPathComponent("dist/plugins/\(asset)"),
             Bundle.main.bundleURL
                 .deletingLastPathComponent()
                 .appendingPathComponent("plugins/\(asset)")
         ]
-        return candidates.first { FileManager.default.fileExists(atPath: $0.path) }
+        return candidates.compactMap { $0 }.first { FileManager.default.fileExists(atPath: $0.path) }
     }
 
     private func localDistBundle(named bundle: String) -> URL? {
-        let candidates = [
+        let candidates: [URL?] = [
+            Bundle.main.builtInPlugInsURL?.appendingPathComponent(bundle),
+            Bundle.main.resourceURL?.appendingPathComponent("plugins/\(bundle)"),
             URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
                 .appendingPathComponent("dist/plugins/\(bundle)"),
-            Bundle.main.builtInPlugInsURL?.appendingPathComponent(bundle)
-        ].compactMap { $0 }
-        return candidates.first { FileManager.default.fileExists(atPath: $0.path) }
+        ]
+        return candidates.compactMap { $0 }.first { FileManager.default.fileExists(atPath: $0.path) }
     }
 
     private func downloadAndExtract(zipURL: URL, destBundle: URL, expectedName: String) async throws {

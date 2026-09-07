@@ -1,8 +1,10 @@
 # Plugins
 
-ALWM releases ship a **slim app** without bundled plugins. Users download the plugins they want from **Settings → Plugins**; bundles live in `~/.config/alwm/PlugIns/` and survive app updates. Preferences (`enabled`, `order`, `placement`, `display`, `installed`) are stored in `~/.config/alwm/plugins.toml`.
+ALWM releases ship a **slim app** without bundled plugins in `Contents/PlugIns`. Users download the plugins they want from **Settings → Plugins**; bundles live in `~/.config/alwm/PlugIns/` and survive app updates. Preferences (`enabled`, `order`, `placement`, `display`, `installed`) are stored in `~/.config/alwm/plugins.toml`.
 
-Local **debug** builds (`./scripts/package.sh`) still embed plugins in `Contents/PlugIns` for faster iteration. **Release** builds leave `PlugIns` empty and publish each plugin as a zip plus `plugins-index.json` on the same GitHub Release as the DMG.
+On launch, ALWM restores any plugin marked `installed = true` into `~/.config/alwm/PlugIns` (from app `Resources/plugins/*.zip`, GitHub Release assets, or a temporary copy in `Contents/PlugIns` on debug builds) and keeps enablement + order unchanged.
+
+Local **debug** builds (`./scripts/package.sh`) still embed plugins in `Contents/PlugIns` for faster iteration; enabling a plugin also copies it into the user PlugIns directory so the next update does not clear it. **Release** builds leave `Contents/PlugIns` empty and publish each plugin as a zip plus `plugins-index.json` on the same GitHub Release as the DMG (zips are also embedded under `Contents/Resources/plugins/` for offline restore).
 
 The plugin API is **GPL-3.0**, same as the host app.
 

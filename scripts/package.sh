@@ -404,6 +404,18 @@ for bundle in sorted(dist.glob("*.alwmplugin")):
 PY
 cp -f "$ROOT/dist/plugins-index.json" "$CONTENTS/Resources/plugins-index.json"
 
+# Offline restore after slim updates: ship zips inside the app (independent of Contents/PlugIns).
+step "Stage Resources/plugins zips"
+RES_PLUGINS="$CONTENTS/Resources/plugins"
+rm -rf "$RES_PLUGINS"
+mkdir -p "$RES_PLUGINS"
+shopt -s nullglob
+for zip in "$ROOT"/dist/plugins/*.alwmplugin.zip; do
+  cp -f "$zip" "$RES_PLUGINS/"
+done
+zip_count=$(find "$RES_PLUGINS" -name "*.alwmplugin.zip" | wc -l | tr -d ' ')
+echo "  Resources/plugins: ${zip_count} zip(s)"
+
 if [[ "$BUNDLE_PLUGINS" != "1" ]]; then
   echo "  Slim app: Contents/PlugIns left empty (download on demand)"
 fi

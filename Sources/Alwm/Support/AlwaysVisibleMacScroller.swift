@@ -101,11 +101,19 @@ struct MacAlwaysScrollView<Content: View>: NSViewRepresentable {
     }
 
     func updateNSView(_ scroll: OverflowAwareScrollView, context: Context) {
+        // Capture BEFORE swapping SwiftUI content — assigning `rootView` often resets
+        // the clip view to the top, and a same-size early-return used to skip restore.
+        let savedOrigin = scroll.contentView.bounds.origin
+        context.coordinator.restoreOriginAfterUpdate = savedOrigin
         context.coordinator.content = content()
         context.coordinator.hosting?.rootView = AnyView(context.coordinator.content)
         scroll.forceLegacyScrollers()
-        // Avoid relayout-on-every-SwiftUI-tick — it fights trackpad scrolling.
+        context.coordinator.applyScrollOrigin(savedOrigin)
         context.coordinator.scheduleContentRelayout()
+        // Second pass after SwiftUI finishes its own layout pass.
+        DispatchQueue.main.async {
+            context.coordinator.applyScrollOrigin(savedOrigin)
+        }
     }
 
     static func dismantleNSView(_ nsView: OverflowAwareScrollView, coordinator: Coordinator) {
@@ -121,6 +129,8 @@ struct MacAlwaysScrollView<Content: View>: NSViewRepresentable {
         private var lastClipSize: CGSize = .zero
         private var lastContentHeight: CGFloat = -1
         private var pendingRelayout: DispatchWorkItem?
+        /// Scroll origin to re-apply after SwiftUI content swaps (reorder, toggles, …).
+        var restoreOriginAfterUpdate: NSPoint?
 
         init(content: Content) {
             self.content = content
@@ -145,23 +155,38 @@ struct MacAlwaysScrollView<Content: View>: NSViewRepresentable {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
         }
 
+        func applyScrollOrigin(_ origin: NSPoint) {
+            guard let scroll = scrollView else { return }
+            let docHeight = document?.frame.height
+                ?? scroll.documentView?.frame.height
+                ?? scroll.contentView.bounds.height
+            let maxY = max(0, docHeight - scroll.contentView.bounds.height)
+            let y = min(max(0, origin.y), maxY)
+            let point = NSPoint(x: 0, y: y)
+            scroll.contentView.setBoundsOrigin(point)
+            scroll.reflectScrolledClipView(scroll.contentView)
+        }
+
         func relayout(preserveScroll: Bool) {
             guard let scroll = scrollView,
                   let hosting,
                   let document
             else { return }
 
-            let savedOrigin = scroll.contentView.bounds.origin
+            let savedOrigin = restoreOriginAfterUpdate ?? scroll.contentView.bounds.origin
             let width = max(scroll.contentView.bounds.width, 1)
             hosting.frame = NSRect(x: 0, y: 0, width: width, height: 10_000)
             hosting.layoutSubtreeIfNeeded()
             let fitting = hosting.fittingSize
             let height = max(fitting.height, hosting.intrinsicContentSize.height, 1)
 
-            // Skip no-op relayouts (same size) — prevents scroll position fights.
+            // Same size: still restore scroll — rootView updates often zero the clip first.
             if abs(height - lastContentHeight) < 0.5,
-               abs(document.frame.width - width) < 0.5,
-               preserveScroll {
+               abs(document.frame.width - width) < 0.5 {
+                if preserveScroll {
+                    applyScrollOrigin(savedOrigin)
+                }
+                restoreOriginAfterUpdate = nil
                 return
             }
             lastContentHeight = height
@@ -171,12 +196,10 @@ struct MacAlwaysScrollView<Content: View>: NSViewRepresentable {
 
             scroll.forceLegacyScrollers()
             if preserveScroll {
-                let maxY = max(0, height - scroll.contentView.bounds.height)
-                let y = min(max(0, savedOrigin.y), maxY)
-                scroll.contentView.setBoundsOrigin(NSPoint(x: 0, y: y))
+                applyScrollOrigin(savedOrigin)
             }
-            scroll.reflectScrolledClipView(scroll.contentView)
             lastClipSize = scroll.contentView.bounds.size
+            restoreOriginAfterUpdate = nil
         }
     }
 }
@@ -210,6 +233,11 @@ final class FlippedDocumentView: NSView {
 
 final class OverflowAwareScrollView: NSScrollView {
     private var trackpadMonitor: Any?
+
+    /// Keep scroll position stable when buttons briefly become first responder.
+    override func scrollToVisible(_ rect: NSRect) -> Bool {
+        false
+    }
 
     func forceLegacyScrollers() {
         autohidesScrollers = false

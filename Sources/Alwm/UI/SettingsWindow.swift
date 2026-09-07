@@ -15,6 +15,9 @@ public final class SettingsWindowController {
     public var runningAppsProvider: (() -> [AppRuleRunningApp])?
     public var onCaptureAppRuleFrame: ((String?) -> AppRuleCapturedGeometry?)?
     public var onApplyRulesNow: (() -> Void)?
+    /// Fired when Settings becomes visible (`true`) or is dismissed (`false`).
+    /// Used to pause focus-follows-mouse + hide the focus border (same as palette/plugins).
+    public var onVisibilityChange: ((Bool) -> Void)?
 
     public init() {}
 
@@ -25,6 +28,7 @@ public final class SettingsWindowController {
             PluginPanelOutsideClick.stop(for: window)
             window.orderOut(nil)
             self.window = nil
+            onVisibilityChange?(false)
         }
         detachCloseObserver()
         let root = SettingsRootView(
@@ -51,6 +55,7 @@ public final class SettingsWindowController {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         self.window = window
+        onVisibilityChange?(true)
         PluginPanelOutsideClick.watch(window) { [weak self] in
             self?.close()
         }
@@ -64,15 +69,20 @@ public final class SettingsWindowController {
                 PluginPanelOutsideClick.stop(for: self.window)
                 self.detachCloseObserver()
                 self.window = nil
+                self.onVisibilityChange?(false)
             }
         }
     }
 
     public func close() {
+        let wasVisible = window != nil
         PluginPanelOutsideClick.stop(for: window)
         detachCloseObserver()
         window?.orderOut(nil)
         window = nil
+        if wasVisible {
+            onVisibilityChange?(false)
+        }
     }
 
     /// True only while Settings is the key window (do not block gestures when it sits in the background).
@@ -325,11 +335,19 @@ struct SettingsRootView: View {
     private var detail: some View {
         // Native Form scrolling — wrapping Form in NSScrollView ate trackpad events
         // (SwiftUI Form swallowed the wheel; only the outer scrollbar knob moved).
-        paneForm
-            .scrollIndicators(.visible)
-            .background(ForceLegacyVerticalScroller())
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .id(pane)
+        // Plugins uses its own MacAlwaysScrollView — skip the Form scroller probe.
+        if pane == .plugins {
+            paneForm
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .focusEffectDisabled()
+                .id(pane)
+        } else {
+            paneForm
+                .scrollIndicators(.visible)
+                .background(ForceLegacyVerticalScroller())
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .id(pane)
+        }
     }
 
     @ViewBuilder
@@ -1523,7 +1541,7 @@ private struct CreditsAvatarView: View {
 
 enum AlwmVersion {
     /// Kept in sync by `scripts/bump-version.sh`. Prefer `installed` for UI / update checks.
-    static let string = "0.7.5"
+    static let string = "0.7.6"
     static let ctlHint = "~/.local/bin/alwmctl"
     /// Version of the running app (Info.plist), falling back to the embedded constant.
     static var installed: String {
