@@ -2674,6 +2674,10 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         hotkeys.setOverlayKeyboardCapture(overlayNow)
 
         if overlayNow {
+            // Stop any pending focus-follows-mouse hop onto tiles under the overlay.
+            ffmWorkItem?.cancel()
+            ffmWorkItem = nil
+            border.hide()
             if configStore.config.settings.gestures.enabled, !gesturesPausedForOverlay {
                 gesturesPausedForOverlay = true
                 gestures.stop()
@@ -2687,6 +2691,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
                 visibilityDeferredWhileOverlay = false
                 applyWorkspaceVisibility(animated: false)
             }
+            refreshBorder()
         }
     }
 
@@ -3320,6 +3325,12 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
     }
 
     private func scheduleFocusWindowUnderMouse() {
+        // Quake terminal / notepad / plugins / menus — never chase tiles under the cursor.
+        if chromeBlocksFocusFollowsMouse() {
+            ffmWorkItem?.cancel()
+            ffmWorkItem = nil
+            return
+        }
         let now = Date()
         let minInterval: TimeInterval = 0.08
         if now.timeIntervalSince(ffmLastRun) >= minInterval {
@@ -3331,6 +3342,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         let delay = minInterval - now.timeIntervalSince(ffmLastRun)
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
+            if self.chromeBlocksFocusFollowsMouse() { return }
             self.ffmLastRun = Date()
             self.focusWindowUnderMouse()
         }
@@ -5729,13 +5741,27 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
 
     public nonisolated func axTrackerFocusedWindowDidChange(_ id: WindowID?) {
         Task { @MainActor in
+            // Quake / notepad own the interaction — ignore AX focus noise from tiles underneath
+            // (same idea as plugin panels / menu bar).
+            if self.overlaysCaptureFocus {
+                if let id, id == self.quake.windowID || self.isQuakeOwned(id) {
+                    self.axFocusedWindowID = id
+                } else if self.quake.isVisible, let qid = self.quake.windowID {
+                    self.axFocusedWindowID = qid
+                }
+                // Notepad is an ALWM NSPanel (not tracked as ManagedWindow) — never adopt
+                // tile focus ids while it is open alone.
+                self.refreshChrome()
+                return
+            }
+
             self.axFocusedWindowID = id
             guard let id else {
                 self.refreshChrome()
                 return
             }
 
-            // Quake / notepad / settings / plugin panels — relayout and AX noise must not
+            // Settings / plugin panels / menus — relayout and AX noise must not
             // steal keyboard focus from ALWM-owned dialogs.
             if self.chromeBlocksFocusFollowsMouse() {
                 self.refreshChrome()
@@ -8388,9 +8414,10 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
             border.hide()
             return
         }
-        // Plugin / status / menu-bar chrome sits over tiles — keep the focus ring hidden so it
-        // doesn't cut through translucent panels or open  / File menus.
-        if PluginPanelOutsideClick.hasVisiblePanel
+        // Plugin / status / menu-bar / quake / notepad chrome sits over tiles — keep the
+        // focus ring hidden so it doesn't cut through overlays.
+        if overlaysCaptureFocus
+            || PluginPanelOutsideClick.hasVisiblePanel
             || statusPopover.isShown
             || AlwmChromeFocus.menuBarMenuIsOpen() {
             border.hide()

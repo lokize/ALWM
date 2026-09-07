@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "0.6.9",
+      "items": [
+        "Maintenance and fixes"
+      ]
+    },
+    {
       "version": "0.6.8",
       "items": [
         "Maintenance and fixes"
@@ -242,17 +248,6 @@
         "Scripts: ensure-version-bump.sh",
         "Scripts: install-git-hooks.sh",
         "Scripts: verify-release-ready.sh"
-      ]
-    },
-    {
-      "version": "0.2.9",
-      "items": [
-        "App rules: pick running apps with workspace, monitor, size, and position",
-        "Auto-fill rule fields when you select an app in the picker",
-        "Keep keyboard focus in Settings and plugin windows",
-        "Plugin bar: slower rotation and clearer GitHub/Steam badges",
-        "Fix windows reopening in a loop when applying workspace rules",
-        "CI fails if app changes ship without a new VERSION"
       ]
     }
   ]
