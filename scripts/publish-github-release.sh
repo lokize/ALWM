@@ -38,7 +38,7 @@ if gh release view "$TAG" >/dev/null 2>&1; then
     echo "error: GitHub release $TAG already exists." >&2
     echo "  VERSION is still $VERSION — bump first, then publish:" >&2
     echo "    bash scripts/bump-version.sh \"Short user-facing change\" \"Another change\"" >&2
-    echo "    git add VERSION Info.plist Sources/Alwm/Resources/whatsnew.json Sources/Alwm/UI/SettingsWindow.swift" >&2
+    echo "    git add VERSION Info.plist Sources/Alwm/Resources/whatsnew.json Sources/Alwm/UI/Settings/AlwmVersion.swift" >&2
     echo "    git commit -m \"chore: bump version to \$(cat VERSION)\"" >&2
     echo "    bash scripts/publish-github-release.sh" >&2
     echo "  Or refresh this tag's DMG/notes only: bash scripts/publish-github-release.sh --update" >&2
@@ -47,9 +47,9 @@ if gh release view "$TAG" >/dev/null 2>&1; then
 fi
 
 # Working tree must include VERSION files consistent with what's on disk.
-if ! git diff --quiet -- VERSION Info.plist Sources/Alwm/Resources/whatsnew.json Sources/Alwm/UI/SettingsWindow.swift 2>/dev/null; then
+if ! git diff --quiet -- VERSION Info.plist Sources/Alwm/Resources/whatsnew.json Sources/Alwm/UI/Settings/AlwmVersion.swift 2>/dev/null; then
   echo "error: version files have uncommitted changes — commit the bump before publishing." >&2
-  git status -sb -- VERSION Info.plist Sources/Alwm/Resources/whatsnew.json Sources/Alwm/UI/SettingsWindow.swift >&2 || true
+  git status -sb -- VERSION Info.plist Sources/Alwm/Resources/whatsnew.json Sources/Alwm/UI/Settings/AlwmVersion.swift >&2 || true
   exit 1
 fi
 

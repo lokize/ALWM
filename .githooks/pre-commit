@@ -18,7 +18,7 @@ ONLY_VERSION=1
 while IFS= read -r f; do
   [[ -z "$f" ]] && continue
   case "$f" in
-    VERSION|Info.plist|Sources/Alwm/Resources/whatsnew.json|Sources/Alwm/UI/SettingsWindow.swift) ;;
+    VERSION|Info.plist|Sources/Alwm/Resources/whatsnew.json|Sources/Alwm/UI/Settings/AlwmVersion.swift) ;;
     *) ONLY_VERSION=0; break ;;
   esac
 done <<<"$STAGED"
@@ -71,6 +71,6 @@ else
   bash "$ROOT/scripts/bump-version.sh" --from-diff
 fi
 
-git add VERSION Info.plist Sources/Alwm/Resources/whatsnew.json Sources/Alwm/UI/SettingsWindow.swift
+git add VERSION Info.plist Sources/Alwm/Resources/whatsnew.json Sources/Alwm/UI/Settings/AlwmVersion.swift
 log "VERSION + What's New re-staged — commit sem --no-verify"
 exit 0

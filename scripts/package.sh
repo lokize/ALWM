@@ -43,7 +43,7 @@ if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     echo "AVISO: o último commit mudou código sem atualizar VERSION/What's New." >&2
     echo "  Provável causa: git commit --no-verify (pula o pre-commit)." >&2
     echo "  Corrija com: bash scripts/bump-version.sh \"Short change\" \"Another change\"" >&2
-    echo "  Depois: git add VERSION Info.plist Sources/Alwm/Resources/whatsnew.json Sources/Alwm/UI/SettingsWindow.swift && git commit" >&2
+    echo "  Depois: git add VERSION Info.plist Sources/Alwm/Resources/whatsnew.json Sources/Alwm/UI/Settings/AlwmVersion.swift && git commit" >&2
   fi
 fi
 

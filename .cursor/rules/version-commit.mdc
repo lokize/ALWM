@@ -20,7 +20,7 @@ Esquema: `MAJOR.MINOR.PATCH` sobe o **patch** em +1. Quando o patch chegaria a *
 - `VERSION`
 - `Info.plist`
 - `Sources/Alwm/Resources/whatsnew.json`
-- `Sources/Alwm/UI/SettingsWindow.swift` (`AlwmVersion.string`)
+- `Sources/Alwm/UI/Settings/AlwmVersion.swift` (`AlwmVersion.string`)
 
 3. A mensagem de commit continua em **português (Brasil)** (regra do usuário); os bullets do What's New ficam em inglês (UI atual).
 

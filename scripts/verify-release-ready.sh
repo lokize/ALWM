@@ -9,7 +9,7 @@ cd "$ROOT"
 is_version_only_path() {
   local f="$1"
   case "$f" in
-    VERSION|Info.plist|Sources/Alwm/Resources/whatsnew.json|Sources/Alwm/UI/SettingsWindow.swift) return 0 ;;
+    VERSION|Info.plist|Sources/Alwm/Resources/whatsnew.json|Sources/Alwm/UI/Settings/AlwmVersion.swift) return 0 ;;
     .githooks/*|scripts/*|.cursor/*|.github/*|docs/*|assets/*|README.md|LICENSE*) return 0 ;;
     *) return 1 ;;
   esac

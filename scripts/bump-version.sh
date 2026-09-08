@@ -15,7 +15,7 @@ cd "$ROOT"
 
 VERSION_FILE="$ROOT/VERSION"
 PLIST="$ROOT/Info.plist"
-SWIFT_SETTINGS="$ROOT/Sources/Alwm/UI/SettingsWindow.swift"
+SWIFT_SETTINGS="$ROOT/Sources/Alwm/UI/Settings/AlwmVersion.swift"
 WHATSNEW="$ROOT/Sources/Alwm/Resources/whatsnew.json"
 
 DRY_RUN=0
@@ -82,7 +82,7 @@ collect_from_paths() {
     [[ -z "$line" ]] && continue
     # Ignorar artefatos de versão neste commit
     case "$line" in
-      VERSION|Info.plist|Sources/Alwm/Resources/whatsnew.json|Sources/Alwm/UI/SettingsWindow.swift) continue ;;
+      VERSION|Info.plist|Sources/Alwm/Resources/whatsnew.json|Sources/Alwm/UI/Settings/AlwmVersion.swift) continue ;;
       .githooks/*|scripts/bump-version.sh|.cursor/*) continue ;;
     esac
     base="$(basename "$line")"
