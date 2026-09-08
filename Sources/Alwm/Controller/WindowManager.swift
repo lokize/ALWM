@@ -110,7 +110,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
     private var isBootstrapping = true
     private var layoutRecoveryWorkItem: DispatchWorkItem?
     private var layoutRecoveryAttempts = 0
-    private let maxLayoutRecoveryAttempts = 5
+    private let maxLayoutRecoveryAttempts = 8
     /// Ignore AX focus that would bounce back to the previous workspace after a switch.
     private var suppressWorkspaceFollowUntil = Date.distantPast
     /// Bumps on every workspace switch so delayed settle tasks don't use a stale snapshot.
@@ -7121,7 +7121,9 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in
+            // Must run synchronously — an async Task often never lands before sleep,
+            // so wake restores a stale/empty layout.
+            MainActor.assumeIsolated {
                 self?.prepareForSystemSleep()
             }
         }
@@ -7132,7 +7134,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in
+            MainActor.assumeIsolated {
                 self?.prepareForSystemSleep()
             }
         }
@@ -7143,7 +7145,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in
+            MainActor.assumeIsolated {
                 self?.noteSystemWakeForResumeRecovery()
                 self?.scheduleStaggeredResumeRecovery()
             }
@@ -7155,7 +7157,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in
+            MainActor.assumeIsolated {
                 self?.noteSystemWakeForResumeRecovery()
                 self?.scheduleStaggeredResumeRecovery()
             }
@@ -7167,7 +7169,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in
+            MainActor.assumeIsolated {
                 guard let self, Date() < self.resumeRecoveryEligibleUntil else { return }
                 self.scheduleSystemResumeRecovery(delay: 1.2)
             }
@@ -7178,15 +7180,16 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
     /// Persist a known-good layout before the machine sleeps (AX is unreliable on wake).
     private func prepareForSystemSleep() {
         isResumeRecovering = false
-        persistRuntimeState()
+        // Force a full layout flush even if a prior wake pass left recovery flags set.
+        persistRuntimeState(forceWorkspaceLayouts: Set(workspaces.workspaces.keys))
         preSleepLayoutFingerprint = layoutRecoveryFingerprint()
-        if configStore.config.settings.developerMode {
-            NSLog("ALWM: prepared for sleep — fingerprint=%@", preSleepLayoutFingerprint ?? "?")
-        }
+        NSLog("ALWM: prepared for sleep — fingerprint=%@", preSleepLayoutFingerprint ?? "?")
     }
 
     private func noteSystemWakeForResumeRecovery() {
-        resumeRecoveryEligibleUntil = Date().addingTimeInterval(240)
+        // Idle assertions can be dropped across sleep — put them back immediately.
+        SleepAssertion.reassertIfNeeded()
+        resumeRecoveryEligibleUntil = Date().addingTimeInterval(300)
         layoutRecoveryAttempts = 0
         isResumeRecovering = true
         lastVisibilitySignature = nil
@@ -7199,7 +7202,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         for work in resumeRecoveryWorkItems { work.cancel() }
         resumeRecoveryWorkItems.removeAll()
         // Longer tail: Electron/Safari rematerialize window numbers slowly after wake.
-        for delay in [0.8, 2.0, 5.0, 10.0, 18.0, 28.0] {
+        for delay in [0.6, 1.5, 3.0, 6.0, 12.0, 20.0, 32.0, 48.0] {
             let work = DispatchWorkItem { [weak self] in
                 self?.recoverAfterSystemResume()
             }
@@ -7265,6 +7268,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
             // Safe to refresh disk tokens (window numbers may have changed) now that layout matches.
             persistRuntimeState()
         } else {
+            // Keep disk snapshot intact until AX catches up — never persist partial columns.
             runLayoutRecoveryIfNeeded(force: true, delay: 2.5)
         }
         NSLog(
