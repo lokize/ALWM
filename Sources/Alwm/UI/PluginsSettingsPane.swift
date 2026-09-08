@@ -14,9 +14,7 @@ private struct SettingsPluginItem: Identifiable, Equatable {
 
 /// Whether a discovered bundle lives under the user PlugIns directory.
 private func isUserInstalledBundle(_ url: URL) -> Bool {
-    let root = PluginInstallService.userPlugInsURL.standardizedFileURL.path
-    let path = url.standardizedFileURL.path
-    return path == root || path.hasPrefix(root + "/")
+    PluginInstallService.isPath(url, under: PluginInstallService.userPlugInsURL)
 }
 
 /// Installed for UI: user PlugIns on disk, or bundled unless soft-uninstalled.
@@ -83,87 +81,112 @@ struct PluginsSettingsPane: View {
     }
 
     var body: some View {
-        // One full-height AppKit scroller (catalog + order). A pinned order footer
-        // clipped the legacy scrollbar; button focus was also scrolling the pane.
-        MacAlwaysScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                publishBlock
+        // NavigationSplitView detail often proposes unbounded height, so a bare
+        // ScrollView grows with its content and the window clips it (no scrollbar).
+        // GeometryReader + VStack: catalog scrolls; order stays a fixed footer
+        // (safeAreaInset was clipped by the Settings detail `.clipped()`).
+        GeometryReader { geo in
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        publishBlock
 
-                if installer.isRestoring {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        Text(L10n.t("plugins.restoring"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                        if installer.isRestoring {
+                            HStack(spacing: 8) {
+                                ProgressView().controlSize(.small)
+                                Text(L10n.t("plugins.restoring"))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
 
-                if let err = installer.lastError, !err.isEmpty {
-                    Text(err)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                }
+                        if let err = installer.lastError, !err.isEmpty {
+                            Text(err)
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
 
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(L10n.t("plugins.catalog"))
-                        .font(.headline)
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(L10n.t("plugins.catalog"))
+                                .font(.headline)
 
-                    if items.isEmpty {
-                        Text(L10n.t("plugins.empty"))
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.vertical, 8)
-                    } else {
-                        pluginSearchBar
-                        categoryFilterBar
+                            if items.isEmpty {
+                                Text(L10n.t("plugins.empty"))
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.vertical, 8)
+                            } else {
+                                pluginSearchBar
+                                categoryFilterBar
 
-                        if filteredItems.isEmpty {
-                            Text(L10n.t("plugins.search.empty"))
-                                .foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.vertical, 12)
-                        } else {
-                            PluginsCatalogGrid(
-                                items: filteredItems,
-                                cardGap: cardGap,
-                                onToggle: { item, enabled in
-                                    Task { await setEnabled(enabled, item: item) }
-                                },
-                                onDownload: { item in
-                                    Task { await download(item) }
-                                },
-                                onUninstall: { item in
-                                    uninstall(item)
-                                },
-                                onOpen: { item in
-                                    detail = item
+                                if filteredItems.isEmpty {
+                                    Text(L10n.t("plugins.search.empty"))
+                                        .foregroundStyle(.secondary)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(.vertical, 12)
+                                } else {
+                                    PluginsCatalogGrid(
+                                        items: filteredItems,
+                                        cardGap: cardGap,
+                                        onToggle: { item, enabled in
+                                            Task { await setEnabled(enabled, item: item) }
+                                        },
+                                        onDownload: { item in
+                                            Task { await download(item) }
+                                        },
+                                        onUninstall: { item in
+                                            uninstall(item)
+                                        },
+                                        onOpen: { item in
+                                            detail = item
+                                        }
+                                    )
                                 }
-                            )
+                            }
+
+                            Text(L10n.t("plugins.footer"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(.top, 2)
                         }
                     }
-
-                    Text(L10n.t("plugins.footer"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 2)
+                    .padding(.horizontal, contentInset)
+                    .padding(.vertical, 16)
+                    .padding(.bottom, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .focusEffectDisabled()
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .scrollIndicators(.visible)
+                .background(ForceLegacyVerticalScroller())
 
                 if !orderedInstalledItems.isEmpty {
+                    Divider()
                     pluginOrderBlock
+                        .padding(.horizontal, contentInset)
+                        .padding(.vertical, 10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.bar)
                 }
             }
-            .padding(.horizontal, contentInset)
-            .padding(.vertical, 16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .focusEffectDisabled()
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .id(loc.revision)
-        .onAppear { Task { await reloadAsync() } }
+        .onAppear {
+            Task { await reloadAsync() }
+            // Ensure enabled plugins are (re)loaded into the workspace bar.
+            PluginManager.shared.reloadFromSettings()
+        }
         .onChange(of: tick) { _, _ in Task { await reloadAsync() } }
         .onChange(of: installer.remoteCatalog) { _, _ in rebuildItems() }
         .onChange(of: installer.busyIDs) { _, _ in rebuildItems() }
-        .onChange(of: installer.isRestoring) { _, _ in rebuildItems() }
+        .onChange(of: installer.isRestoring) { _, _ in
+            rebuildItems()
+            if !installer.isRestoring {
+                PluginManager.shared.reloadFromSettings()
+            }
+        }
         .sheet(item: $detail) { item in
             if let discovered = item.discovered {
                 PluginDetailSheet(
@@ -303,9 +326,13 @@ struct PluginsSettingsPane: View {
         .buttonStyle(.plain)
     }
 
-    /// Bar chip order — pinned below the catalog scroller (arrows only; no drag).
+    /// Bar chip order — outside the catalog scroller (arrows only).
     private var pluginOrderBlock: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let rows = orderedInstalledItems
+        let rowHeight: CGFloat = 36
+        let listHeight = min(CGFloat(max(rows.count, 1)) * rowHeight, 240)
+
+        return VStack(alignment: .leading, spacing: 8) {
             Text(L10n.t("plugins.order"))
                 .font(.subheadline.weight(.semibold))
             Text(L10n.t("plugins.order.help"))
@@ -313,60 +340,63 @@ struct PluginsSettingsPane: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            let rows = orderedInstalledItems
-            VStack(spacing: 0) {
-                ForEach(Array(rows.enumerated()), id: \.element.id) { index, item in
-                    HStack(spacing: 10) {
-                        Text("\(index + 1)")
-                            .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .frame(width: 18, alignment: .trailing)
-                        Text(item.manifest.name)
-                            .font(.system(size: 13, weight: .medium))
-                            .lineLimit(1)
-                        Spacer(minLength: 8)
-                        if item.isEnabled {
-                            Text(L10n.t("menu.on"))
-                                .font(.caption2.weight(.semibold))
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, item in
+                        HStack(spacing: 10) {
+                            Text("\(index + 1)")
+                                .font(.system(size: 11, weight: .semibold).monospacedDigit())
                                 .foregroundStyle(.secondary)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Capsule().fill(Color.primary.opacity(0.08)))
-                        }
-                        Button {
-                            moveInstalled(from: index, to: index - 1)
-                        } label: {
-                            Image(systemName: "chevron.up")
-                        }
-                        .buttonStyle(.borderless)
-                        .focusable(false)
-                        .focusEffectDisabled()
-                        .disabled(index == 0)
-                        .help(L10n.t("plugins.order.move_up"))
+                                .frame(width: 18, alignment: .trailing)
+                            Text(item.manifest.name)
+                                .font(.system(size: 13, weight: .medium))
+                                .lineLimit(1)
+                            Spacer(minLength: 8)
+                            if item.isEnabled {
+                                Text(L10n.t("menu.on"))
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Capsule().fill(Color.primary.opacity(0.08)))
+                            }
+                            Button {
+                                moveInstalled(from: index, to: index - 1)
+                            } label: {
+                                Image(systemName: "chevron.up")
+                            }
+                            .buttonStyle(.borderless)
+                            .focusable(false)
+                            .focusEffectDisabled()
+                            .disabled(index == 0)
+                            .help(L10n.t("plugins.order.move_up"))
 
-                        Button {
-                            moveInstalled(from: index, to: index + 1)
-                        } label: {
-                            Image(systemName: "chevron.down")
+                            Button {
+                                moveInstalled(from: index, to: index + 1)
+                            } label: {
+                                Image(systemName: "chevron.down")
+                            }
+                            .buttonStyle(.borderless)
+                            .focusable(false)
+                            .focusEffectDisabled()
+                            .disabled(index >= rows.count - 1)
+                            .help(L10n.t("plugins.order.move_down"))
                         }
-                        .buttonStyle(.borderless)
-                        .focusable(false)
-                        .focusEffectDisabled()
-                        .disabled(index >= rows.count - 1)
-                        .help(L10n.t("plugins.order.move_down"))
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    if index < rows.count - 1 {
-                        Divider().opacity(0.35)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        if index < rows.count - 1 {
+                            Divider().opacity(0.35)
+                        }
                     }
                 }
             }
+            .frame(height: listHeight)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Color.primary.opacity(0.04))
             )
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .focusEffectDisabled()
         }
     }
 
@@ -453,14 +483,10 @@ struct PluginsSettingsPane: View {
         else { return }
         let id = order.remove(at: index)
         order.insert(id, at: newIndex)
-        // Drop keyboard focus so the scroll view does not jump to the focused button.
-        NSApp.keyWindow?.makeFirstResponder(nil)
         barOrderIDs = order
 
-        // Persist order only for installed plugins; refresh the bar later so this
-        // pane is not invalidated in the same turn as the local list update.
         PluginManager.shared.reorderBarPlugins(order, refreshBar: false)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             PluginManager.shared.requestBarRefresh()
         }
     }
@@ -527,23 +553,33 @@ private struct PluginsCatalogGrid: View {
     let onOpen: (SettingsPluginItem) -> Void
 
     var body: some View {
-        LazyVGrid(
-            columns: [
-                GridItem(.flexible(), spacing: cardGap),
-                GridItem(.flexible(), spacing: cardGap)
-            ],
-            spacing: cardGap
-        ) {
-            ForEach(items) { item in
-                PluginCardRow(
-                    item: item,
-                    onToggle: { onToggle(item, $0) },
-                    onDownload: { onDownload(item) },
-                    onUninstall: { onUninstall(item) },
-                    onOpen: { onOpen(item) }
-                )
+        // Non-lazy grid: LazyVGrid inside ScrollView often under/over-reports height
+        // on macOS, which breaks scrolling in Settings.
+        Grid(horizontalSpacing: cardGap, verticalSpacing: cardGap) {
+            ForEach(Array(stride(from: 0, to: items.count, by: 2)), id: \.self) { start in
+                GridRow {
+                    card(items[start])
+                    if start + 1 < items.count {
+                        card(items[start + 1])
+                    } else {
+                        Color.clear
+                            .gridCellUnsizedAxes([.horizontal, .vertical])
+                    }
+                }
             }
         }
+    }
+
+    private func card(_ item: SettingsPluginItem) -> some View {
+        PluginCardRow(
+            item: item,
+            onToggle: { onToggle(item, $0) },
+            onDownload: { onDownload(item) },
+            onUninstall: { onUninstall(item) },
+            onOpen: { onOpen(item) }
+        )
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .gridCellColumns(1)
     }
 }
 

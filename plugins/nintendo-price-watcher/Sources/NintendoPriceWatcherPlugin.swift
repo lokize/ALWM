@@ -192,12 +192,12 @@ private final class NintendoBarChipView: NSView {
 
         thumb.imageScaling = .scaleProportionallyUpOrDown
         thumb.wantsLayer = true
-        thumb.layer?.cornerRadius = 2
+        thumb.layer?.cornerRadius = 3
         thumb.layer?.cornerCurve = .continuous
         thumb.layer?.masksToBounds = true
         thumb.translatesAutoresizingMaskIntoConstraints = false
-        let thumbW = PluginBarChipLayout.steamThumbWidth(scale: scale)
-        let thumbH = PluginBarChipLayout.steamThumbHeight(scale: scale)
+        let thumbW = PluginBarChipLayout.nintendoThumbWidth(scale: scale)
+        let thumbH = PluginBarChipLayout.nintendoThumbHeight(scale: scale)
         NSLayoutConstraint.activate([
             thumb.widthAnchor.constraint(equalToConstant: thumbW),
             thumb.heightAnchor.constraint(equalToConstant: thumbH)
@@ -284,7 +284,14 @@ private final class NintendoBarChipView: NSView {
             } else {
                 self.priceField.stringValue = "—"
             }
-            NintendoCoverCache.load(urlString: game.imageURL, into: self.thumb)
+            NintendoCoverCache.load(
+                urlString: game.imageURL,
+                into: self.thumb,
+                targetSize: NSSize(
+                    width: PluginBarChipLayout.nintendoThumbWidth(scale: self.scale),
+                    height: PluginBarChipLayout.nintendoThumbHeight(scale: self.scale)
+                )
+            )
         }
 
         if animated {
@@ -330,32 +337,57 @@ private enum NintendoCoverCache {
     nonisolated(unsafe) private static var memory: [String: NSImage] = [:]
     nonisolated(unsafe) private static var inflight: Set<String> = []
 
-    static func load(urlString: String?, into imageView: NSImageView) {
+    static func load(urlString: String?, into imageView: NSImageView, targetSize: NSSize) {
         guard let urlString, let url = URL(string: urlString) else {
             imageView.image = NSImage(systemSymbolName: "gamecontroller.fill", accessibilityDescription: nil)
             imageView.contentTintColor = .systemRed
             return
         }
-        if let img = memory[urlString] {
+        let cacheKey = "\(urlString)|\(Int(targetSize.width))x\(Int(targetSize.height))"
+        if let img = memory[cacheKey] {
             imageView.image = img
             imageView.contentTintColor = nil
             return
         }
         imageView.image = NSImage(systemSymbolName: "gamecontroller.fill", accessibilityDescription: nil)
         imageView.contentTintColor = .systemRed
-        guard !inflight.contains(urlString) else { return }
-        inflight.insert(urlString)
+        guard !inflight.contains(cacheKey) else { return }
+        inflight.insert(cacheKey)
         Task.detached {
             let data = try? await URLSession.shared.data(from: url).0
-            let img = data.flatMap { NSImage(data: $0) }
+            let raw = data.flatMap { NSImage(data: $0) }
+            let filled = raw.map { aspectFill($0, size: targetSize) }
             await MainActor.run {
-                inflight.remove(urlString)
-                guard let img else { return }
-                memory[urlString] = img
-                imageView.image = img
+                inflight.remove(cacheKey)
+                guard let filled else { return }
+                memory[cacheKey] = filled
+                imageView.image = filled
                 imageView.contentTintColor = nil
             }
         }
+    }
+
+    /// Crop-zoom so box art / logos fill the bar thumb (Steam capsules already do).
+    private nonisolated static func aspectFill(_ image: NSImage, size: NSSize) -> NSImage {
+        let src = image.size
+        guard src.width > 0, src.height > 0, size.width > 0, size.height > 0 else { return image }
+        let scale = max(size.width / src.width, size.height / src.height)
+        let scaled = NSSize(width: src.width * scale, height: src.height * scale)
+        let origin = NSPoint(
+            x: (size.width - scaled.width) / 2,
+            y: (size.height - scaled.height) / 2
+        )
+        let out = NSImage(size: size)
+        out.lockFocus()
+        NSGraphicsContext.current?.imageInterpolation = .high
+        image.draw(
+            in: NSRect(origin: origin, size: scaled),
+            from: NSRect(origin: .zero, size: src),
+            operation: .copy,
+            fraction: 1
+        )
+        out.unlockFocus()
+        return out
     }
 }
 

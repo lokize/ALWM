@@ -47,11 +47,20 @@ private final class ScrollerProbeView: NSView {
 /// AppKit `NSScrollView` with **legacy** scrollers that never auto-hide.
 /// Prefer SwiftUI `ScrollView` / `Form` + `ForceLegacyVerticalScroller` for panes
 /// that use `Form` — nesting Form inside this view breaks trackpad scrolling.
+///
+/// Pass a stable `contentID` so callers can reorder sibling UI without replacing
+/// the hosted SwiftUI tree (which would reset the clip origin).
 struct MacAlwaysScrollView<Content: View>: NSViewRepresentable {
+    var contentID: AnyHashable
     @ViewBuilder var content: () -> Content
 
+    init(contentID: AnyHashable = 0, @ViewBuilder content: @escaping () -> Content) {
+        self.contentID = contentID
+        self.content = content
+    }
+
     func makeCoordinator() -> Coordinator {
-        Coordinator(content: content())
+        Coordinator(content: content(), contentID: contentID)
     }
 
     func makeNSView(context: Context) -> OverflowAwareScrollView {
@@ -77,6 +86,7 @@ struct MacAlwaysScrollView<Content: View>: NSViewRepresentable {
         context.coordinator.hosting = hosting
         context.coordinator.document = document
         context.coordinator.scrollView = scroll
+        context.coordinator.lastContentID = contentID
         scroll.installTrackpadBridge()
 
         scroll.contentView.postsBoundsChangedNotifications = true
@@ -101,18 +111,23 @@ struct MacAlwaysScrollView<Content: View>: NSViewRepresentable {
     }
 
     func updateNSView(_ scroll: OverflowAwareScrollView, context: Context) {
-        // Capture BEFORE swapping SwiftUI content — assigning `rootView` often resets
-        // the clip view to the top, and a same-size early-return used to skip restore.
-        let savedOrigin = scroll.contentView.bounds.origin
-        context.coordinator.restoreOriginAfterUpdate = savedOrigin
+        let idChanged = context.coordinator.lastContentID != contentID
+        // Always keep the latest builder, but only swap the hosted tree when the
+        // caller says content identity changed — reorder siblings must not reset scroll.
         context.coordinator.content = content()
-        context.coordinator.hosting?.rootView = AnyView(context.coordinator.content)
-        scroll.forceLegacyScrollers()
-        context.coordinator.applyScrollOrigin(savedOrigin)
-        context.coordinator.scheduleContentRelayout()
-        // Second pass after SwiftUI finishes its own layout pass.
-        DispatchQueue.main.async {
+        if idChanged {
+            let savedOrigin = scroll.contentView.bounds.origin
+            context.coordinator.restoreOriginAfterUpdate = savedOrigin
+            context.coordinator.lastContentID = contentID
+            context.coordinator.hosting?.rootView = AnyView(context.coordinator.content)
+            scroll.forceLegacyScrollers()
             context.coordinator.applyScrollOrigin(savedOrigin)
+            context.coordinator.scheduleContentRelayout()
+            DispatchQueue.main.async {
+                context.coordinator.applyScrollOrigin(savedOrigin)
+            }
+        } else {
+            scroll.forceLegacyScrollers()
         }
     }
 
@@ -123,17 +138,18 @@ struct MacAlwaysScrollView<Content: View>: NSViewRepresentable {
 
     final class Coordinator: NSObject {
         var content: Content
+        var lastContentID: AnyHashable
         var hosting: ScrollForwardingHostingView?
         var document: FlippedDocumentView?
         weak var scrollView: OverflowAwareScrollView?
         private var lastClipSize: CGSize = .zero
         private var lastContentHeight: CGFloat = -1
         private var pendingRelayout: DispatchWorkItem?
-        /// Scroll origin to re-apply after SwiftUI content swaps (reorder, toggles, …).
         var restoreOriginAfterUpdate: NSPoint?
 
-        init(content: Content) {
+        init(content: Content, contentID: AnyHashable) {
             self.content = content
+            self.lastContentID = contentID
         }
 
         @objc func clipGeometryChanged(_ note: Notification) {
@@ -180,7 +196,6 @@ struct MacAlwaysScrollView<Content: View>: NSViewRepresentable {
             let fitting = hosting.fittingSize
             let height = max(fitting.height, hosting.intrinsicContentSize.height, 1)
 
-            // Same size: still restore scroll — rootView updates often zero the clip first.
             if abs(height - lastContentHeight) < 0.5,
                abs(document.frame.width - width) < 0.5 {
                 if preserveScroll {

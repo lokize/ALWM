@@ -2,7 +2,7 @@
 
 ALWM releases ship a **slim app** without bundled plugins in `Contents/PlugIns`. Users download the plugins they want from **Settings → Plugins**; bundles live in `~/.config/alwm/PlugIns/` and survive app updates. Preferences (`enabled`, `order`, `placement`, `display`, `installed`) are stored in `~/.config/alwm/plugins.toml`.
 
-On launch, ALWM restores any plugin marked `installed = true` into `~/.config/alwm/PlugIns` (from app `Resources/plugins/*.zip`, GitHub Release assets, or a temporary copy in `Contents/PlugIns` on debug builds) and keeps enablement + order unchanged.
+On launch, ALWM restores any plugin marked `installed = true` into `~/.config/alwm/PlugIns` (from app `Resources/plugins/*.zip`, GitHub Release assets, or a temporary copy in `Contents/PlugIns` on debug builds) and keeps enablement + order unchanged. Host Frameworks (`libAlwmPluginAPI`, `libAlwmL10n`, `libAlwmStatsKit`, …) are preloaded before `dlopen` so user-installed bundles can resolve `@rpath` dependencies outside the `.app`.
 
 Local **debug** builds (`./scripts/package.sh`) still embed plugins in `Contents/PlugIns` for faster iteration; enabling a plugin also copies it into the user PlugIns directory so the next update does not clear it. **Release** builds leave `Contents/PlugIns` empty and publish each plugin as a zip plus `plugins-index.json` on the same GitHub Release as the DMG (zips are also embedded under `Contents/Resources/plugins/` for offline restore).
 

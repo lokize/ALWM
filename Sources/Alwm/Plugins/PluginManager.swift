@@ -107,7 +107,11 @@ public final class PluginManager {
                 NSLog("ALWM plugins: skip \(plugin.id) — apiVersion \(plugin.manifest.apiVersion) > \(alwmPluginAPIVersion)")
                 continue
             }
-            guard allowedRoots.contains(where: { isUnder(plugin.bundleURL, root: $0) }) else {
+            let underLoadable = allowedRoots.contains(where: { isUnder(plugin.bundleURL, root: $0) })
+            // Discover may return a path whose casing differs from `PlugIns`; still load if
+            // the app ships a matching Contents/PlugIns copy.
+            let hasBundled = Self.bundledPlugin(id: plugin.id) != nil
+            guard underLoadable || hasBundled else {
                 NSLog("ALWM plugins: \(plugin.id) not under loadable PlugIns — download or package first")
                 continue
             }
@@ -172,9 +176,8 @@ public final class PluginManager {
             )
             requestBarRefresh()
         } else {
-            settings.setEnabled(false, for: plugin.id, defaultPlacement: state.placement)
-            pendingAutoDisabledIDs.append(plugin.id)
-            NSLog("ALWM plugins: failed to load \(plugin.id) — disabled")
+            // Keep enabled so a later package / re-sign can recover; only log.
+            NSLog("ALWM plugins: failed to load \(plugin.id) — left enabled for retry")
         }
     }
 
@@ -315,6 +318,62 @@ public final class PluginManager {
     }
 
     private func loadBundle(_ discovered: DiscoveredPlugin) -> Opened? {
+        Self.preloadHostFrameworksIfNeeded()
+        // Prefer the in-app PlugIns copy when present — it shares the host codesign
+        // identity. User PlugIns are often ad-hoc signed and dyld refuses them.
+        var candidates: [DiscoveredPlugin] = []
+        if let bundled = Self.bundledPlugin(id: discovered.id) {
+            candidates.append(bundled)
+        }
+        let discPath = discovered.bundleURL.standardizedFileURL.path
+        if candidates.contains(where: { $0.bundleURL.standardizedFileURL.path == discPath }) == false {
+            candidates.append(discovered)
+        }
+        for candidate in candidates {
+            if let opened = openBinary(of: candidate) {
+                return opened
+            }
+        }
+        return nil
+    }
+
+    /// Ensure `@rpath/libAlwm*.dylib` deps resolve for plugins living under `~/.config/alwm/PlugIns`.
+    private static var didPreloadHostFrameworks = false
+
+    private static func preloadHostFrameworksIfNeeded() {
+        guard !didPreloadHostFrameworks else { return }
+        didPreloadHostFrameworks = true
+        let fw = Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Frameworks", isDirectory: true)
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: fw,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else { return }
+        for url in files where url.pathExtension == "dylib" {
+            if dlopen(url.path, RTLD_NOW | RTLD_GLOBAL) == nil {
+                let err = String(cString: dlerror())
+                NSLog("ALWM plugins: host framework preload failed \(url.lastPathComponent): \(err)")
+            }
+        }
+    }
+
+    private static func bundledPlugin(id: String) -> DiscoveredPlugin? {
+        guard let root = Bundle.main.builtInPlugInsURL else { return nil }
+        guard let urls = try? FileManager.default.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else { return nil }
+        for url in urls where url.pathExtension == "alwmplugin" {
+            if let plugin = PluginCatalog.load(from: url), plugin.id == id {
+                return plugin
+            }
+        }
+        return nil
+    }
+
+    private func openBinary(of discovered: DiscoveredPlugin) -> Opened? {
         let url = discovered.bundleURL
         let binary = resolveBinaryURL(bundle: url)
         guard let binary, FileManager.default.fileExists(atPath: binary.path) else {
@@ -377,9 +436,7 @@ public final class PluginManager {
     }
 
     private func isUnder(_ url: URL, root: URL) -> Bool {
-        let path = url.standardizedFileURL.path
-        let rootPath = root.standardizedFileURL.path
-        return path == rootPath || path.hasPrefix(rootPath + "/")
+        PluginInstallService.isPath(url, under: root)
     }
 
     private static func loadableRoots() -> [URL] {

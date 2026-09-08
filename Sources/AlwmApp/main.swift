@@ -18,6 +18,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var permissionsGate: PermissionsGateController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Agent (LSUIElement) apps must opt out — AppKit may otherwise quit when
+        // it thinks there are no windows (e.g. after closing Settings).
+        ProcessInfo.processInfo.disableAutomaticTermination("alwm-window-manager")
+        ProcessInfo.processInfo.disableSuddenTermination()
+
         // Register login item before permissions gate — otherwise a first launch that
         // stops at the gate never enables "Open at Login".
         applyLaunchAtLoginPreference()

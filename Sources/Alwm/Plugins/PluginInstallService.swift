@@ -67,7 +67,34 @@ public final class PluginInstallService: ObservableObject {
 
     /// Shared path used by catalog discovery (nonisolated).
     nonisolated public static var userPlugInsURL: URL {
-        ConfigPaths.root.appendingPathComponent("PlugIns", isDirectory: true)
+        let preferred = ConfigPaths.root.appendingPathComponent("PlugIns", isDirectory: true)
+        // APFS is often case-insensitive; the folder may already exist as `plugins`.
+        // Prefer the on-disk path so discoveries and loadable-root checks agree.
+        if let contents = try? FileManager.default.contentsOfDirectory(
+            at: ConfigPaths.root,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) {
+            for url in contents {
+                var isDir: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir),
+                      isDir.boolValue,
+                      url.lastPathComponent.lowercased() == "plugins"
+                else { continue }
+                return url.standardizedFileURL
+            }
+        }
+        return preferred.standardizedFileURL
+    }
+
+    /// Path containment that tolerates APFS case-insensitive folders (`plugins` vs `PlugIns`).
+    nonisolated public static func isPath(_ url: URL, under root: URL) -> Bool {
+        let path = url.standardizedFileURL.path
+        let rootPath = root.standardizedFileURL.path
+        if path == rootPath || path.hasPrefix(rootPath + "/") { return true }
+        let p = path.lowercased()
+        let r = rootPath.lowercased()
+        return p == r || p.hasPrefix(r + "/")
     }
 
     @Published public private(set) var remoteCatalog: [RemotePluginInfo] = []
@@ -212,14 +239,13 @@ public final class PluginInstallService: ObservableObject {
         isRestoring = true
         defer { isRestoring = false }
         PluginManager.shared.settings.migrateInstalledFlags()
+        // Paint the bar from whatever is already on disk before any network work.
+        PluginManager.shared.reloadFromSettings()
         await refreshCatalog()
 
         let settings = PluginManager.shared.settings
         let needed = settings.states.values.filter(\.installed)
-        guard !needed.isEmpty else {
-            PluginManager.shared.reloadFromSettings()
-            return
-        }
+        guard !needed.isEmpty else { return }
 
         for state in needed.sorted(by: { $0.order < $1.order }) {
             if Task.isCancelled { return }
@@ -232,6 +258,10 @@ public final class PluginInstallService: ObservableObject {
             }
         }
         PluginManager.shared.reloadFromSettings()
+        Task(priority: .utility) {
+            resignUserPlugInsIfNeeded()
+            PluginManager.shared.reloadFromSettings()
+        }
     }
 
     // MARK: - Private
@@ -268,9 +298,7 @@ public final class PluginInstallService: ObservableObject {
         }
         // Any discovered copy outside the user dir (dist / repo during local runs).
         for plugin in PluginCatalog.discover() where plugin.id == id {
-            let path = plugin.bundleURL.standardizedFileURL.path
-            let root = userRoot.path
-            if path == root || path.hasPrefix(root + "/") { continue }
+            if Self.isPath(plugin.bundleURL, under: userRoot) { continue }
             if plugin.bundleURL.pathExtension == "alwmplugin",
                FileManager.default.fileExists(atPath: plugin.bundleURL.path) {
                 return plugin.bundleURL
@@ -442,25 +470,90 @@ public final class PluginInstallService: ObservableObject {
     }
 
     private func adHocSign(plugin: URL) throws {
+        let identity = Self.hostCodesignIdentity() ?? "-"
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
         proc.arguments = [
-            "--force", "--deep", "--sign", "-",
+            "--force", "--deep", "--sign", identity,
             "--identifier", plugin.deletingPathExtension().lastPathComponent,
             plugin.path
         ]
         try proc.run()
         proc.waitUntilExit()
-        // Ad-hoc sign failures are non-fatal on some SIP setups; still try to load.
         if proc.terminationStatus != 0 {
-            NSLog("ALWM plugins: codesign warning for \(plugin.lastPathComponent)")
+            NSLog("ALWM plugins: codesign warning for \(plugin.lastPathComponent) identity=\(identity)")
+        }
+    }
+
+    /// Match the running .app signing identity so user PlugIns pass dyld / AMFI checks.
+    private static func hostCodesignIdentity() -> String? {
+        let app = Bundle.main.bundleURL
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        proc.arguments = ["-dv", "--verbose=4", app.path]
+        let errPipe = Pipe()
+        proc.standardError = errPipe
+        proc.standardOutput = Pipe()
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+        } catch {
+            return nil
+        }
+        let data = errPipe.fileHandleForReading.readDataToEndOfFile()
+        let text = String(data: data, encoding: .utf8) ?? ""
+        // Authority=ALWM Local Signing  /  Authority=Apple Development: …
+        for line in text.split(whereSeparator: \.isNewline) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("Authority=") {
+                let name = String(trimmed.dropFirst("Authority=".count))
+                if name != "apple generic", !name.isEmpty {
+                    return name
+                }
+            }
+        }
+        if text.contains("Signature=adhoc") || text.contains("flags=0x2(adhoc)") {
+            return "-"
+        }
+        // Stable local cert used by package.sh
+        let sec = Process()
+        sec.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+        sec.arguments = ["find-identity", "-v", "-p", "codesigning"]
+        let out = Pipe()
+        sec.standardOutput = out
+        sec.standardError = Pipe()
+        do {
+            try sec.run()
+            sec.waitUntilExit()
+        } catch {
+            return nil
+        }
+        let secText = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        if secText.contains("ALWM Local Signing") {
+            return "ALWM Local Signing"
+        }
+        return nil
+    }
+
+    /// Re-sign every user PlugIns bundle with the host identity (fixes ad-hoc copies).
+    public func resignUserPlugInsIfNeeded() {
+        ensureUserPlugInsDir()
+        guard let urls = try? FileManager.default.contentsOfDirectory(
+            at: Self.userPlugInsURL,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else { return }
+        for url in urls where url.pathExtension == "alwmplugin" {
+            do {
+                try adHocSign(plugin: url)
+            } catch {
+                NSLog("ALWM plugins: resign failed \(url.lastPathComponent): \(error.localizedDescription)")
+            }
         }
     }
 
     private func isUnder(_ url: URL, root: URL) -> Bool {
-        let path = url.standardizedFileURL.path
-        let rootPath = root.standardizedFileURL.path
-        return path == rootPath || path.hasPrefix(rootPath + "/")
+        Self.isPath(url, under: root)
     }
 
     private struct GitHubReleaseDTO: Decodable {

@@ -6,6 +6,9 @@ import AlwmPluginAPI
 public final class SettingsWindowController {
     private var window: NSWindow?
     private var closeObserver: NSObjectProtocol?
+    /// Separate from `window` so close/teardown can mutate the window without
+    /// overlapping exclusivity when `isVisible` is read from persist → applyConfig.
+    private var presented = false
     public var onSave: ((AlwmConfig) -> Void)?
     public var onDump: (() -> Void)?
     public var onRevealConfig: (() -> Void)?
@@ -24,11 +27,8 @@ public final class SettingsWindowController {
     public func open(config: AlwmConfig, initialPane: String? = nil) {
         let pane = SettingsPane(rawValue: initialPane ?? "") ?? .general
         // Always rebuild so toggles reflect the live config (not a stale copy).
-        if let window {
-            PluginPanelOutsideClick.stop(for: window)
-            window.orderOut(nil)
-            self.window = nil
-            onVisibilityChange?(false)
+        if window != nil || presented {
+            tearDownPresentedWindow(notifyHidden: true)
         }
         detachCloseObserver()
         let root = SettingsRootView(
@@ -47,14 +47,15 @@ public final class SettingsWindowController {
         let hosting = NSHostingController(rootView: root)
         let window = NSWindow(contentViewController: hosting)
         window.title = L10n.t("settings.title")
-        window.setContentSize(NSSize(width: 920, height: 640))
+        window.setContentSize(NSSize(width: 1100, height: 780))
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-        window.minSize = NSSize(width: 760, height: 520)
+        window.minSize = NSSize(width: 960, height: 680)
         window.center()
         window.isReleasedWhenClosed = false
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         self.window = window
+        presented = true
         onVisibilityChange?(true)
         PluginPanelOutsideClick.watch(window) { [weak self] in
             self?.close()
@@ -64,37 +65,47 @@ public final class SettingsWindowController {
             object: window,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in
-                guard let self else { return }
-                PluginPanelOutsideClick.stop(for: self.window)
-                self.detachCloseObserver()
-                self.window = nil
-                self.onVisibilityChange?(false)
+            // Stay synchronous on the main queue — a nested Task { @MainActor }
+            // raced with NSWindow dealloc → persist → isVisible (Swift exclusivity abort).
+            MainActor.assumeIsolated {
+                self?.handleWindowWillClose()
             }
         }
     }
 
     public func close() {
-        let wasVisible = window != nil
-        PluginPanelOutsideClick.stop(for: window)
-        detachCloseObserver()
-        window?.orderOut(nil)
-        window = nil
-        if wasVisible {
-            onVisibilityChange?(false)
-        }
+        tearDownPresentedWindow(notifyHidden: true, orderOut: true)
     }
 
     /// True only while Settings is the key window (do not block gestures when it sits in the background).
     public var isKeyFront: Bool {
-        guard let window, window.isVisible else { return false }
+        guard presented, let window, window.isVisible else { return false }
         return window.isKeyWindow
     }
 
     /// True while the settings window is on screen (blocks focus-follows-mouse).
-    public var isVisible: Bool {
-        guard let window else { return false }
-        return window.isVisible
+    /// Uses `presented` — never reads `window` during teardown exclusivity windows.
+    public var isVisible: Bool { presented }
+
+    private func handleWindowWillClose() {
+        tearDownPresentedWindow(notifyHidden: true, orderOut: false)
+    }
+
+    /// Clear presentation state before releasing `window` so re-entrant
+    /// `isVisible` / `refreshBorder` during dealloc cannot conflict.
+    private func tearDownPresentedWindow(notifyHidden: Bool, orderOut: Bool = true) {
+        let wasPresented = presented || window != nil
+        presented = false
+        let closing = window
+        PluginPanelOutsideClick.stop(for: closing)
+        detachCloseObserver()
+        window = nil
+        if orderOut {
+            closing?.orderOut(nil)
+        }
+        if notifyHidden, wasPresented {
+            onVisibilityChange?(false)
+        }
     }
 
     private func detachCloseObserver() {
@@ -273,7 +284,7 @@ struct SettingsRootView: View {
                     .background(.bar)
                 }
         }
-        .frame(minWidth: 820, minHeight: 580)
+        .frame(minWidth: 960, minHeight: 680)
         .preferredColorScheme(colorScheme)
         .alwmLocalized()
         .onChange(of: pane) { _, newPane in
@@ -335,8 +346,11 @@ struct SettingsRootView: View {
     private var detail: some View {
         // Native Form scrolling — wrapping Form in NSScrollView ate trackpad events
         // (SwiftUI Form swallowed the wheel; only the outer scrollbar knob moved).
-        // Plugins uses its own MacAlwaysScrollView — skip the Form scroller probe.
+        // Plugins embeds its own ScrollView — skip the Form scroller probe.
         if pane == .plugins {
+            // Plugins owns its ScrollView; fill the detail column so GeometryReader
+            // inside gets a finite height (otherwise catalog clips with no scroller).
+            // Do not `.clipped()` here — it hid the order footer below the catalog.
             paneForm
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .focusEffectDisabled()
@@ -1541,7 +1555,7 @@ private struct CreditsAvatarView: View {
 
 enum AlwmVersion {
     /// Kept in sync by `scripts/bump-version.sh`. Prefer `installed` for UI / update checks.
-    static let string = "0.7.6"
+    static let string = "0.7.7"
     static let ctlHint = "~/.local/bin/alwmctl"
     /// Version of the running app (Info.plist), falling back to the embedded constant.
     static var installed: String {

@@ -177,6 +177,16 @@ public enum PluginBarChipLayout {
         max(9, 10 * scale)
     }
 
+    /// Nintendo / box-art thumbs — taller than Steam capsules so square/portrait covers
+    /// match Steam's visual weight on the workspace bar.
+    public static func nintendoThumbWidth(scale: CGFloat) -> CGFloat {
+        max(20, 24 * scale)
+    }
+
+    public static func nintendoThumbHeight(scale: CGFloat) -> CGFloat {
+        max(14, 16 * scale)
+    }
+
     public static func steamNameWidth(scale: CGFloat) -> CGFloat {
         max(44, 50 * scale)
     }
