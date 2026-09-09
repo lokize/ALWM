@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "0.8.4",
+      "items": [
+        "Resume awake fix"
+      ]
+    },
+    {
       "version": "0.8.3",
       "items": [
         "Update README.md",
