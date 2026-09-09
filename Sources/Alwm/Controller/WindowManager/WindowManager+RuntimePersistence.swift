@@ -155,13 +155,24 @@ extension WindowManager {
             let existingTokens = Set((existing?.columns ?? []).flatMap(\.windows).map(\.token))
             let newTokens = Set(columns.flatMap(\.windows).map(\.token))
             let removedTokens = existingTokens.subtracting(newTokens)
-            let liveTokens = Set(windowsByID.keys.map(\.token))
-            let removedStillTracked = removedTokens.contains(where: { liveTokens.contains($0) })
-            if newTileCount == 0, existingTileCount > 0, removedStillTracked { return }
-            if existingTileCount > newTileCount, removedStillTracked { return }
+            // Only treat a removal as "AX blip" if the live window still belongs HERE.
+            // Moving Safari WS1→WS5 leaves the window alive, so the old guard refused to
+            // update WS1 — disk kept Safari on WS1, restore always stole it back (logs).
+            let removedStillHomeHere = removedTokens.contains { token in
+                guard let id = windowsByID.keys.first(where: { $0.token == token })
+                        ?? tokenByWindowToken[token]
+                else { return false }
+                let home = authoritativeHome(for: id)
+                    ?? windowWorkspace[id]
+                    ?? runtimeState.assignment(for: id)
+                    ?? workspaces.workspaceID(containing: id)
+                return home == nil || home == wsID
+            }
+            if newTileCount == 0, existingTileCount > 0, removedStillHomeHere { return }
+            if existingTileCount > newTileCount, removedStillHomeHere { return }
             let existingColCount = existing?.columns.filter { !$0.windows.isEmpty }.count ?? 0
             let newColCount = columns.filter { !$0.windows.isEmpty }.count
-            if existingColCount > newColCount, removedStillTracked { return }
+            if existingColCount > newColCount, removedStillHomeHere { return }
         }
         let layout = RuntimeStateStore.WorkspaceLayoutSnapshot(
             columns: columns,

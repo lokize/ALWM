@@ -255,7 +255,8 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         adoptOrphanWindows(blockingReassign: false)
         isBootstrapping = false
         // AX + token rematch lag after relaunch/update — don't dump orphans onto active WS yet.
-        postLaunchLayoutGraceUntil = Date().addingTimeInterval(6)
+        // Multi-monitor Safari often rematerializes after the old 6s window.
+        postLaunchLayoutGraceUntil = Date().addingTimeInterval(20)
         layoutRecoveryAttempts = 0
         prepareAllActiveWorkspaceLayouts()
         persistRuntimeState()

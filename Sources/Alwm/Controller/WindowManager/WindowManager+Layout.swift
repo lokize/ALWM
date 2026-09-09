@@ -577,8 +577,17 @@ extension WindowManager {
             if !shouldDeferVisibilityRefreshFromIngest() {
                 if !addedTiles.isEmpty {
                     // Snap columns only — a full visibility pass hide/reveals the new tile in a loop.
-                    // After update/relaunch, a mass "added" set is restore churn — don't flatten onto active WS.
-                    if isInPostLaunchLayoutGrace(), addedTiles.count >= 2 {
+                    // Mass "added" after relaunch/resume is restore churn — rematch from disk instead
+                    // of flattening every Safari onto the active MSI workspace (see move.log).
+                    let massRestore = addedTiles.count >= 2
+                        && (isInPostLaunchLayoutGrace()
+                            || isResumeRecovering
+                            || Date() < resumeRecoveryEligibleUntil)
+                    if massRestore {
+                        logMove(
+                            "tile mass-restore rematch added=\(addedTiles.count) ids=\(addedTiles.map(\.token).sorted().joined(separator: ","))"
+                        )
+                        rematchStickyFromSavedLayouts()
                         restoreWorkspaceLayoutsFromDisk()
                         prepareAllActiveWorkspaceLayouts()
                     } else {
