@@ -175,6 +175,9 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
     /// Keep false for sleep/wake — AX often blips windows right as the Mac sleeps.
     var allowDestructiveLayoutFlush = false
 
+    /// Sleep soft-persist: treat missing AX tokens as still home so we never shrink disk mid-sleep.
+    var softPersistProtectMissingTokens = false
+
     var skipRestoreOnStopForUpdate = false
 
     var postLaunchLayoutGraceUntil = Date.distantPast

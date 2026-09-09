@@ -85,13 +85,17 @@ extension WindowManager {
         let recovered = layoutLooksRecovered()
             && framesLookRestoredOnActiveWorkspaces()
             && layoutContentMatchesDiskSnapshot()
-        if recovered || layoutRecoveryAttempts >= maxLayoutRecoveryAttempts {
+        if recovered {
+            finishResumeRecoverySuccessfully()
+        } else if layoutRecoveryAttempts >= maxLayoutRecoveryAttempts {
+            // Stop hammering AX, but keep disk freeze briefly so a partial layout isn't saved.
+            cancelPendingResumeRecovery()
             layoutRecoveryAttempts = maxLayoutRecoveryAttempts
-            resumeRecoveryEligibleUntil = Date.distantPast
-            isResumeRecovering = false
-            if recovered {
-                // Tokens may have changed — refresh disk only after structure matches.
-                persistRuntimeState()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                guard let self, self.isResumeRecovering else { return }
+                self.isResumeRecovering = false
+                self.resumeRecoveryEligibleUntil = Date.distantPast
+                NSLog("ALWM: layout recovery gave up — disk snapshot preserved")
             }
         }
         NSLog(
@@ -177,13 +181,19 @@ extension WindowManager {
     }
 
     func prepareForSystemSleep() {
+        cancelPendingResumeRecovery()
         isResumeRecovering = false
         // Soft flush only: at willSleep/screensDidSleep AX often already dropped windows.
-        // A destructive (force) write would replace the last good disk layout with empties
-        // and wake would restore the wrong order/sizes. Shrink guards stay on.
+        // Never destructive; protect missing tokens so we don't shrink a good disk snapshot.
         allowDestructiveLayoutFlush = false
-        persistRuntimeState(forceWorkspaceLayouts: Set(workspaces.workspaces.keys))
-        preSleepLayoutFingerprint = layoutContentFingerprint()
+        softPersistProtectMissingTokens = true
+        defer { softPersistProtectMissingTokens = false }
+        // Capture fingerprint while memory still looks good (before any soft write).
+        if liveTiledWindowCount() > 0 {
+            preSleepLayoutFingerprint = layoutContentFingerprint()
+        }
+        // Do not force every workspace — when live < disk, persist skips shrinking layouts.
+        persistRuntimeState()
         NSLog("ALWM: prepared for sleep — fingerprint=%@", preSleepLayoutFingerprint ?? "?")
     }
 
@@ -198,9 +208,27 @@ extension WindowManager {
         forceTileExpandUntil.removeAll()
     }
 
-    func scheduleStaggeredResumeRecovery() {
+    func cancelPendingResumeRecovery() {
+        resumeRecoveryWorkItem?.cancel()
+        resumeRecoveryWorkItem = nil
         for work in resumeRecoveryWorkItems { work.cancel() }
         resumeRecoveryWorkItems.removeAll()
+        layoutRecoveryWorkItem?.cancel()
+        layoutRecoveryWorkItem = nil
+    }
+
+    func finishResumeRecoverySuccessfully() {
+        cancelPendingResumeRecovery()
+        layoutRecoveryAttempts = maxLayoutRecoveryAttempts
+        isResumeRecovering = false
+        resumeRecoveryEligibleUntil = Date.distantPast
+        // Safe to refresh disk tokens (window numbers may have changed) now that layout matches.
+        persistRuntimeState()
+        preSleepLayoutFingerprint = nil
+    }
+
+    func scheduleStaggeredResumeRecovery() {
+        cancelPendingResumeRecovery()
         // Longer tail: Electron/Safari rematerialize window numbers slowly after wake.
         for delay in [0.6, 1.5, 3.0, 6.0, 12.0, 20.0, 32.0, 48.0] {
             let work = DispatchWorkItem { [weak self] in
@@ -222,6 +250,8 @@ extension WindowManager {
 
     func recoverAfterSystemResume() {
         guard AXTracker.isTrusted else { return }
+        // Staggered retries must not re-enter after a successful pass this wake.
+        guard isResumeRecovering || Date() < resumeRecoveryEligibleUntil else { return }
         isResumeRecovering = true
         suppressIngestReassignUntil = Date().addingTimeInterval(5.0)
         suppressWorkspaceFollowUntil = Date().addingTimeInterval(2.5)
@@ -264,11 +294,7 @@ extension WindowManager {
             && framesLookRestoredOnActiveWorkspaces()
             && layoutContentMatchesDiskSnapshot()
         if recovered {
-            isResumeRecovering = false
-            resumeRecoveryEligibleUntil = Date.distantPast
-            // Safe to refresh disk tokens (window numbers may have changed) now that layout matches.
-            persistRuntimeState()
-            preSleepLayoutFingerprint = nil
+            finishResumeRecoverySuccessfully()
         } else {
             // Keep disk snapshot intact until AX catches up — never persist partial columns.
             runLayoutRecoveryIfNeeded(force: true, delay: 2.5)
@@ -336,6 +362,7 @@ extension WindowManager {
     }
 
     /// Live columns match the on-disk snapshot (order + apps + widths), allowing loose title match.
+    /// Widths are compared by ratio when absolute px diverge (resume may renormalize overflow layouts).
     func layoutContentMatchesDiskSnapshot() -> Bool {
         let diskKeys = Set(runtimeState.snapshot.workspaceLayouts.keys)
         guard !diskKeys.isEmpty else { return true }
@@ -346,9 +373,15 @@ extension WindowManager {
             let snapCols = snap.columns.filter { !$0.windows.isEmpty }
             let liveCols = ws.columns.filter { !$0.windows.isEmpty }
             if snapCols.count != liveCols.count { return false }
+            let snapSum = snapCols.reduce(0.0) { $0 + max(1, $1.width) }
+            let liveSum = liveCols.reduce(0.0) { $0 + max(1, $1.width) }
             for (snapCol, liveCol) in zip(snapCols, liveCols) {
-                if abs(snapCol.width - liveCol.width) > 24 { return false }
                 if snapCol.windows.count != liveCol.windows.count { return false }
+                let absOK = abs(snapCol.width - liveCol.width) <= 24
+                let snapR = max(1, snapCol.width) / snapSum
+                let liveR = max(1, liveCol.width) / liveSum
+                let ratioOK = abs(snapR - liveR) <= 0.08
+                if !absOK && !ratioOK { return false }
                 for (ref, id) in zip(snapCol.windows, liveCol.windows) {
                     guard let win = windowsByID[id] else { return false }
                     if let bid = ref.bundleID, !bid.isEmpty, win.bundleID != bid { return false }

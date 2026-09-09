@@ -187,7 +187,10 @@ extension WindowManager {
             let removedStillHomeHere = removedTokens.contains { token in
                 guard let id = windowsByID.keys.first(where: { $0.token == token })
                         ?? tokenByWindowToken[token]
-                else { return false }
+                else {
+                    // Sleep soft-persist: AX often drops tokens right before sleep — fail closed.
+                    return softPersistProtectMissingTokens
+                }
                 let home = authoritativeHome(for: id)
                     ?? windowWorkspace[id]
                     ?? runtimeState.assignment(for: id)
@@ -624,7 +627,11 @@ extension WindowManager {
             ?? monitors.monitors.first
     }
 
-    func syncColumnWidthsToUsable(workspace: inout WorkspaceState, workspaceID: String) {
+    func syncColumnWidthsToUsable(
+        workspace: inout WorkspaceState,
+        workspaceID: String,
+        preserveScrollOverflow: Bool = false
+    ) {
         guard workspace.layout == .niri, !workspace.columns.isEmpty else { return }
         guard let mon = monitorForWorkspaceLayout(workspaceID) else { return }
         let usable = engine.usableArea(monitor: mon.layoutFrame)
@@ -640,6 +647,8 @@ extension WindowManager {
             workspace.viewOffset = 0
             return
         }
+        // Resume restore: keep saved widths + viewOffset so scroll layouts rematch disk ratios.
+        if preserveScrollOverflow { return }
         if engine.niri.columnsShouldFillUsable(count: n) {
             engine.niri.normalizeWidthsToFill(workspace: &workspace, usable: usable)
         }
@@ -831,10 +840,15 @@ extension WindowManager {
 
         // Leftovers: only windows already sticky to *this* workspace (never by bundleID —
         // that would yank every Safari window into one WS).
-        let leftovers = windowsByID.keys.filter { id in
-            guard !used.contains(id), let win = windowsByID[id], win.isTiled else { return false }
-            return windowWorkspace[id] == wsID || workspaces.workspaceID(containing: id) == wsID
-        }
+        // During resume recovery, skip leftovers — width:0 columns renormalize ratios and
+        // break disk width matching before AX finishes rematching.
+        let allowLeftovers = !isResumeRecovering && Date() >= resumeRecoveryEligibleUntil
+        let leftovers = allowLeftovers
+            ? windowsByID.keys.filter { id in
+                guard !used.contains(id), let win = windowsByID[id], win.isTiled else { return false }
+                return windowWorkspace[id] == wsID || workspaces.workspaceID(containing: id) == wsID
+            }
+            : []
         for id in leftovers.sorted(by: { $0.token < $1.token }) {
             columns.append(Column(windows: [id], width: 0))
             used.insert(id)
@@ -860,7 +874,12 @@ extension WindowManager {
         )
         ws.viewOffset = snap.viewOffset
         ws.leafWeights = remappedLeafWeights(from: snap, columns: ws.columns)
-        syncColumnWidthsToUsable(workspace: &ws, workspaceID: wsID)
+        let preserveOverflow = isResumeRecovering || Date() < resumeRecoveryEligibleUntil
+        syncColumnWidthsToUsable(
+            workspace: &ws,
+            workspaceID: wsID,
+            preserveScrollOverflow: preserveOverflow
+        )
         workspaces.setWorkspace(ws)
 
         for ref in snap.floating {
