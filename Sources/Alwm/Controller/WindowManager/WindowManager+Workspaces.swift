@@ -1120,7 +1120,19 @@ extension WindowManager {
         windowFirstTrackedAt[id] = Date()
         suppressGeometryEnforce(for: 0.75)
         healStaleColumnEntries()
+        // Cross-workspace moves must rewrite source layout even while the window is still live
+        // (old shrink guard left Safari on WS1 forever). Force destructive flush for both sides.
+        let wasDestructive = allowDestructiveLayoutFlush
+        allowDestructiveLayoutFlush = true
         persistRuntimeState(forceWorkspaceLayouts: forcePersist)
+        allowDestructiveLayoutFlush = wasDestructive
+        let layoutHas = forcePersist.sorted().map { ws -> String in
+            let present = workspaces.workspaces[ws]?.columns.flatMap(\.windows).contains(id) == true
+            return "\(ws):\(present ? "yes" : "no")"
+        }.joined(separator: ",")
+        logMove(
+            "move persist ws=\(forcePersist.sorted().joined(separator: ",")) sticky=\(windowWorkspace[id] ?? "?") layoutHas=\(layoutHas)"
+        )
         let slot: String = {
             guard let ws = workspaces.workspaces[workspaceID],
                   let loc = engine.locate(id, in: ws) else { return "orphan" }

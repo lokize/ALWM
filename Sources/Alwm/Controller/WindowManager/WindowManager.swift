@@ -240,6 +240,10 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         restorePersistedWorkspaces()
         loadStickyAssignmentsFromDisk()
 
+        // Grace BEFORE first ingest — mass AX delivery must rematch from disk, not snap to MSI/WS1.
+        postLaunchLayoutGraceUntil = Date().addingTimeInterval(20)
+        resumeRecoveryEligibleUntil = Date().addingTimeInterval(20)
+
         ax.delegate = self
         ax.scanAll()
         // Do not restoreAllOnscreen here — that fights workspace parking.
@@ -254,9 +258,6 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         enforceQuakeFloat()
         adoptOrphanWindows(blockingReassign: false)
         isBootstrapping = false
-        // AX + token rematch lag after relaunch/update — don't dump orphans onto active WS yet.
-        // Multi-monitor Safari often rematerializes after the old 6s window.
-        postLaunchLayoutGraceUntil = Date().addingTimeInterval(20)
         layoutRecoveryAttempts = 0
         prepareAllActiveWorkspaceLayouts()
         persistRuntimeState()

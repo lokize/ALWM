@@ -580,7 +580,8 @@ extension WindowManager {
                     // Mass "added" after relaunch/resume is restore churn — rematch from disk instead
                     // of flattening every Safari onto the active MSI workspace (see move.log).
                     let massRestore = addedTiles.count >= 2
-                        && (isInPostLaunchLayoutGrace()
+                        && (isBootstrapping
+                            || isInPostLaunchLayoutGrace()
                             || isResumeRecovering
                             || Date() < resumeRecoveryEligibleUntil)
                     if massRestore {

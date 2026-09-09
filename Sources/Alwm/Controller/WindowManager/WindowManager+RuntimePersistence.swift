@@ -20,9 +20,10 @@ extension WindowManager {
     }
 
     func rematchStickyFromSavedLayouts() {
-        // Disk layouts are authoritative at restore. Ingest may have already pinned every
-        // same-bundle window (two Safaris) to the active MSI workspace because they both
-        // appeared on that display at launch — clear those dumps so WS5 can reclaim its window.
+        // Keep disk sticky map — layout rows can be stale (Safari still listed on WS1 after a
+        // move to WS5 when persist refused to shrink WS1). Token→WS from disk wins in that case.
+        let diskStickyByToken = runtimeState.snapshot.windowWorkspace
+
         for id in windowsByID.keys {
             windowWorkspace.removeValue(forKey: id)
             runtimeState.setAssignment(nil, for: id)
@@ -30,13 +31,35 @@ extension WindowManager {
 
         var used = Set<WindowID>()
         let liveByToken = Dictionary(uniqueKeysWithValues: windowsByID.keys.map { ($0.token, $0) })
-        // Prefer disk layout order so multi-window apps reclaim distinct windows per WS.
+
+        // 1) Exact token stickies from disk first (survives stale duplicate layout rows).
+        for (token, wsID) in diskStickyByToken {
+            guard workspaces.workspaces[wsID] != nil,
+                  let id = liveByToken[token] ?? tokenByWindowToken[token],
+                  windowsByID[id] != nil,
+                  !used.contains(id)
+            else { continue }
+            used.insert(id)
+            windowWorkspace[id] = wsID
+            runtimeState.setAssignment(wsID, for: id)
+        }
+
+        // 2) Fill remaining slots from layout snapshots (multi-window Safari, etc.).
         for wsID in runtimeState.snapshot.workspaceLayouts.keys.sorted() {
             guard let snap = runtimeState.snapshot.workspaceLayouts[wsID],
                   workspaces.workspaces[wsID] != nil
             else { continue }
             let refs = snap.columns.flatMap(\.windows) + snap.floating
             for ref in refs {
+                // Layout row contradicts disk sticky for this exact token — skip (stale WS1 copy).
+                if let diskHome = diskStickyByToken[ref.token], diskHome != wsID {
+                    logMove("rematch skip stale layout ref tok=\(ref.token) layoutWS=\(wsID) diskWS=\(diskHome)")
+                    continue
+                }
+                // Already placed via disk sticky.
+                if let id = liveByToken[ref.token] ?? tokenByWindowToken[ref.token], used.contains(id) {
+                    continue
+                }
                 guard let id = resolveLiveWindow(
                     ref,
                     preferredWS: wsID,
@@ -48,6 +71,9 @@ extension WindowManager {
                 used.insert(id)
                 windowWorkspace[id] = wsID
                 runtimeState.setAssignment(wsID, for: id)
+                logMove(
+                    "rematch layout ws=\(wsID) tok=\(id.token) bundle=\(windowsByID[id]?.bundleID ?? "?") title=\(Self.normalizedWindowTitle(windowsByID[id]?.title ?? ""))"
+                )
             }
         }
         syncTokenIndex()
