@@ -82,12 +82,15 @@ extension WindowManager {
         refreshChrome()
         let saved = savedTiledWindowCount()
         let live = liveTiledWindowCount()
-        let recovered = layoutLooksRecovered() && framesLookRestoredOnActiveWorkspaces()
+        let recovered = layoutLooksRecovered()
+            && framesLookRestoredOnActiveWorkspaces()
+            && layoutContentMatchesDiskSnapshot()
         if recovered || layoutRecoveryAttempts >= maxLayoutRecoveryAttempts {
             layoutRecoveryAttempts = maxLayoutRecoveryAttempts
             resumeRecoveryEligibleUntil = Date.distantPast
             isResumeRecovering = false
             if recovered {
+                // Tokens may have changed — refresh disk only after structure matches.
                 persistRuntimeState()
             }
         }
@@ -175,9 +178,12 @@ extension WindowManager {
 
     func prepareForSystemSleep() {
         isResumeRecovering = false
-        // Force a full layout flush even if a prior wake pass left recovery flags set.
+        // Soft flush only: at willSleep/screensDidSleep AX often already dropped windows.
+        // A destructive (force) write would replace the last good disk layout with empties
+        // and wake would restore the wrong order/sizes. Shrink guards stay on.
+        allowDestructiveLayoutFlush = false
         persistRuntimeState(forceWorkspaceLayouts: Set(workspaces.workspaces.keys))
-        preSleepLayoutFingerprint = layoutRecoveryFingerprint()
+        preSleepLayoutFingerprint = layoutContentFingerprint()
         NSLog("ALWM: prepared for sleep — fingerprint=%@", preSleepLayoutFingerprint ?? "?")
     }
 
@@ -254,22 +260,26 @@ extension WindowManager {
         scheduleTileFrameEnforcement()
         refreshChrome()
 
-        let recovered = layoutLooksRecovered() && framesLookRestoredOnActiveWorkspaces()
+        let recovered = layoutLooksRecovered()
+            && framesLookRestoredOnActiveWorkspaces()
+            && layoutContentMatchesDiskSnapshot()
         if recovered {
             isResumeRecovering = false
             resumeRecoveryEligibleUntil = Date.distantPast
             // Safe to refresh disk tokens (window numbers may have changed) now that layout matches.
             persistRuntimeState()
+            preSleepLayoutFingerprint = nil
         } else {
             // Keep disk snapshot intact until AX catches up — never persist partial columns.
             runLayoutRecoveryIfNeeded(force: true, delay: 2.5)
         }
         NSLog(
-            "ALWM: resume recovery — windows=%d savedTiles=%d liveTiles=%d recovered=%@",
+            "ALWM: resume recovery — windows=%d savedTiles=%d liveTiles=%d recovered=%@ fpOK=%@",
             windowsByID.count,
             savedTiledWindowCount(),
             liveTiledWindowCount(),
-            recovered ? "yes" : "no"
+            recovered ? "yes" : "no",
+            layoutContentMatchesDiskSnapshot() ? "yes" : "no"
         )
     }
 
@@ -295,6 +305,8 @@ extension WindowManager {
         runtimeState.pruneWindows(keeping: live)
     }
 
+    /// Token-based fingerprint (debug / legacy). Prefer `layoutContentFingerprint` across sleep —
+    /// CGWindow numbers usually change on wake.
     func layoutRecoveryFingerprint() -> String {
         runtimeState.snapshot.workspaceLayouts.keys.sorted().map { wsID in
             guard let snap = runtimeState.snapshot.workspaceLayouts[wsID] else { return "\(wsID):" }
@@ -304,6 +316,52 @@ extension WindowManager {
             }.joined(separator: "|")
             return "\(wsID):\(cols)"
         }.joined(separator: ";")
+    }
+
+    /// Stable across wake rematch: bundle + normalized title + column width (not CGWindow token).
+    func layoutContentFingerprint() -> String {
+        workspaces.workspaces.keys.sorted().map { wsID in
+            guard let ws = workspaces.workspaces[wsID] else { return "\(wsID):" }
+            let cols = ws.columns.map { col in
+                col.windows.compactMap { id -> String? in
+                    guard let win = windowsByID[id] else { return nil }
+                    let bid = win.bundleID ?? "?"
+                    let title = Self.normalizedWindowTitle(win.title)
+                    return "\(bid):\(title)"
+                }.joined(separator: ",")
+                    + "@\(Int(col.width.rounded()))"
+            }.joined(separator: "|")
+            return "\(wsID):\(cols)"
+        }.joined(separator: ";")
+    }
+
+    /// Live columns match the on-disk snapshot (order + apps + widths), allowing loose title match.
+    func layoutContentMatchesDiskSnapshot() -> Bool {
+        let diskKeys = Set(runtimeState.snapshot.workspaceLayouts.keys)
+        guard !diskKeys.isEmpty else { return true }
+        for wsID in diskKeys {
+            guard let snap = runtimeState.snapshot.workspaceLayouts[wsID],
+                  let ws = workspaces.workspaces[wsID]
+            else { return false }
+            let snapCols = snap.columns.filter { !$0.windows.isEmpty }
+            let liveCols = ws.columns.filter { !$0.windows.isEmpty }
+            if snapCols.count != liveCols.count { return false }
+            for (snapCol, liveCol) in zip(snapCols, liveCols) {
+                if abs(snapCol.width - liveCol.width) > 24 { return false }
+                if snapCol.windows.count != liveCol.windows.count { return false }
+                for (ref, id) in zip(snapCol.windows, liveCol.windows) {
+                    guard let win = windowsByID[id] else { return false }
+                    if let bid = ref.bundleID, !bid.isEmpty, win.bundleID != bid { return false }
+                    let rt = Self.normalizedWindowTitle(ref.title)
+                    let wt = Self.normalizedWindowTitle(win.title)
+                    if !rt.isEmpty, !wt.isEmpty,
+                       rt != wt, !Self.titlesLooselyMatch(rt, wt) {
+                        return false
+                    }
+                }
+            }
+        }
+        return true
     }
 
     func framesLookRestoredOnActiveWorkspaces() -> Bool {

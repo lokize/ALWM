@@ -171,6 +171,10 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
 
     var isResumeRecovering = false
 
+    /// When true, `persistRuntimeState(forceWorkspaceLayouts:)` may shrink/overwrite richer disk snapshots.
+    /// Keep false for sleep/wake — AX often blips windows right as the Mac sleeps.
+    var allowDestructiveLayoutFlush = false
+
     var skipRestoreOnStopForUpdate = false
 
     var postLaunchLayoutGraceUntil = Date.distantPast

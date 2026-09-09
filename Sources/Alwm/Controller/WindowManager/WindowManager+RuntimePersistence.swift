@@ -49,10 +49,13 @@ extension WindowManager {
     func persistRuntimeStateBeforeUpdate() {
         let wasBootstrapping = isBootstrapping
         let wasResume = isResumeRecovering
+        let wasDestructive = allowDestructiveLayoutFlush
         isBootstrapping = false
         isResumeRecovering = false
+        allowDestructiveLayoutFlush = true
         let all = Set(workspaces.workspaces.keys)
         persistRuntimeState(forceWorkspaceLayouts: all)
+        allowDestructiveLayoutFlush = wasDestructive
         isBootstrapping = wasBootstrapping
         isResumeRecovering = wasResume
         skipRestoreOnStopForUpdate = true
@@ -63,8 +66,9 @@ extension WindowManager {
     func persistRuntimeState(forceWorkspaceLayouts: Set<String> = []) {
         // Never flush partial/empty column maps over a good snapshot during bootstrap.
         if isBootstrapping { return }
-        // Wake recovery: AX/columns are mid-rebuild — writing would wipe the pre-sleep layout.
-        if isResumeRecovering, forceWorkspaceLayouts.isEmpty { return }
+        // Wake recovery: AX/columns are mid-rebuild — never write layouts (even forced).
+        // Callers that must flush (sleep prepare / post-recovery) clear `isResumeRecovering` first.
+        if isResumeRecovering { return }
 
         let savedTiles = savedTiledWindowCount()
         let liveTiles = liveTiledWindowCount()
@@ -84,12 +88,15 @@ extension WindowManager {
         let flushLayouts = { [self] (onlyForced: Bool) in
             for (wsID, ws) in self.workspaces.workspaces {
                 if onlyForced, !forceWorkspaceLayouts.contains(wsID) { continue }
-                self.writeWorkspaceLayoutSnapshot(wsID: wsID, ws: ws, force: forceWorkspaceLayouts.contains(wsID))
+                // Never bypass shrink guards on a forced flush unless the caller
+                // explicitly opts in via `allowDestructiveLayoutFlush`.
+                let forceWrite = forceWorkspaceLayouts.contains(wsID) && allowDestructiveLayoutFlush
+                self.writeWorkspaceLayoutSnapshot(wsID: wsID, ws: ws, force: forceWrite)
             }
         }
         if layoutStillRecovering {
             for (wsID, ws) in workspaces.workspaces {
-                let force = forceWorkspaceLayouts.contains(wsID)
+                let force = forceWorkspaceLayouts.contains(wsID) && allowDestructiveLayoutFlush
                 if force {
                     writeWorkspaceLayoutSnapshot(wsID: wsID, ws: ws, force: true)
                     continue
@@ -345,7 +352,9 @@ extension WindowManager {
             restoreWorkspaceLayout(for: wsID, used: &used)
         }
         let ejected = ejectWindowsListedOutsideStickyHome()
-        if !ejected.isEmpty {
+        // Never flush mid wake-recovery — a forced write can replace the pre-sleep snapshot
+        // with half-rematched columns (wrong order/widths) before AX settles.
+        if !ejected.isEmpty, !isResumeRecovering {
             persistRuntimeState(forceWorkspaceLayouts: ejected)
         }
     }
