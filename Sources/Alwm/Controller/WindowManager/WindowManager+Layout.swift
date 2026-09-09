@@ -419,17 +419,22 @@ extension WindowManager {
 
         // Second pass: floats that only got a home above can now be re-tiled (Electron AX dialog flag).
         retileAccidentalFloats()
-        for id in added {
-            guard let win = windowsByID[id], win.isTiled else { continue }
-            guard workspaces.workspaceID(containing: id) == nil else { continue }
-            let monitor = monitors.monitorContaining(pointX: win.frame.midX, pointY: win.frame.midY)
-                ?? monitors.monitors.first
-            guard let monitor else { continue }
-            let home = windowWorkspace[id]
-                ?? runtimeState.assignment(for: id)
-                ?? workspaces.activeWorkspaceByMonitor[monitor.id]
-            guard let home, workspaces.workspaces[home] != nil else { continue }
-            assignWindow(id, to: home, on: monitor)
+        // Never dump unassigned tiles onto the active workspace during bootstrap / resume /
+        // post-launch grace — that pinned every Safari to MSI/WS1 before rematch could place
+        // siblings on WS5 (other display). Leave them for rematchSticky + restoreLayouts.
+        if !isBootstrapping, !isResumeRecovering, !isInPostLaunchLayoutGrace() {
+            for id in added {
+                guard let win = windowsByID[id], win.isTiled else { continue }
+                guard workspaces.workspaceID(containing: id) == nil else { continue }
+                let monitor = monitors.monitorContaining(pointX: win.frame.midX, pointY: win.frame.midY)
+                    ?? monitors.monitors.first
+                guard let monitor else { continue }
+                let home = windowWorkspace[id]
+                    ?? runtimeState.assignment(for: id)
+                    ?? workspaces.activeWorkspaceByMonitor[monitor.id]
+                guard let home, workspaces.workspaces[home] != nil else { continue }
+                assignWindow(id, to: home, on: monitor)
+            }
         }
 
         // Reconcile every tiled window: rules / sticky / columns must agree.

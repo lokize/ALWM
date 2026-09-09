@@ -20,6 +20,14 @@ extension WindowManager {
     }
 
     func rematchStickyFromSavedLayouts() {
+        // Disk layouts are authoritative at restore. Ingest may have already pinned every
+        // same-bundle window (two Safaris) to the active MSI workspace because they both
+        // appeared on that display at launch — clear those dumps so WS5 can reclaim its window.
+        for id in windowsByID.keys {
+            windowWorkspace.removeValue(forKey: id)
+            runtimeState.setAssignment(nil, for: id)
+        }
+
         var used = Set<WindowID>()
         let liveByToken = Dictionary(uniqueKeysWithValues: windowsByID.keys.map { ($0.token, $0) })
         // Prefer disk layout order so multi-window apps reclaim distinct windows per WS.
@@ -29,18 +37,17 @@ extension WindowManager {
             else { continue }
             let refs = snap.columns.flatMap(\.windows) + snap.floating
             for ref in refs {
-                guard let id = resolveLiveWindow(ref, preferredWS: wsID, liveByToken: liveByToken, used: used)
+                guard let id = resolveLiveWindow(
+                    ref,
+                    preferredWS: wsID,
+                    liveByToken: liveByToken,
+                    used: used,
+                    preferDiskRematch: true
+                )
                 else { continue }
                 used.insert(id)
                 windowWorkspace[id] = wsID
                 runtimeState.setAssignment(wsID, for: id)
-                // Drop any other sticky claiming this live window (stale token ghosts).
-                for (other, home) in windowWorkspace where other != id && home == wsID {
-                    if other.token == ref.token { continue }
-                    if windowsByID[other] == nil {
-                        windowWorkspace.removeValue(forKey: other)
-                    }
-                }
             }
         }
         syncTokenIndex()
@@ -205,9 +212,34 @@ extension WindowManager {
         savedBundleInstanceCount(bundleID) <= 1 && liveBundleInstanceCount(bundleID, pid: pid) <= 1
     }
 
+    func refSlotTaken(
+        ref: RuntimeStateStore.WindowRef,
+        workspaceID: String,
+        except id: WindowID
+    ) -> Bool {
+        if let ws = workspaces.workspaces[workspaceID] {
+            for col in ws.columns {
+                for wid in col.windows where wid != id {
+                    if wid.token == ref.token { return true }
+                    if let other = windowsByID[wid], windowMatchesSavedRef(other, ref: ref) { return true }
+                }
+            }
+        }
+        // Sticky map may claim the slot before columns are rebuilt (bootstrap ingest).
+        for (wid, home) in windowWorkspace where home == workspaceID && wid != id {
+            guard let other = windowsByID[wid] else { continue }
+            if wid.token == ref.token { return true }
+            if windowMatchesSavedRef(other, ref: ref) { return true }
+        }
+        return false
+    }
+
     func savedHome(for win: ManagedWindow, id: WindowID) -> String? {
         if let sticky = stickyHome(for: id) { return sticky }
 
+        // Multi-instance apps: only bind via a free disk slot. Never send every Safari to WS1
+        // just because one Safari was saved there.
+        var candidates: [String] = []
         for wsID in runtimeState.snapshot.workspaceLayouts.keys.sorted() {
             guard workspaces.workspaces[wsID] != nil,
                   let snap = runtimeState.snapshot.workspaceLayouts[wsID]
@@ -215,8 +247,25 @@ extension WindowManager {
             for ref in snap.columns.flatMap(\.windows) + snap.floating {
                 guard windowMatchesSavedRef(win, ref: ref) else { continue }
                 if refSlotTaken(ref: ref, workspaceID: wsID, except: id) { continue }
-                return wsID
+                candidates.append(wsID)
+                break
             }
+        }
+        if candidates.count == 1 { return candidates[0] }
+        if candidates.count > 1 {
+            // Prefer the workspace whose monitor currently hosts this window.
+            let frame = ax.currentFrame(of: id) ?? win.frame
+            if let host = monitors.monitorContaining(pointX: frame.midX, pointY: frame.midY) {
+                for wsID in candidates {
+                    if workspaces.preferredMonitor(forWorkspace: wsID, monitors: monitors.monitors)?.id == host.id {
+                        return wsID
+                    }
+                    if workspaces.activeWorkspaceByMonitor[host.id] == wsID {
+                        return wsID
+                    }
+                }
+            }
+            return candidates[0]
         }
 
         if let bid = win.bundleID, !bid.isEmpty,
@@ -226,21 +275,6 @@ extension WindowManager {
             return ws
         }
         return nil
-    }
-
-    func refSlotTaken(
-        ref: RuntimeStateStore.WindowRef,
-        workspaceID: String,
-        except id: WindowID
-    ) -> Bool {
-        guard let ws = workspaces.workspaces[workspaceID] else { return false }
-        for col in ws.columns {
-            for wid in col.windows where wid != id {
-                if wid.token == ref.token { return true }
-                if let other = windowsByID[wid], windowMatchesSavedRef(other, ref: ref) { return true }
-            }
-        }
-        return false
     }
 
     func windowMatchesSavedRef(_ win: ManagedWindow, ref: RuntimeStateStore.WindowRef) -> Bool {
@@ -275,31 +309,42 @@ extension WindowManager {
         _ ref: RuntimeStateStore.WindowRef,
         preferredWS: String,
         liveByToken: [String: WindowID],
-        used: Set<WindowID>
+        used: Set<WindowID>,
+        preferDiskRematch: Bool = false
     ) -> WindowID? {
         // Token match wins only when the window is free or already sticky to this WS.
         if let id = tokenByWindowToken[ref.token] ?? liveByToken[ref.token], !used.contains(id) {
-            if let home = stickyHome(for: id), home != preferredWS { return nil }
+            if !preferDiskRematch, let home = stickyHome(for: id), home != preferredWS { return nil }
             return id
         }
 
         let refTitle = Self.normalizedWindowTitle(ref.title)
         let refBundle = ref.bundleID
         let refApp = ref.appName
+        let preferredMon = workspaces.preferredMonitor(forWorkspace: preferredWS, monitors: monitors.monitors)
 
         let pool = windowsByID.values.filter { win in
             guard !used.contains(win.id), win.isTiled || win.isFloating else { return false }
-            // Never claim a window that already belongs to another workspace.
-            if let home = stickyHome(for: win.id), home != preferredWS { return false }
+            // During disk rematch, ignore premature stickies from ingest dumps.
+            if !preferDiskRematch, let home = stickyHome(for: win.id), home != preferredWS {
+                return false
+            }
             return true
         }
 
-        // Prefer candidates already sticky to this workspace, then unassigned.
+        // Prefer: already sticky here → on preferred monitor → unassigned → others.
         func rank(_ win: ManagedWindow) -> Int {
             let home = stickyHome(for: win.id) ?? workspaces.workspaceID(containing: win.id)
             if home == preferredWS { return 0 }
-            if home == nil { return 1 }
-            return 2
+            if let preferredMon {
+                let frame = ax.currentFrame(of: win.id) ?? win.frame
+                if let host = monitors.monitorContaining(pointX: frame.midX, pointY: frame.midY),
+                   host.id == preferredMon.id {
+                    return 1
+                }
+            }
+            if home == nil { return 2 }
+            return 3
         }
 
         func sortedByRank(_ hits: [ManagedWindow]) -> [ManagedWindow] {
@@ -307,6 +352,27 @@ extension WindowManager {
                 if rank($0) != rank($1) { return rank($0) < rank($1) }
                 return $0.id.token < $1.id.token
             }
+        }
+
+        // How many disk slots remain for this bundle across *later* workspaces (sorted id)?
+        // Blocks WS1 from same-bundle-claiming every Safari before WS5 gets a turn.
+        func remainingDiskSlots(forBundle bid: String) -> Int {
+            let keys = runtimeState.snapshot.workspaceLayouts.keys.sorted()
+            guard let start = keys.firstIndex(of: preferredWS) else { return 0 }
+            var count = 0
+            for wsID in keys[start...] {
+                guard let snap = runtimeState.snapshot.workspaceLayouts[wsID] else { continue }
+                for ref in snap.columns.flatMap(\.windows) + snap.floating {
+                    guard ref.bundleID == bid else { continue }
+                    // Already satisfied by a used live window sticky/assigned to this later WS?
+                    if wsID == preferredWS { count += 1; continue }
+                    count += 1
+                }
+            }
+            // Subtract slots already filled in used set for this bundle.
+            let usedOfBundle = used.filter { windowsByID[$0]?.bundleID == bid }.count
+            // For preferredWS we are about to fill one — remaining includes current ref.
+            return max(0, count - usedOfBundle)
         }
 
         // 1) Exact title + bundle (or app name).
@@ -333,13 +399,21 @@ extension WindowManager {
             }
         }
 
-        // 2) Same bundle: only unassigned / already-home candidates (never other WS stickies).
-        // Multi-window apps (two Safaris on WS1/WS4) each take the next unused window.
+        // 2) Same bundle: only when this won't starve later workspaces that also saved this app.
+        // Multi-window apps (two Safaris on WS1/WS5) each take the next unused window in layout order.
         if let bid = refBundle, !bid.isEmpty {
-            let sameBundle = sortedByRank(pool.filter {
-                $0.bundleID == bid && (stickyHome(for: $0.id) == nil || stickyHome(for: $0.id) == preferredWS)
+            let candidates = sortedByRank(pool.filter {
+                $0.bundleID == bid && (preferDiskRematch
+                    || stickyHome(for: $0.id) == nil
+                    || stickyHome(for: $0.id) == preferredWS)
             })
-            if let hit = sameBundle.first { return hit.id }
+            let liveLeft = candidates.count
+            let slotsLeft = remainingDiskSlots(forBundle: bid)
+            // If more disk slots than we'll leave after taking one, still OK — take best ranked.
+            // If fewer live windows than slots, still take (best effort).
+            if liveLeft > 0, slotsLeft >= 1 {
+                if let hit = candidates.first { return hit.id }
+            }
         }
 
         return nil
