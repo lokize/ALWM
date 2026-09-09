@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "0.8.5",
+      "items": [
+        "Runtime support updates",
+        "UI updates"
+      ]
+    },
+    {
       "version": "0.8.4",
       "items": [
         "Resume awake fix"

@@ -193,15 +193,15 @@ public final class AppUpdateService: ObservableObject {
 
     // MARK: - Code signing (preserve TCC)
 
-    /// Prefer the identity of the currently installed app; fall back to local ALWM cert.
+    /// Prefer a stable local cert over whatever the running (often ad-hoc) binary has.
     private func preferredSigningIdentity() async -> String? {
+        if await codesigningIdentityAvailable("ALWM Local Signing") {
+            return "ALWM Local Signing"
+        }
         if let running = await signingIdentity(of: Bundle.main.bundleURL),
            running != "-",
            !running.isEmpty {
             return running
-        }
-        if await codesigningIdentityExists("ALWM Local Signing") {
-            return "ALWM Local Signing"
         }
         return nil
     }
@@ -297,9 +297,12 @@ public final class AppUpdateService: ObservableObject {
         return authorities.first
     }
 
-    private func codesigningIdentityExists(_ name: String) async -> Bool {
-        let output = await runProcessOutput("/usr/bin/security", ["find-identity", "-v", "-p", "codesigning"])
-        return output.contains(name) && !output.contains("CSSMERR_TP_NOT_TRUSTED")
+    private func codesigningIdentityAvailable(_ name: String) async -> Bool {
+        // Include untrusted identities — we can still sign with them. Trust is handled by
+        // scripts/ensure-codesign-identity.sh; skipping here used to leave updates ad-hoc
+        // and reset TCC every release.
+        let output = await runProcessOutput("/usr/bin/security", ["find-identity", "-p", "codesigning"])
+        return output.contains(name)
     }
 
     private func runProcessOutput(_ launchPath: String, _ arguments: [String]) async -> String {

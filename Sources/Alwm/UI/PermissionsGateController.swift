@@ -66,7 +66,10 @@ struct PermissionsGateView: View {
                     Text("Conceda o que faltar. Acessibilidade e Input Monitoring são obrigatórios; captura precisa de Screen Recording.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
-                    Text("Use sempre ./scripts/package.sh. Não apague ~/.config/alwm/signing/.")
+                    Text("Use sempre ./scripts/package.sh (nunca copie só o binário). Não apague ~/.config/alwm/signing/.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("Se as permissões somem a cada update: Keychain → “ALWM Local Signing” → Trust → Code Signing = Always Trust.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
