@@ -884,6 +884,7 @@ extension WindowManager {
 
     func nudgeElectronTileReflow(workspaceID: String) {
         guard let ws = workspaces.workspaces[workspaceID] else { return }
+        let monitorFrames = monitors.monitors.map(\.frame)
         ax.withMutation {
             for wid in ws.columns.flatMap(\.windows) {
                 guard let win = windowsByID[wid], win.isTiled, !win.isIgnored else { continue }
@@ -893,6 +894,11 @@ extension WindowManager {
                     ?? lastFrames[wid]
                     ?? ax.currentFrame(of: wid)
                 guard let frame, frame.height > 96, frame.width > 160 else { continue }
+                // Already on target — shrink/grow nudge only causes visible flicker.
+                if !ax.isMinimized(wid),
+                   ax.isSettled(id: wid, frame: frame, monitors: monitorFrames) {
+                    continue
+                }
                 if ax.isMinimized(wid) {
                     ax.setMinimized(false, id: wid)
                 }
@@ -908,17 +914,20 @@ extension WindowManager {
     }
 
     func scheduleElectronReflowPasses(workspaceID: String, generation: UInt64) {
-        let delays: [UInt64] = [50_000_000, 220_000_000, 550_000_000, 950_000_000]
+        // Kept for call sites that still want Chromium help — prefer the lighter
+        // `scheduleWorkspaceSwitchSettle` path for routine switches.
+        guard workspaceNeedsElectronSettle(workspaceID) else { return }
+        let delays: [UInt64] = [280_000_000, 750_000_000]
         for delay in delays {
             Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: delay)
                 guard let self, self.workspaceSwitchGeneration == generation else { return }
                 guard self.workspaces.activeWorkspaceByMonitor.values.contains(workspaceID) else { return }
-                if let mon = self.monitors.monitors.first(where: {
+                guard let mon = self.monitors.monitors.first(where: {
                     self.workspaces.activeWorkspaceByMonitor[$0.id] == workspaceID
-                }) {
-                    self.clampActiveTilesToUsable(workspaceID: workspaceID, monitor: mon)
-                }
+                }) else { return }
+                guard !self.workspaceTilesSettled(workspaceID: workspaceID, on: mon) else { return }
+                self.clampActiveTilesToUsable(workspaceID: workspaceID, monitor: mon)
                 self.nudgeElectronTileReflow(workspaceID: workspaceID)
                 self.refreshBorder()
             }

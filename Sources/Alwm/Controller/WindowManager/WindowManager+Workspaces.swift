@@ -43,9 +43,10 @@ extension WindowManager {
             return
         }
 
-        // Prevent AX focus / ingest from bouncing or reassigning during the switch.
+        // Prevent AX focus / ingest / geometry loops during the switch.
         suppressWorkspaceFollowUntil = Date().addingTimeInterval(2.5)
         suppressIngestReassignUntil = Date().addingTimeInterval(2.5)
+        suppressGeometryEnforce(for: 1.2)
         primaryMonitorID = targetMonitorID
         workspaceSwitchGeneration &+= 1
         let switchGeneration = workspaceSwitchGeneration
@@ -88,7 +89,12 @@ extension WindowManager {
         if let mon = monitors.monitors.first(where: { $0.id == targetMonitorID }) {
             // Force column frames now — visibility alone can skip via isSettled / stale signature.
             applyWorkspaceTileLayout(id, on: mon, forceReveal: true, skipHeal: true)
-            scheduleTileFrameEnforcement()
+            // One immediate enforce — deferred settles handle Safari/Electron lag without
+            // scheduling another rewrite wave at +0.12s on every switch.
+            if !overlaysCaptureFocus {
+                enforceActiveTileFrames()
+                applyAllActiveStackColumns()
+            }
 
             let ws = workspaces.activeWorkspace(for: targetMonitorID)
             // Focus a window that actually belongs to this workspace (skip stale column ghosts).
@@ -109,46 +115,97 @@ extension WindowManager {
                 warpCursor(to: CGPoint(x: mon.frame.midX, y: mainH - mon.frame.midY))
             }
         }
-        // After focus, tuck leaky parked windows and re-assert tiles — Safari/Electron often
-        // ignore the first reveal until a later pass (mouse hover used to be that pass).
+        // Single delayed settle instead of 180ms + 420ms full rewrites + 4 Electron shrink/grow nudges
+        // (that sequence made tiles flicker/resize for ~1–3s on every workspace switch).
+        scheduleWorkspaceSwitchSettle(workspaceID: id, generation: switchGeneration)
+        refreshChrome()
+    }
+
+    /// After a switch: one calm follow-up if AX hasn't accepted tiles yet; optional Electron nudge only when needed.
+    func scheduleWorkspaceSwitchSettle(workspaceID: String, generation: UInt64) {
         let monitorsSnapshot = monitors.monitors.map(\.frame)
-        let destinationID = id
         Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 180_000_000)
-            guard let self, self.workspaceSwitchGeneration == switchGeneration else { return }
+            try? await Task.sleep(nanoseconds: 280_000_000)
+            guard let self, self.workspaceSwitchGeneration == generation else { return }
+            guard self.workspaces.activeWorkspaceByMonitor.values.contains(workspaceID) else { return }
+
             let activeLater = Set(self.workspaces.activeWorkspaceByMonitor.values)
             self.settleParkedWindows(activeIDs: activeLater, monitors: monitorsSnapshot)
             self.ensureQuakeFullyHidden()
-            if activeLater.contains(destinationID),
-               let mon = self.monitors.monitors.first(where: {
-                   self.workspaces.activeWorkspaceByMonitor[$0.id] == destinationID
-               }) {
-                self.visibilityForceReveal = true
-                self.applyWorkspaceTileLayout(destinationID, on: mon, forceReveal: true, skipHeal: true)
-                self.scheduleTileFrameEnforcement()
-                self.nudgeElectronTileReflow(workspaceID: destinationID)
+
+            guard let mon = self.monitors.monitors.first(where: {
+                self.workspaces.activeWorkspaceByMonitor[$0.id] == workspaceID
+            }) else {
+                self.refreshBorder()
+                self.refreshChrome()
+                return
             }
+
+            if !self.workspaceTilesSettled(workspaceID: workspaceID, on: mon) {
+                self.suppressGeometryEnforce(for: 0.6)
+                self.visibilityForceReveal = true
+                self.applyWorkspaceTileLayout(workspaceID, on: mon, forceReveal: true, skipHeal: true)
+                if !self.overlaysCaptureFocus {
+                    self.enforceActiveTileFrames()
+                    self.applyAllActiveStackColumns()
+                }
+            }
+
+            // Chromium only — and only if still drifting after the settle pass.
+            if self.workspaceNeedsElectronSettle(workspaceID),
+               !self.workspaceTilesSettled(workspaceID: workspaceID, on: mon) {
+                self.nudgeElectronTileReflow(workspaceID: workspaceID)
+            }
+
             self.refreshBorder()
             self.refreshChrome()
         }
-        // Second retry — same-PID Safari deminiaturize can land after the first pass.
+
+        // Late Chromium pass (composer/webview) — skip entirely when nothing needs it.
         Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 420_000_000)
-            guard let self, self.workspaceSwitchGeneration == switchGeneration else { return }
-            guard self.workspaces.activeWorkspaceByMonitor.values.contains(destinationID) else { return }
-            if let mon = self.monitors.monitors.first(where: {
-                self.workspaces.activeWorkspaceByMonitor[$0.id] == destinationID
-            }) {
-                self.visibilityForceReveal = true
-                self.applyWorkspaceTileLayout(destinationID, on: mon, forceReveal: true, skipHeal: true)
-                self.scheduleTileFrameEnforcement()
-                self.nudgeElectronTileReflow(workspaceID: destinationID)
-            }
-            self.refreshChrome()
+            try? await Task.sleep(nanoseconds: 750_000_000)
+            guard let self, self.workspaceSwitchGeneration == generation else { return }
+            guard self.workspaces.activeWorkspaceByMonitor.values.contains(workspaceID) else { return }
+            guard self.workspaceNeedsElectronSettle(workspaceID) else { return }
+            guard let mon = self.monitors.monitors.first(where: {
+                self.workspaces.activeWorkspaceByMonitor[$0.id] == workspaceID
+            }) else { return }
+            guard !self.workspaceTilesSettled(workspaceID: workspaceID, on: mon) else { return }
+            self.suppressGeometryEnforce(for: 0.5)
+            self.clampActiveTilesToUsable(workspaceID: workspaceID, monitor: mon)
+            self.nudgeElectronTileReflow(workspaceID: workspaceID)
+            self.refreshBorder()
         }
-        // WhatsApp/Discord: Chromium needs several delayed size toggles after park→reveal.
-        scheduleElectronReflowPasses(workspaceID: destinationID, generation: switchGeneration)
-        refreshChrome()
+    }
+
+    func workspaceNeedsElectronSettle(_ workspaceID: String) -> Bool {
+        guard let ws = workspaces.workspaces[workspaceID] else { return false }
+        return ws.columns.flatMap(\.windows).contains { id in
+            guard let win = windowsByID[id], win.isTiled, !win.isIgnored else { return false }
+            return needsElectronReflowNudge(win)
+        }
+    }
+
+    func workspaceTilesSettled(workspaceID: String, on monitor: MonitorInfo) -> Bool {
+        guard let ws = workspaces.workspaces[workspaceID] else { return true }
+        let monitorFrames = monitors.monitors.map(\.frame)
+        let assignments = engine.computeFrames(
+            workspace: ws,
+            windows: windowsByID,
+            monitor: monitor.layoutFrame,
+            active: true,
+            stackExcluded: stackExcludedFromLayout(),
+            layoutExcluded: layoutExcludedWindowIDs(for: workspaceID, monitor: monitor)
+        )
+        for a in assignments where a.visible {
+            guard windowsByID[a.windowID]?.isTiled == true else { continue }
+            guard authoritativeHome(for: a.windowID) == workspaceID else { continue }
+            if ax.isMinimized(a.windowID) { return false }
+            if !ax.isSettled(id: a.windowID, frame: a.frame, monitors: monitorFrames) {
+                return false
+            }
+        }
+        return true
     }
 
     func focusWorkspaceWindow(_ windowID: WindowID, workspaceID: String, on monitorID: CGDirectDisplayID) {
