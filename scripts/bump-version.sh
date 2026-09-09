@@ -8,6 +8,9 @@
 #   scripts/bump-version.sh --from-diff
 #   scripts/bump-version.sh --from-range origin/main..HEAD
 #   scripts/bump-version.sh --dry-run "Only print"
+#
+# Sem bullets explícitos, deriva What's New das mensagens de commit desde
+# o último bump de VERSION (não usa mais o fallback genérico cego).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -23,6 +26,7 @@ FROM_DIFF=0
 FROM_COMMIT=""
 FROM_RANGE=""
 BULLETS=()
+EXPLICIT_BULLETS=0
 
 usage() {
   echo "Usage: $0 [--dry-run] [--from-diff] [--from-commit HEAD] [--from-range A..B] [\"changelog bullet\" ...]" >&2
@@ -42,7 +46,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     -h|--help) usage ;;
-    *) BULLETS+=("$1"); shift ;;
+    *) BULLETS+=("$1"); EXPLICIT_BULLETS=1; shift ;;
   esac
 done
 
@@ -75,7 +79,54 @@ fi
 NEW="${MAJOR}.${MINOR}.${PATCH}"
 BUILD=$((MAJOR * 100 + MINOR * 10 + PATCH))
 
-# Bullets a partir do diff staged (ou working tree se nada staged)
+# Converte subject de commit em bullet de release notes (EN, user-facing).
+subject_to_bullet() {
+  local s="$1"
+  s="$(printf '%s' "$s" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+  [[ -z "$s" ]] && return 1
+
+  local lower
+  lower="$(printf '%s' "$s" | tr '[:upper:]' '[:lower:]')"
+  case "$lower" in
+    release|version\ update|wip|tmp|temp)
+      return 1
+      ;;
+  esac
+  # Ignore auto bump / merge noise (PT/EN)
+  if [[ "$lower" == update\ version* \
+     || "$lower" == chore:\ bump* \
+     || "$lower" == merge\ * ]]; then
+    return 1
+  fi
+
+  # Strip conventional-commit prefix
+  s="$(printf '%s' "$s" | sed -E 's/^(feat|fix|refactor|chore|docs|style|perf|test|build|ci|rework|improve)(\([^)]*\))?:\s*//i')"
+  s="$(printf '%s' "$s" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+  [[ -z "$s" ]] && return 1
+  # Too cryptic for release notes (e.g. "wrs") — let path fallback handle it
+  if ((${#s} <= 4)); then
+    return 1
+  fi
+
+  # Capitalize first letter
+  local first rest
+  first="$(printf '%s' "$s" | cut -c1 | tr '[:lower:]' '[:upper:]')"
+  rest="$(printf '%s' "$s" | cut -c2-)"
+  printf '%s%s\n' "$first" "$rest"
+}
+
+# Bullets a partir de mensagens de commit no intervalo (mais antigas primeiro).
+collect_from_commits() {
+  local range="$1"
+  local msg bullet
+  while IFS= read -r msg; do
+    [[ -z "$msg" ]] && continue
+    bullet="$(subject_to_bullet "$msg" || true)"
+    [[ -n "${bullet:-}" ]] && BULLETS+=("$bullet")
+  done < <(git log --reverse --format=%s "$range" 2>/dev/null || true)
+}
+
+# Bullets a partir do diff de paths (fallback quando não há subjects úteis).
 collect_from_paths() {
   local src="$1"
   while IFS= read -r line; do
@@ -92,35 +143,73 @@ collect_from_paths() {
       plugins/nintendo-price-watcher/*) BULLETS+=("Nintendo Price Watcher plugin updates") ;;
       plugins/sample-clock/*) BULLETS+=("Sample Clock plugin updates") ;;
       plugins/*) BULLETS+=("Plugins: ${line#plugins/}") ;;
-      Sources/AlwmL10n/*) BULLETS+=("Localization: ${base%.swift}") ;;
-      Sources/Alwm/Input/*) BULLETS+=("Input: ${base%.swift}") ;;
-      Sources/Alwm/UI/*) BULLETS+=("UI: ${base%.swift}") ;;
-      Sources/Alwm/Controller/*) BULLETS+=("Window manager: ${base%.swift}") ;;
-      Sources/Alwm/AX/*) BULLETS+=("Accessibility: ${base%.swift}") ;;
-      Sources/Alwm/Layout/*) BULLETS+=("Layout: ${base%.swift}") ;;
-      Sources/Alwm/Config/*) BULLETS+=("Config: ${base%.swift}") ;;
-      Sources/Alwm/Support/*) BULLETS+=("Support: ${base%.swift}") ;;
-      Sources/Alwm/Notes/*) BULLETS+=("Notepad: ${base%.swift}") ;;
-      Sources/Alwm/Plugins/*) BULLETS+=("Plugin host: ${base%.swift}") ;;
-      docs/*) BULLETS+=("Docs: $base") ;;
-      scripts/*) BULLETS+=("Scripts: $base") ;;
-      *) BULLETS+=("Update $line") ;;
+      Sources/AlwmL10n/*) BULLETS+=("Localization updates") ;;
+      Sources/Alwm/Input/*) BULLETS+=("Input handling updates") ;;
+      Sources/Alwm/UI/Settings/*|Sources/Alwm/UI/SettingsWindow.swift) BULLETS+=("Settings UI updates") ;;
+      Sources/Alwm/UI/WorkspaceBar/*) BULLETS+=("Workspace bar updates") ;;
+      Sources/Alwm/UI/*) BULLETS+=("UI updates") ;;
+      Sources/Alwm/Controller/WindowManager/*|Sources/Alwm/Controller/WindowManager.swift)
+        BULLETS+=("Window manager improvements")
+        ;;
+      Sources/Alwm/Controller/*) BULLETS+=("Window manager improvements") ;;
+      Sources/Alwm/AX/*) BULLETS+=("Accessibility bridge updates") ;;
+      Sources/Alwm/Layout/*) BULLETS+=("Layout engine updates") ;;
+      Sources/Alwm/Config/*) BULLETS+=("Config updates") ;;
+      Sources/Alwm/Support/*) BULLETS+=("Runtime support updates") ;;
+      Sources/Alwm/Notes/*) BULLETS+=("Notepad updates") ;;
+      Sources/Alwm/Plugins/*) BULLETS+=("Plugin host updates") ;;
+      docs/*) BULLETS+=("Documentation updates") ;;
+      scripts/*) BULLETS+=("Build and release scripts") ;;
+      *) BULLETS+=("Update ${base%.swift}") ;;
     esac
   done <<<"$src"
 }
 
-if [[ -n "$FROM_RANGE" ]]; then
-  DIFF_SRC="$(git diff --name-only "$FROM_RANGE" 2>/dev/null || true)"
-  collect_from_paths "$DIFF_SRC"
-elif [[ -n "$FROM_COMMIT" ]]; then
-  DIFF_SRC="$(git diff-tree --no-commit-id --name-only -r "$FROM_COMMIT" 2>/dev/null || true)"
-  collect_from_paths "$DIFF_SRC"
-elif (( FROM_DIFF )); then
-  DIFF_SRC="$(git diff --cached --name-only 2>/dev/null || true)"
-  if [[ -z "$DIFF_SRC" ]]; then
-    DIFF_SRC="$(git diff --name-only 2>/dev/null || true)"
+last_version_commit() {
+  git log -1 --format=%H -- VERSION 2>/dev/null || true
+}
+
+if (( EXPLICIT_BULLETS == 0 )); then
+  if [[ -n "$FROM_RANGE" ]]; then
+    collect_from_commits "$FROM_RANGE"
+    if ((${#BULLETS[@]} == 0)); then
+      collect_from_paths "$(git diff --name-only "$FROM_RANGE" 2>/dev/null || true)"
+    fi
+  elif [[ -n "$FROM_COMMIT" ]]; then
+    collect_from_commits "${FROM_COMMIT}^..${FROM_COMMIT}"
+    if ((${#BULLETS[@]} == 0)); then
+      collect_from_paths "$(git diff-tree --no-commit-id --name-only -r "$FROM_COMMIT" 2>/dev/null || true)"
+    fi
+  elif (( FROM_DIFF )); then
+    # Prefira commits desde o último bump; paths staged complementam se vazio.
+    LAST_VER_SHA="$(last_version_commit)"
+    if [[ -n "$LAST_VER_SHA" ]]; then
+      collect_from_commits "${LAST_VER_SHA}..HEAD"
+    fi
+    DIFF_SRC="$(git diff --cached --name-only 2>/dev/null || true)"
+    if [[ -z "$DIFF_SRC" ]]; then
+      DIFF_SRC="$(git diff --name-only 2>/dev/null || true)"
+    fi
+    if ((${#BULLETS[@]} == 0)); then
+      collect_from_paths "$DIFF_SRC"
+    fi
+  else
+    # bump sem args (ex.: commit "release") — commits desde o último VERSION
+    LAST_VER_SHA="$(last_version_commit)"
+    if [[ -n "$LAST_VER_SHA" ]]; then
+      collect_from_commits "${LAST_VER_SHA}..HEAD"
+      if ((${#BULLETS[@]} == 0)); then
+        collect_from_paths "$(git diff --name-only "${LAST_VER_SHA}..HEAD" 2>/dev/null || true)"
+      fi
+    fi
+    if ((${#BULLETS[@]} == 0)); then
+      DIFF_SRC="$(git diff --cached --name-only 2>/dev/null || true)"
+      if [[ -z "$DIFF_SRC" ]]; then
+        DIFF_SRC="$(git diff --name-only 2>/dev/null || true)"
+      fi
+      collect_from_paths "$DIFF_SRC"
+    fi
   fi
-  collect_from_paths "$DIFF_SRC"
 fi
 
 # Deduplicar bullets preservando ordem
@@ -129,6 +218,10 @@ if ((${#BULLETS[@]} > 0)); then
   SEEN=$'\n'
   for b in "${BULLETS[@]}"; do
     [[ -z "$b" ]] && continue
+    # Descarta o placeholder genérico se houver outros
+    if [[ "$b" == "Maintenance and fixes" ]]; then
+      continue
+    fi
     case "$SEEN" in
       *$'\n'"$b"$'\n'*) continue ;;
     esac
@@ -136,6 +229,11 @@ if ((${#BULLETS[@]} > 0)); then
     SEEN+="$b"$'\n'
   done
   BULLETS=("${DEDUPED[@]}")
+fi
+
+# Limitar tamanho do What's New
+if ((${#BULLETS[@]} > 12)); then
+  BULLETS=("${BULLETS[@]:0:12}")
 fi
 
 if ((${#BULLETS[@]} == 0)); then

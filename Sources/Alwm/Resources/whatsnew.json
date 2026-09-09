@@ -1,171 +1,174 @@
 {
   "releases": [
     {
+      "version": "0.8.3",
+      "items": [
+        "Update README.md",
+        "Build and release scripts"
+      ]
+    },
+    {
       "version": "0.8.2",
       "items": [
-        "Maintenance and fixes"
+        "Restore session"
       ]
     },
     {
       "version": "0.8.1",
       "items": [
-        "Maintenance and fixes"
+        "Window manager improvements"
       ]
     },
     {
       "version": "0.8.0",
       "items": [
-        "Maintenance and fixes"
+        "Fix window blink",
+        "Workspace restore"
       ]
     },
     {
       "version": "0.7.9",
       "items": [
-        "Maintenance and fixes"
+        "Sleep fix"
       ]
     },
     {
       "version": "0.7.8",
       "items": [
-        "Maintenance and fixes"
+        "Dont sleep mode, restore session",
+        "Update file paths and remove unused components"
       ]
     },
     {
       "version": "0.7.7",
       "items": [
-        "Maintenance and fixes"
+        "Enhance plugin management and scrolling behavior"
       ]
     },
     {
       "version": "0.7.6",
       "items": [
-        "Maintenance and fixes"
+        "Focus in config panel, scroll"
       ]
     },
     {
       "version": "0.7.5",
       "items": [
-        "Maintenance and fixes"
+        "Scroll"
       ]
     },
     {
       "version": "0.7.4",
       "items": [
-        "Maintenance and fixes"
+        "Scroll"
       ]
     },
     {
       "version": "0.7.3",
       "items": [
-        "Maintenance and fixes"
+        "Improve plugin system"
       ]
     },
     {
       "version": "0.7.2",
       "items": [
-        "Maintenance and fixes"
+        "Plugin system"
       ]
     },
     {
       "version": "0.7.1",
       "items": [
-        "Maintenance and fixes"
+        "New plugin download system"
       ]
     },
     {
       "version": "0.7.0",
       "items": [
-        "Maintenance and fixes"
+        "Nintendo store prices plugins"
       ]
     },
     {
       "version": "0.6.9",
       "items": [
-        "Maintenance and fixes"
+        "Focus notepad and terminal"
       ]
     },
     {
       "version": "0.6.8",
       "items": [
-        "Maintenance and fixes"
+        "Mouse focus when menus, plugins"
       ]
     },
     {
       "version": "0.6.7",
       "items": [
-        "Maintenance and fixes"
+        "Workspace bar improves"
       ]
     },
     {
       "version": "0.6.6",
       "items": [
-        "Maintenance and fixes"
+        "Now playing safari shortcuts"
       ]
     },
     {
       "version": "0.6.5",
       "items": [
-        "Maintenance and fixes"
+        "Plugin search bar position"
       ]
     },
     {
       "version": "0.6.4",
       "items": [
-        "Maintenance and fixes"
+        "Bluetooth plugin hid"
       ]
     },
     {
       "version": "0.6.3",
       "items": [
-        "Maintenance and fixes"
+        "Window input"
       ]
     },
     {
       "version": "0.6.2",
       "items": [
-        "Maintenance and fixes"
-      ]
-    },
-    {
-      "version": "0.6.1",
-      "items": [
-        "Maintenance and fixes"
+        "Plugin orders and improves"
       ]
     },
     {
       "version": "0.6.0",
       "items": [
-        "Maintenance and fixes"
+        "New stats plugins"
       ]
     },
     {
       "version": "0.5.9",
       "items": [
-        "Maintenance and fixes"
+        "Terminal ghost window"
       ]
     },
     {
       "version": "0.5.8",
       "items": [
-        "Maintenance and fixes"
+        "Readme update"
       ]
     },
     {
       "version": "0.5.7",
       "items": [
-        "Maintenance and fixes"
+        "Improves terminal and notepad"
       ]
     },
     {
       "version": "0.5.6",
       "items": [
-        "Maintenance and fixes"
+        "Layout engine updates"
       ]
     },
     {
       "version": "0.5.5",
       "items": [
-        "Maintenance and fixes"
+        "UI updates"
       ]
     },
     {
@@ -177,37 +180,41 @@
     {
       "version": "0.5.3",
       "items": [
-        "Maintenance and fixes"
+        "Contributors"
       ]
     },
     {
       "version": "0.5.2",
       "items": [
-        "Maintenance and fixes"
+        "Window manager improvements",
+        "Runtime support updates",
+        "UI updates"
       ]
     },
     {
       "version": "0.5.1",
       "items": [
-        "Maintenance and fixes"
+        "Runtime support updates"
       ]
     },
     {
       "version": "0.5.0",
       "items": [
-        "Maintenance and fixes"
+        "Permissions"
       ]
     },
     {
       "version": "0.4.9",
       "items": [
-        "Maintenance and fixes"
+        "Window manager improvements",
+        "Runtime support updates",
+        "UI updates"
       ]
     },
     {
       "version": "0.4.8",
       "items": [
-        "Maintenance and fixes"
+        "Fix menu layout space"
       ]
     },
     {
@@ -219,26 +226,7 @@
     {
       "version": "0.4.6",
       "items": [
-        "Keep multiple live windows of the same app in a workspace (no longer collapse Cursor siblings)",
-        "Multi-window picker rescans AX on click and lists all live windows for that app"
-      ]
-    },
-    {
-      "version": "0.4.5",
-      "items": [
-        "Fix workspace bar multi-window picker: use PID-based matching to survive token churn; keep assigned windows visible in bar even when temporarily AX-missing"
-      ]
-    },
-    {
-      "version": "0.4.4",
-      "items": [
-        "Fix crash on menu item click: retain NSMenuItem across async Task boundary to prevent use-after-free"
-      ]
-    },
-    {
-      "version": "0.4.3",
-      "items": [
-        "Fix multi-window picker: correctly resolves unassigned/token-churned windows for same app in workspace"
+        "First commit"
       ]
     }
   ]

@@ -287,10 +287,13 @@ Enable, pick bar placement, and optionally lock a chip to one monitor. Docs for 
 
 ```bash
 bash scripts/bump-version.sh "User-facing change" "Another change"
-bash scripts/install-git-hooks.sh   # optional pre-commit bump
+# Without bullets: derives What's New from commits since the last VERSION bump
+bash scripts/bump-version.sh
+bash scripts/rebuild-whatsnew-from-git.sh   # rebuild history from git
+bash scripts/install-git-hooks.sh           # optional pre-commit bump
 ```
 
-What's New bullets are English; commit messages in this repo are usually PT-BR.
+What's New / GitHub release notes come from `whatsnew.json` (English). Prefer explicit bullets; otherwise the bump script uses commit subjects.
 
 ---
 
