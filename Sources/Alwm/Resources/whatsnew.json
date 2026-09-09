@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "0.8.1",
+      "items": [
+        "Maintenance and fixes"
+      ]
+    },
+    {
       "version": "0.8.0",
       "items": [
         "Maintenance and fixes"
@@ -233,12 +239,6 @@
       "version": "0.4.2",
       "items": [
         "Multi-window picker now resolves live windows via direct WindowManager query, bypassing token churn"
-      ]
-    },
-    {
-      "version": "0.4.1",
-      "items": [
-        "Maintenance and fixes"
       ]
     }
   ]
