@@ -176,7 +176,11 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
     var allowDestructiveLayoutFlush = false
 
     /// Sleep soft-persist: treat missing AX tokens as still home so we never shrink disk mid-sleep.
+    /// Stays true from willSleep until resume recovery finishes (do NOT clear in a defer).
     var softPersistProtectMissingTokens = false
+
+    /// Freeze column rebalance / layout persist across sleep AX drops.
+    var layoutMutationFrozenUntil = Date.distantPast
 
     var skipRestoreOnStopForUpdate = false
 

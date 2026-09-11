@@ -536,8 +536,15 @@ extension WindowManager {
         for wsID in strippedLayouts {
             scheduleRebalanceWorkspace(wsID, force: columnsStripped)
         }
-        if columnsStripped || !strippedLayouts.isEmpty || !forgotten.isEmpty {
+        // Mass AX drop (sleep) or frozen layout: never persist shrunk columns over a good snapshot.
+        let massDisappear = forgotten.count >= 2 || (columnsStripped && strippedLayouts.count >= 2)
+        if !isLayoutMutationFrozen, !massDisappear,
+           columnsStripped || !strippedLayouts.isEmpty || !forgotten.isEmpty {
             persistRuntimeState(forceWorkspaceLayouts: strippedLayouts)
+        } else if isLayoutMutationFrozen || massDisappear {
+            logMove(
+                "persist skip shrink frozen=\(isLayoutMutationFrozen) mass=\(massDisappear) forgotten=\(forgotten.count) stripped=\(strippedLayouts.sorted().joined(separator: ","))"
+            )
         }
         if columnsStripped || !strippedLayouts.isEmpty {
             visibilityForceReveal = true
@@ -552,9 +559,12 @@ extension WindowManager {
         } else if columnsStripped || !forgotten.isEmpty {
             ingestRelayoutWorkItem?.cancel()
             // Collapse ghost columns immediately after red-X / soft-delete eject.
-            for wsID in strippedLayouts where isHomeActiveOnAnyMonitor(wsID) {
-                pruneVacantColumnSlots(wsID: wsID)
-                snapWorkspaceTilesAfterColumnChange(wsID)
+            // Skip during sleep/wake freeze — pruning+snap was rewriting WS1/WS5 to 1 column.
+            if !isLayoutMutationFrozen {
+                for wsID in strippedLayouts where isHomeActiveOnAnyMonitor(wsID) {
+                    pruneVacantColumnSlots(wsID: wsID)
+                    snapWorkspaceTilesAfterColumnChange(wsID)
+                }
             }
             if !shouldDeferVisibilityRefreshFromIngest() {
                 if blockingReassign, columnsStripped, forgotten.isEmpty {
@@ -594,10 +604,13 @@ extension WindowManager {
                         || isInPostLaunchLayoutGrace()
                         || isResumeRecovering
                         || Date() < resumeRecoveryEligibleUntil
-                    let diskClaimsAdded = addedTiles.contains { id in
+                    // Staggered recoverAfterSystemResume owns rematch during wake — ingest rematch
+                    // here was spamming restore every few seconds and fighting column widths.
+                    let diskClaimsAdded = !isResumeRecovering && addedTiles.contains { id in
                         diskLayoutClaimsWindow(id, allowFuzzy: resumeWindow)
                     }
-                    let massRestore = (resumeWindow && addedTiles.count >= 2) || diskClaimsAdded
+                    let massRestore = !isResumeRecovering
+                        && ((resumeWindow && addedTiles.count >= 2) || diskClaimsAdded)
                     if massRestore {
                         logMove(
                             "tile mass-restore rematch added=\(addedTiles.count) ids=\(addedTiles.map(\.token).sorted().joined(separator: ","))"

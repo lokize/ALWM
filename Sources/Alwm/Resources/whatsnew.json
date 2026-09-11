@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "0.8.7",
+      "items": [
+        "Window manager improvements"
+      ]
+    },
+    {
       "version": "0.8.6",
       "items": [
         "Window manager improvements"
@@ -240,12 +246,6 @@
       "version": "0.4.7",
       "items": [
         "Maintenance and fixes"
-      ]
-    },
-    {
-      "version": "0.4.6",
-      "items": [
-        "First commit"
       ]
     }
   ]

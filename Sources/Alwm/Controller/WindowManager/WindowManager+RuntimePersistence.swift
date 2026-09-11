@@ -776,6 +776,11 @@ extension WindowManager {
     }
 
     func scheduleRebalanceWorkspace(_ wsID: String, force: Bool = false) {
+        // Sleep/wake: AX drops windows → collapsing columns here used to overwrite good disk layouts.
+        if isLayoutMutationFrozen {
+            logMove("rebalance skip frozen ws=\(wsID)")
+            return
+        }
         if !force,
            let ws = workspaces.workspaces[wsID], !ws.columns.isEmpty {
             let sig = "\(ws.columns.count):\(structuralSnapSignature(for: ws))"
@@ -786,6 +791,7 @@ extension WindowManager {
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
             self.rebalanceWorkItems.removeValue(forKey: wsID)
+            guard !self.isLayoutMutationFrozen else { return }
             guard let ws = self.workspaces.workspaces[wsID], !ws.columns.isEmpty else { return }
             self.rebalanceWorkspaceAfterWindowLeft(wsID, force: force)
         }
@@ -808,6 +814,10 @@ extension WindowManager {
     }
 
     func snapWorkspaceTilesAfterColumnChange(_ wsID: String) {
+        guard !isLayoutMutationFrozen else {
+            logMove("snap skip frozen ws=\(wsID)")
+            return
+        }
         guard !snappingWorkspaces.contains(wsID) else { return }
         snappingWorkspaces.insert(wsID)
         defer { snappingWorkspaces.remove(wsID) }

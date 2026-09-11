@@ -95,6 +95,8 @@ extension WindowManager {
                 guard let self, self.isResumeRecovering else { return }
                 self.isResumeRecovering = false
                 self.resumeRecoveryEligibleUntil = Date.distantPast
+                self.softPersistProtectMissingTokens = false
+                self.layoutMutationFrozenUntil = Date.distantPast
                 NSLog("ALWM: layout recovery gave up — disk snapshot preserved")
             }
         }
@@ -182,12 +184,14 @@ extension WindowManager {
 
     func prepareForSystemSleep() {
         cancelPendingResumeRecovery()
+        cancelPendingRebalances()
         isResumeRecovering = false
         // Soft flush only: at willSleep/screensDidSleep AX often already dropped windows.
-        // Never destructive; protect missing tokens so we don't shrink a good disk snapshot.
+        // Keep protect flags until wake recovery — a defer here used to clear them before
+        // AX finished dropping windows, so rebalance persisted 1-column layouts to disk.
         allowDestructiveLayoutFlush = false
         softPersistProtectMissingTokens = true
-        defer { softPersistProtectMissingTokens = false }
+        layoutMutationFrozenUntil = Date().addingTimeInterval(6 * 60 * 60)
         // Capture fingerprint while memory still looks good (before any soft write).
         if liveTiledWindowCount() > 0 {
             preSleepLayoutFingerprint = layoutContentFingerprint()
@@ -200,9 +204,13 @@ extension WindowManager {
     func noteSystemWakeForResumeRecovery() {
         // Idle assertions can be dropped across sleep — put them back immediately.
         SleepAssertion.reassertIfNeeded()
+        cancelPendingRebalances()
         resumeRecoveryEligibleUntil = Date().addingTimeInterval(300)
         layoutRecoveryAttempts = 0
         isResumeRecovering = true
+        // Keep softPersistProtectMissingTokens until finishResumeRecoverySuccessfully.
+        softPersistProtectMissingTokens = true
+        layoutMutationFrozenUntil = Date().addingTimeInterval(300)
         lastVisibilitySignature = nil
         lastSnapSignature.removeAll()
         forceTileExpandUntil.removeAll()
@@ -217,11 +225,24 @@ extension WindowManager {
         layoutRecoveryWorkItem = nil
     }
 
+    func cancelPendingRebalances() {
+        for (_, work) in rebalanceWorkItems { work.cancel() }
+        rebalanceWorkItems.removeAll()
+    }
+
+    var isLayoutMutationFrozen: Bool {
+        softPersistProtectMissingTokens
+            || isResumeRecovering
+            || Date() < layoutMutationFrozenUntil
+    }
+
     func finishResumeRecoverySuccessfully() {
         cancelPendingResumeRecovery()
         layoutRecoveryAttempts = maxLayoutRecoveryAttempts
         isResumeRecovering = false
         resumeRecoveryEligibleUntil = Date.distantPast
+        softPersistProtectMissingTokens = false
+        layoutMutationFrozenUntil = Date.distantPast
         // Safe to refresh disk tokens (window numbers may have changed) now that layout matches.
         persistRuntimeState()
         preSleepLayoutFingerprint = nil
@@ -252,6 +273,14 @@ extension WindowManager {
         guard AXTracker.isTrusted else { return }
         // Staggered retries must not re-enter after a successful pass this wake.
         guard isResumeRecovering || Date() < resumeRecoveryEligibleUntil else { return }
+        // If live already matches disk, finish instead of rematching again (spam wrecked widths).
+        if layoutLooksRecovered(),
+           framesLookRestoredOnActiveWorkspaces(),
+           layoutContentMatchesDiskSnapshot() {
+            finishResumeRecoverySuccessfully()
+            NSLog("ALWM: resume recovery — already matched, skipping rematch")
+            return
+        }
         isResumeRecovering = true
         suppressIngestReassignUntil = Date().addingTimeInterval(5.0)
         suppressWorkspaceFollowUntil = Date().addingTimeInterval(2.5)

@@ -607,7 +607,9 @@ extension WindowManager {
         windowFirstTrackedAt.removeValue(forKey: id)
         forcedTiledUntil.removeValue(forKey: id)
         missingScanCounts.removeValue(forKey: id)
-        persistRuntimeState()
+        if !isLayoutMutationFrozen {
+            persistRuntimeState()
+        }
         relayout(animated: false, on: layoutScopeMonitor(for: id))
         refreshChrome()
         if wasLayoutTile {
@@ -617,7 +619,7 @@ extension WindowManager {
 
     func scheduleQuitIfLastLayoutWindowClosed(pid: pid_t, bundleID: String?, homeWasActive: Bool) {
         guard homeWasActive else { return }
-        guard !isBootstrapping, !isResumeRecovering else { return }
+        guard !isBootstrapping, !isResumeRecovering, !isLayoutMutationFrozen else { return }
         guard pid != ProcessInfo.processInfo.processIdentifier else { return }
         let bid = (bundleID ?? "").lowercased()
         if bid.hasPrefix("dev.alwm") || bid.contains(".alwm") { return }
@@ -657,7 +659,9 @@ extension WindowManager {
             runtimeState.setAssignment(nil, for: id)
             missingScanCounts.removeValue(forKey: id)
         }
-        persistRuntimeState()
+        if !isLayoutMutationFrozen {
+            persistRuntimeState()
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
             guard let self else { return }
             if let still = NSRunningApplication(processIdentifier: pid), !still.isTerminated {
