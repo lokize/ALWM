@@ -489,8 +489,17 @@ extension WindowManager {
             if blockingReassign { continue }
 
             if let current = workspaces.workspaceID(containing: id) {
-                windowWorkspace[id] = current
-                runtimeState.setAssignment(current, for: id)
+                // Don't let a wrong column rewrite sticky over a better disk home (Safari on
+                // WS5 must not become sticky→WS2 just because AX dumped it on the active monitor).
+                if let saved = savedHome(for: win, id: id), saved != current,
+                   workspaces.workspaces[saved] != nil {
+                    assignWindow(id, to: saved, on: monitor)
+                    continue
+                }
+                if windowWorkspace[id] == nil {
+                    windowWorkspace[id] = current
+                    runtimeState.setAssignment(current, for: id)
+                }
                 continue
             }
 
@@ -579,11 +588,16 @@ extension WindowManager {
                     // Snap columns only — a full visibility pass hide/reveals the new tile in a loop.
                     // Mass "added" after relaunch/resume is restore churn — rematch from disk instead
                     // of flattening every Safari onto the active MSI workspace (see move.log).
-                    let massRestore = addedTiles.count >= 2
-                        && (isBootstrapping
-                            || isInPostLaunchLayoutGrace()
-                            || isResumeRecovering
-                            || Date() < resumeRecoveryEligibleUntil)
+                    // Also rematch a *single* reappearing window during resume when disk still
+                    // claims it (Safari YouTube on WS5 must not snap to active WS2).
+                    let resumeWindow = isBootstrapping
+                        || isInPostLaunchLayoutGrace()
+                        || isResumeRecovering
+                        || Date() < resumeRecoveryEligibleUntil
+                    let diskClaimsAdded = addedTiles.contains { id in
+                        diskLayoutClaimsWindow(id, allowFuzzy: resumeWindow)
+                    }
+                    let massRestore = (resumeWindow && addedTiles.count >= 2) || diskClaimsAdded
                     if massRestore {
                         logMove(
                             "tile mass-restore rematch added=\(addedTiles.count) ids=\(addedTiles.map(\.token).sorted().joined(separator: ","))"

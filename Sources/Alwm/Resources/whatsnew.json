@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "0.8.6",
+      "items": [
+        "Window manager improvements"
+      ]
+    },
+    {
       "version": "0.8.5",
       "items": [
         "Runtime support updates",

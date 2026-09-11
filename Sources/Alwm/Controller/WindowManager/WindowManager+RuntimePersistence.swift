@@ -44,37 +44,110 @@ extension WindowManager {
             runtimeState.setAssignment(wsID, for: id)
         }
 
-        // 2) Fill remaining slots from layout snapshots (multi-window Safari, etc.).
+        struct LayoutSlot {
+            let wsID: String
+            let ref: RuntimeStateStore.WindowRef
+        }
+        var slots: [LayoutSlot] = []
         for wsID in runtimeState.snapshot.workspaceLayouts.keys.sorted() {
             guard let snap = runtimeState.snapshot.workspaceLayouts[wsID],
                   workspaces.workspaces[wsID] != nil
             else { continue }
-            let refs = snap.columns.flatMap(\.windows) + snap.floating
-            for ref in refs {
-                // Layout row contradicts disk sticky for this exact token — skip (stale WS1 copy).
+            for ref in snap.columns.flatMap(\.windows) + snap.floating {
                 if let diskHome = diskStickyByToken[ref.token], diskHome != wsID {
                     logMove("rematch skip stale layout ref tok=\(ref.token) layoutWS=\(wsID) diskWS=\(diskHome)")
                     continue
                 }
-                // Already placed via disk sticky.
-                if let id = liveByToken[ref.token] ?? tokenByWindowToken[ref.token], used.contains(id) {
+                slots.append(LayoutSlot(wsID: wsID, ref: ref))
+            }
+        }
+
+        var filledSlotKeys = Set<String>()
+        func slotKey(_ slot: LayoutSlot) -> String {
+            "\(slot.wsID)|\(slot.ref.token)|\(slot.ref.bundleID ?? "")|\(Self.normalizedWindowTitle(slot.ref.title))"
+        }
+
+        func claim(_ id: WindowID, slot: LayoutSlot, reason: String) {
+            guard !used.contains(id), windowsByID[id] != nil else { return }
+            used.insert(id)
+            filledSlotKeys.insert(slotKey(slot))
+            windowWorkspace[id] = slot.wsID
+            runtimeState.setAssignment(slot.wsID, for: id)
+            logMove(
+                "rematch \(reason) ws=\(slot.wsID) tok=\(id.token) bundle=\(windowsByID[id]?.bundleID ?? "?") title=\(Self.normalizedWindowTitle(windowsByID[id]?.title ?? ""))"
+            )
+        }
+
+        func unusedPool() -> [ManagedWindow] {
+            windowsByID.values.filter { !used.contains($0.id) && ($0.isTiled || $0.isFloating) }
+        }
+
+        // 2a) Global exact title+bundle — prevents WS1 from bundle-stealing the WS5 Safari.
+        for slot in slots {
+            if filledSlotKeys.contains(slotKey(slot)) { continue }
+            if let id = liveByToken[slot.ref.token] ?? tokenByWindowToken[slot.ref.token], used.contains(id) {
+                filledSlotKeys.insert(slotKey(slot))
+                continue
+            }
+            let refTitle = Self.normalizedWindowTitle(slot.ref.title)
+            guard !refTitle.isEmpty, let bid = slot.ref.bundleID, !bid.isEmpty else { continue }
+            let hits = unusedPool().filter {
+                $0.bundleID == bid && Self.normalizedWindowTitle($0.title) == refTitle
+            }
+            if hits.count == 1, let hit = hits.first {
+                claim(hit.id, slot: slot, reason: "exact")
+            }
+        }
+
+        // 2b) Global fuzzy title+bundle when unique; never override an exact slot elsewhere.
+        for slot in slots {
+            if filledSlotKeys.contains(slotKey(slot)) { continue }
+            let refTitle = Self.normalizedWindowTitle(slot.ref.title)
+            guard !refTitle.isEmpty, let bid = slot.ref.bundleID, !bid.isEmpty else { continue }
+            let hits = unusedPool().filter {
+                $0.bundleID == bid && Self.titlesLooselyMatch(refTitle, Self.normalizedWindowTitle($0.title))
+            }
+            guard hits.count == 1, let hit = hits.first else { continue }
+            let hitTitle = Self.normalizedWindowTitle(hit.title)
+            let exactElsewhere = slots.contains { other in
+                !filledSlotKeys.contains(slotKey(other))
+                    && other.wsID != slot.wsID
+                    && other.ref.bundleID == bid
+                    && Self.normalizedWindowTitle(other.ref.title) == hitTitle
+            }
+            if exactElsewhere { continue }
+            claim(hit.id, slot: slot, reason: "fuzzy")
+        }
+
+        // 2c) Remaining slots via resolveLiveWindow (bundle fill), with exact-elsewhere guard.
+        for slot in slots {
+            if filledSlotKeys.contains(slotKey(slot)) { continue }
+            if let id = liveByToken[slot.ref.token] ?? tokenByWindowToken[slot.ref.token], used.contains(id) {
+                continue
+            }
+            guard let id = resolveLiveWindow(
+                slot.ref,
+                preferredWS: slot.wsID,
+                liveByToken: liveByToken,
+                used: used,
+                preferDiskRematch: true
+            ) else { continue }
+            if let bid = windowsByID[id]?.bundleID {
+                let liveTitle = Self.normalizedWindowTitle(windowsByID[id]?.title ?? "")
+                if !liveTitle.isEmpty,
+                   slots.contains(where: { other in
+                       !filledSlotKeys.contains(slotKey(other))
+                           && other.wsID != slot.wsID
+                           && other.ref.bundleID == bid
+                           && Self.normalizedWindowTitle(other.ref.title) == liveTitle
+                   }) {
+                    logMove(
+                        "rematch defer bundle-claim tok=\(id.token) fromWS=\(slot.wsID) title=\(liveTitle) — exact slot elsewhere"
+                    )
                     continue
                 }
-                guard let id = resolveLiveWindow(
-                    ref,
-                    preferredWS: wsID,
-                    liveByToken: liveByToken,
-                    used: used,
-                    preferDiskRematch: true
-                )
-                else { continue }
-                used.insert(id)
-                windowWorkspace[id] = wsID
-                runtimeState.setAssignment(wsID, for: id)
-                logMove(
-                    "rematch layout ws=\(wsID) tok=\(id.token) bundle=\(windowsByID[id]?.bundleID ?? "?") title=\(Self.normalizedWindowTitle(windowsByID[id]?.title ?? ""))"
-                )
             }
+            claim(id, slot: slot, reason: "layout")
         }
         syncTokenIndex()
     }
@@ -345,6 +418,31 @@ extension WindowManager {
         return nil
     }
 
+    /// True when disk still remembers this window (sticky token or layout title/bundle slot).
+    /// Used so a late AX reappear rematches to WS5 instead of snapping onto the active WS2.
+    func diskLayoutClaimsWindow(_ id: WindowID, allowFuzzy: Bool) -> Bool {
+        if runtimeState.assignment(for: id) != nil { return true }
+        if let tokenHome = runtimeState.snapshot.windowWorkspace[id.token],
+           workspaces.workspaces[tokenHome] != nil {
+            return true
+        }
+        guard let win = windowsByID[id] else { return false }
+        let liveTitle = Self.normalizedWindowTitle(win.title)
+        let bid = win.bundleID
+        for (_, snap) in runtimeState.snapshot.workspaceLayouts {
+            for ref in snap.columns.flatMap(\.windows) + snap.floating {
+                if ref.token == id.token { return true }
+                guard let bid, let refBid = ref.bundleID, refBid == bid else { continue }
+                let refTitle = Self.normalizedWindowTitle(ref.title)
+                if !refTitle.isEmpty, !liveTitle.isEmpty {
+                    if refTitle == liveTitle { return true }
+                    if allowFuzzy, Self.titlesLooselyMatch(refTitle, liveTitle) { return true }
+                }
+            }
+        }
+        return false
+    }
+
     func resolveLiveWindow(
         _ ref: RuntimeStateStore.WindowRef,
         preferredWS: String,
@@ -442,10 +540,27 @@ extension WindowManager {
         // 2) Same bundle: only when this won't starve later workspaces that also saved this app.
         // Multi-window apps (two Safaris on WS1/WS5) each take the next unused window in layout order.
         if let bid = refBundle, !bid.isEmpty {
-            let candidates = sortedByRank(pool.filter {
-                $0.bundleID == bid && (preferDiskRematch
-                    || stickyHome(for: $0.id) == nil
-                    || stickyHome(for: $0.id) == preferredWS)
+            let candidates = sortedByRank(pool.filter { win in
+                guard win.bundleID == bid else { return false }
+                guard preferDiskRematch
+                    || stickyHome(for: win.id) == nil
+                    || stickyHome(for: win.id) == preferredWS
+                else { return false }
+                // Never bundle-steal a window whose exact title is saved on another workspace.
+                if preferDiskRematch {
+                    let liveTitle = Self.normalizedWindowTitle(win.title)
+                    if !liveTitle.isEmpty {
+                        for (otherWS, snap) in runtimeState.snapshot.workspaceLayouts where otherWS != preferredWS {
+                            for otherRef in snap.columns.flatMap(\.windows) + snap.floating {
+                                guard otherRef.bundleID == bid else { continue }
+                                if Self.normalizedWindowTitle(otherRef.title) == liveTitle {
+                                    return false
+                                }
+                            }
+                        }
+                    }
+                }
+                return true
             })
             let liveLeft = candidates.count
             let slotsLeft = remainingDiskSlots(forBundle: bid)
