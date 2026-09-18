@@ -79,6 +79,11 @@ public final class DiskSampler: @unchecked Sendable {
             self.root = root
             self.topProcesses = topProcesses
         }
+
+        /// ABI shim for plugins compiled against the pre–topProcesses Snapshot.
+        public init(volumes: [Volume], root: Volume?) {
+            self.init(volumes: volumes, root: root, topProcesses: [])
+        }
     }
 
     private struct IOCounters {

@@ -531,6 +531,21 @@ if [[ "$CONFIG" == "debug" ]]; then
 fi
 echo
 
+# Keep ~/.config/alwm/PlugIns in sync with this build — otherwise a stale StatsDisk
+# (or any plugin) keeps loading after StatsKit ABI changes and dlopen fails silently.
+step "Sync user PlugIns"
+USER_PLUGINS="${HOME}/.config/alwm/plugins"
+mkdir -p "$USER_PLUGINS"
+shopt -s nullglob
+for bundle in "$ROOT"/dist/plugins/*.alwmplugin; do
+  name="$(basename "$bundle")"
+  dest="$USER_PLUGINS/$name"
+  rm -rf "$dest"
+  ditto "$bundle" "$dest" 2>/dev/null || cp -R "$bundle" "$dest"
+  codesign --force --deep --sign "$IDENTITY" --identifier "$(basename "$name" .alwmplugin)" "$dest" 2>/dev/null || true
+  echo "  synced $name"
+done
+
 if [[ "$RELAUNCH" == "1" ]]; then
   step "Relaunch"
   # Quit gracefully first; force only if still alive.

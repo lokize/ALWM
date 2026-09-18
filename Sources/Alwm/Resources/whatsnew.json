@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "0.9.6",
+      "items": [
+        "Update DiskSampler",
+        "Build and release scripts"
+      ]
+    },
+    {
       "version": "0.9.5",
       "items": [
         "Window manager improvements"
@@ -253,12 +260,6 @@
       "version": "0.5.6",
       "items": [
         "Layout engine updates"
-      ]
-    },
-    {
-      "version": "0.5.5",
-      "items": [
-        "UI updates"
       ]
     }
   ]
