@@ -174,6 +174,33 @@ stage_shared_dylib() {
   done
 }
 
+# SPM does not emit libAlwmPluginABI.dylib in release (C target is static-merged).
+# Debug plugins and user PlugIns still @rpath-link it — synthesize a stub dylib.
+ensure_abi_dylib() {
+  local name="libAlwmPluginABI.dylib"
+  local products_cfg
+  if [[ "$CONFIG" == "release" ]]; then products_cfg="Release"; else products_cfg="Debug"; fi
+  if [[ -f "$BIN_ROOT/$CONFIG/${name}" || -f "$BIN_ROOT/out/Products/${products_cfg}/${name}" ]]; then
+    return 0
+  fi
+  local src_c="$ROOT/Sources/AlwmPluginABI/AlwmPluginABI.c"
+  local include_dir="$ROOT/Sources/AlwmPluginABI/include"
+  if [[ ! -f "$src_c" ]]; then
+    echo "ERRO: $src_c ausente — não dá para gerar ${name}" >&2
+    exit 1
+  fi
+  mkdir -p "$BIN_ROOT/$CONFIG"
+  local out="$BIN_ROOT/$CONFIG/${name}"
+  echo "  Synthesizing ${name} (SPM omitiu em ${CONFIG}; stub header-only)"
+  clang -dynamiclib \
+    -o "$out" \
+    -I "$include_dir" \
+    -install_name "@rpath/${name}" \
+    -compatibility_version 1.0.0 \
+    -current_version 1.0.0 \
+    "$src_c"
+}
+
 # rpath so ALWM finds Frameworks/ (once)
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS/ALWM" 2>/dev/null || true
 
@@ -184,6 +211,7 @@ else
   exit 1
 fi
 # Split ABI dylib (AlwmShared) — missing this prevents plugins from loading.
+ensure_abi_dylib
 stage_shared_dylib "libAlwmPluginABI.dylib" 1
 stage_shared_dylib "libAlwmL10n.dylib" 1
 stage_shared_dylib "libAlwmStatsKit.dylib" 1

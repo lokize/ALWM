@@ -1,6 +1,20 @@
 {
   "releases": [
     {
+      "version": "1.0.2",
+      "items": [
+        "Update Package",
+        "Build and release scripts"
+      ]
+    },
+    {
+      "version": "1.0.1",
+      "items": [
+        "Update Package",
+        "Build and release scripts"
+      ]
+    },
+    {
       "version": "1.0.0",
       "items": [
         "Maintenance and fixes"
@@ -250,18 +264,6 @@
       "version": "0.6.3",
       "items": [
         "Window input"
-      ]
-    },
-    {
-      "version": "0.6.2",
-      "items": [
-        "Plugin orders and improves"
-      ]
-    },
-    {
-      "version": "0.6.0",
-      "items": [
-        "New stats plugins"
       ]
     }
   ]

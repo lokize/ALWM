@@ -14,6 +14,9 @@ let package = Package(
         .library(name: "AlwmPluginAPI", type: .dynamic, targets: ["AlwmPluginAPI"]),
         .library(name: "AlwmL10n", type: .dynamic, targets: ["AlwmL10n"]),
         .library(name: "AlwmStatsKit", type: .dynamic, targets: ["AlwmStatsKit"]),
+        // Header-only clang module. Do NOT set type: .dynamic — SPM cannot build a
+        // C target as both a dynamic product and a static dep of plugins/API.
+        // package.sh synthesizes libAlwmPluginABI.dylib when SPM omits it (release).
         .library(name: "AlwmPluginABI", targets: ["AlwmPluginABI"])
     ],
     targets: [
