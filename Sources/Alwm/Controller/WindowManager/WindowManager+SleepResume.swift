@@ -241,6 +241,15 @@ extension WindowManager {
 
     /// Drop sleep/wake freeze once recovery eligibility ended and we are not mid-recover.
     func clearStaleLayoutMutationFreezeIfNeeded() {
+        // Stuck isResumeRecovering after incomplete wake blocked move persist for hours
+        // (Safari/Cursor snapped back to disk WS on mass-restore — move.log).
+        if isResumeRecovering, Date() >= resumeRecoveryEligibleUntil {
+            isResumeRecovering = false
+            softPersistProtectMissingTokens = false
+            layoutMutationFrozenUntil = Date.distantPast
+            NSLog("ALWM: cleared stuck resume recovery freeze")
+            return
+        }
         guard softPersistProtectMissingTokens || Date() < layoutMutationFrozenUntil else { return }
         guard !isResumeRecovering else { return }
         // Still inside the wake eligibility window — keep protecting disk.

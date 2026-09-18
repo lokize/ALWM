@@ -20,9 +20,23 @@ extension WindowManager {
     }
 
     func rematchStickyFromSavedLayouts() {
-        // Keep disk sticky map — layout rows can be stale (Safari still listed on WS1 after a
-        // move to WS5 when persist refused to shrink WS1). Token→WS from disk wins in that case.
+        // Disk sticky can lag behind a user move when persist was blocked mid wake-recovery
+        // (Safari Instagram moved WS2→WS1, then mass-restore yanked it back — move.log).
+        // Prefer live sticky when the window still sits in that live workspace's columns.
+        let liveStickyByID = windowWorkspace
         let diskStickyByToken = runtimeState.snapshot.windowWorkspace
+        var effectiveStickyByToken = diskStickyByToken
+        for (id, liveWS) in liveStickyByID {
+            let diskWS = diskStickyByToken[id.token]
+            guard diskWS != liveWS, workspaces.workspaces[liveWS] != nil else { continue }
+            let inLiveColumn = workspaces.workspaces[liveWS]?.columns
+                .contains(where: { $0.windows.contains(id) }) == true
+            guard inLiveColumn else { continue }
+            effectiveStickyByToken[id.token] = liveWS
+            logMove(
+                "rematch prefer live sticky tok=\(id.token) live=\(liveWS) disk=\(diskWS ?? "-")"
+            )
+        }
 
         for id in windowsByID.keys {
             windowWorkspace.removeValue(forKey: id)
@@ -32,8 +46,8 @@ extension WindowManager {
         var used = Set<WindowID>()
         let liveByToken = Dictionary(uniqueKeysWithValues: windowsByID.keys.map { ($0.token, $0) })
 
-        // 1) Exact token stickies from disk first (survives stale duplicate layout rows).
-        for (token, wsID) in diskStickyByToken {
+        // 1) Exact token stickies (live-preferred) first — survives stale duplicate layout rows.
+        for (token, wsID) in effectiveStickyByToken {
             guard workspaces.workspaces[wsID] != nil,
                   let id = liveByToken[token] ?? tokenByWindowToken[token],
                   windowsByID[id] != nil,
@@ -54,8 +68,8 @@ extension WindowManager {
                   workspaces.workspaces[wsID] != nil
             else { continue }
             for ref in snap.columns.flatMap(\.windows) + snap.floating {
-                if let diskHome = diskStickyByToken[ref.token], diskHome != wsID {
-                    logMove("rematch skip stale layout ref tok=\(ref.token) layoutWS=\(wsID) diskWS=\(diskHome)")
+                if let stickyHome = effectiveStickyByToken[ref.token], stickyHome != wsID {
+                    logMove("rematch skip stale layout ref tok=\(ref.token) layoutWS=\(wsID) diskWS=\(stickyHome)")
                     continue
                 }
                 slots.append(LayoutSlot(wsID: wsID, ref: ref))
@@ -172,19 +186,25 @@ extension WindowManager {
     func persistRuntimeState(forceWorkspaceLayouts: Set<String> = []) {
         // Never flush partial/empty column maps over a good snapshot during bootstrap.
         if isBootstrapping { return }
-        // Wake recovery: AX/columns are mid-rebuild — never write layouts (even forced).
-        // Callers that must flush (sleep prepare / post-recovery) clear `isResumeRecovering` first.
-        if isResumeRecovering { return }
+        // Wake recovery: AX/columns are mid-rebuild — skip routine writes.
+        // Explicit destructive flushes (cross-workspace moves) must still rewrite disk;
+        // otherwise Safari/Cursor stick on the pre-move workspace forever (move.log).
+        let forceUserLayout = allowDestructiveLayoutFlush && !forceWorkspaceLayouts.isEmpty
+        if isResumeRecovering && !forceUserLayout { return }
 
         let savedTiles = savedTiledWindowCount()
         let liveTiles = liveTiledWindowCount()
         let layoutStillRecovering = savedTiles > 0 && liveTiles < savedTiles
 
-        if !layoutStillRecovering {
+        // Always sync stickies when the caller forced a user move flush — even if tile
+        // counts still look "recovering" (AX blip mid-move).
+        if !layoutStillRecovering || forceUserLayout {
             for (id, wsID) in windowWorkspace {
                 runtimeState.setAssignment(wsID, for: id)
             }
-            runtimeState.pruneWindows(keeping: Set(windowsByID.keys))
+            if !layoutStillRecovering {
+                runtimeState.pruneWindows(keeping: Set(windowsByID.keys))
+            }
         }
         for mon in monitors.monitors {
             if let wsID = workspaces.activeWorkspaceByMonitor[mon.id] {

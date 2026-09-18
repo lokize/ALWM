@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "0.9.3",
+      "items": [
+        "Window manager improvements"
+      ]
+    },
+    {
       "version": "0.9.2",
       "items": [
         "Localization updates",
@@ -248,14 +254,6 @@
       "version": "0.5.3",
       "items": [
         "Contributors"
-      ]
-    },
-    {
-      "version": "0.5.2",
-      "items": [
-        "Window manager improvements",
-        "Runtime support updates",
-        "UI updates"
       ]
     }
   ]

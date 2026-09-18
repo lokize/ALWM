@@ -1064,7 +1064,10 @@ extension WindowManager {
             windowFirstTrackedAt[id] = Date()
             suppressGeometryEnforce(for: 0.75)
             healStaleColumnEntries()
+            let wasDestructive = allowDestructiveLayoutFlush
+            allowDestructiveLayoutFlush = true
             persistRuntimeState(forceWorkspaceLayouts: forcePersist)
+            allowDestructiveLayoutFlush = wasDestructive
             logMove("move float live=\(id.token) → ws=\(workspaceID) sticky=\(windowWorkspace[id] ?? "?")")
             if isHomeActiveOnAnyMonitor(workspaceID) {
                 revealActiveFloats(ids: [id])
