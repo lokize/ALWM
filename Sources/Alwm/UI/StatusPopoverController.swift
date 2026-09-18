@@ -429,12 +429,12 @@ struct StatusMenuView: View {
                     if case .available = updates.phase, let latest = updates.latestVersion {
                         Text(L10n.tf("menu.update.badge", latest))
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(StatusMenuTheme.accent)
+                            .foregroundStyle(AlwmUpdateChrome.green)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(
                                 Capsule(style: .continuous)
-                                    .fill(StatusMenuTheme.accent.opacity(0.18))
+                                    .fill(AlwmUpdateChrome.green.opacity(0.18))
                             )
                     }
                 }
@@ -449,29 +449,16 @@ struct StatusMenuView: View {
     private var headerUpdateAction: some View {
         switch updates.phase {
         case .available:
-            Button {
+            AlwmUpdateButton(compact: true) {
                 updates.installUpdate()
-            } label: {
-                Label(L10n.t("about.update.button"), systemImage: "arrow.down.circle.fill")
-                    .font(.system(size: 12, weight: .semibold))
-                    .labelStyle(.titleAndIcon)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-            .tint(StatusMenuTheme.accent)
         case .downloading, .installing:
             ProgressView()
                 .controlSize(.small)
         case .failed(_) where updates.isUpdateAvailable:
-            Button {
+            AlwmUpdateButton(compact: true) {
                 updates.installUpdate()
-            } label: {
-                Label(L10n.t("about.update.button"), systemImage: "arrow.down.circle.fill")
-                    .font(.system(size: 12, weight: .semibold))
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-            .tint(StatusMenuTheme.accent)
         default:
             EmptyView()
         }
@@ -499,12 +486,9 @@ struct StatusMenuView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     if updates.isUpdateAvailable {
-                        Button(L10n.t("about.update.button")) {
+                        AlwmUpdateButton(compact: true) {
                             updates.installUpdate()
                         }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                        .tint(StatusMenuTheme.accent)
                     }
                 }
             }

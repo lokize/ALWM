@@ -254,12 +254,9 @@ extension SettingsRootView {
             VStack(alignment: .leading, spacing: 10) {
                 Text(L10n.tf("about.update.available", updates.latestVersion ?? ""))
                     .foregroundStyle(.primary)
-                Button {
+                AlwmUpdateButton {
                     updates.installUpdate()
-                } label: {
-                    Label(L10n.t("about.update.button"), systemImage: "arrow.down.circle.fill")
                 }
-                .buttonStyle(.borderedProminent)
             }
         case .downloading:
             HStack {
@@ -285,10 +282,9 @@ extension SettingsRootView {
                         updates.checkForUpdates(force: true)
                     }
                     if updates.isUpdateAvailable {
-                        Button(L10n.t("about.update.button")) {
+                        AlwmUpdateButton {
                             updates.installUpdate()
                         }
-                        .buttonStyle(.borderedProminent)
                     }
                 }
             }

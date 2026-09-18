@@ -1,6 +1,20 @@
 {
   "releases": [
     {
+      "version": "0.9.8",
+      "items": [
+        "Settings UI updates",
+        "UI updates"
+      ]
+    },
+    {
+      "version": "0.9.7",
+      "items": [
+        "Settings UI updates",
+        "UI updates"
+      ]
+    },
+    {
       "version": "0.9.6",
       "items": [
         "Update DiskSampler",
@@ -248,18 +262,6 @@
       "version": "0.5.8",
       "items": [
         "Readme update"
-      ]
-    },
-    {
-      "version": "0.5.7",
-      "items": [
-        "Improves terminal and notepad"
-      ]
-    },
-    {
-      "version": "0.5.6",
-      "items": [
-        "Layout engine updates"
       ]
     }
   ]
