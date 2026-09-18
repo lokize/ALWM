@@ -146,6 +146,15 @@ stage_shared_dylib() {
   if [[ -z "${src:-}" || ! -f "$src" ]]; then
     src="$BIN_ROOT/$CONFIG/${name}"
   fi
+  # AlwmShared products may land under .build/out/Products/{Debug,Release}/
+  if [[ ! -f "$src" ]]; then
+    local products_cfg
+    if [[ "$CONFIG" == "release" ]]; then products_cfg="Release"; else products_cfg="Debug"; fi
+    src="$BIN_ROOT/out/Products/${products_cfg}/${name}"
+  fi
+  if [[ ! -f "$src" ]]; then
+    src="$(find "$BIN_ROOT" -name "${name}" -type f 2>/dev/null | head -1)"
+  fi
   if [[ ! -f "$src" ]]; then
     echo "AVISO: shared dylib ausente: ${name}" >&2
     return 0
@@ -159,17 +168,16 @@ stage_shared_dylib() {
   echo "  Framework: ${name}"
 }
 
+# rpath so ALWM finds Frameworks/ (once)
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS/ALWM" 2>/dev/null || true
+
 if [[ -f "$API_DYLIB" ]]; then
-  cp -f "$API_DYLIB" "$FRAMEWORKS/libAlwmPluginAPI.dylib"
-  install_name_tool -id "@rpath/libAlwmPluginAPI.dylib" "$FRAMEWORKS/libAlwmPluginAPI.dylib" 2>/dev/null || true
-  # rpath so ALWM finds Frameworks/
-  install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS/ALWM" 2>/dev/null || true
-  # Rewrite SPM absolute/.build dylib path
-  otool -L "$MACOS/ALWM" | awk '/libAlwmPluginAPI\.dylib/ {print $1}' | while read -r old; do
-    [[ "$old" == *"libAlwmPluginAPI.dylib"* ]] || continue
-    install_name_tool -change "$old" "@rpath/libAlwmPluginAPI.dylib" "$MACOS/ALWM" 2>/dev/null || true
-  done
+  stage_shared_dylib "libAlwmPluginAPI.dylib"
+else
+  echo "AVISO: libAlwmPluginAPI.dylib ausente" >&2
 fi
+# Split ABI dylib (AlwmShared) — missing this prevents the app from launching.
+stage_shared_dylib "libAlwmPluginABI.dylib"
 stage_shared_dylib "libAlwmL10n.dylib"
 stage_shared_dylib "libAlwmStatsKit.dylib"
 
@@ -240,7 +248,7 @@ PLIST
   # Bundled: relative to Contents/PlugIns. User-installed: resolve via host Frameworks.
   install_name_tool -add_rpath "@loader_path/../../../Frameworks" "$macos_dir/${bundle_name}" 2>/dev/null || true
   install_name_tool -add_rpath "@executable_path/../Frameworks" "$macos_dir/${bundle_name}" 2>/dev/null || true
-  for shared in libAlwmPluginAPI.dylib libAlwmL10n.dylib libAlwmStatsKit.dylib; do
+  for shared in libAlwmPluginAPI.dylib libAlwmPluginABI.dylib libAlwmL10n.dylib libAlwmStatsKit.dylib; do
     otool -L "$macos_dir/${bundle_name}" | awk -v n="$shared" 'index($1, n) {print $1}' | while read -r old; do
       install_name_tool -change "$old" "@rpath/${shared}" "$macos_dir/${bundle_name}" 2>/dev/null || true
     done
