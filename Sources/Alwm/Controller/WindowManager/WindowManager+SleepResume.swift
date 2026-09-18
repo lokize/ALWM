@@ -191,8 +191,12 @@ extension WindowManager {
         // AX finished dropping windows, so rebalance persisted 1-column layouts to disk.
         allowDestructiveLayoutFlush = false
         softPersistProtectMissingTokens = true
-        // Freeze only until wake recovery finishes — a multi-hour freeze blocked all new-window snaps.
-        layoutMutationFrozenUntil = Date.distantPast
+        // Must keep eligibility in the future — otherwise clearStaleLayoutMutationFreezeIfNeeded
+        // wipes softPersist on the next isLayoutMutationFrozen check (eligible was distantPast),
+        // ingest treats the AX mass-drop as red-X closes, and quit-last-window kills Discord /
+        // WhatsApp / Safari (move.log 2026-09-18T15:53:33Z).
+        resumeRecoveryEligibleUntil = Date().addingTimeInterval(24 * 60 * 60)
+        layoutMutationFrozenUntil = Date().addingTimeInterval(24 * 60 * 60)
         // Capture fingerprint while memory still looks good (before any soft write).
         if liveTiledWindowCount() > 0 {
             preSleepLayoutFingerprint = layoutContentFingerprint()

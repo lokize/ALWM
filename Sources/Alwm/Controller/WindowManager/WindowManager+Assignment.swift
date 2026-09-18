@@ -641,6 +641,11 @@ extension WindowManager {
         if windowsByID.values.contains(where: { $0.id.pid == pid && $0.isScratchpad }) { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
             guard let self else { return }
+            // Sleep/wake can arm this then freeze mid-flight — never terminate on AX blips.
+            guard !self.isBootstrapping, !self.isResumeRecovering, !self.isLayoutMutationFrozen else {
+                self.logMove("quit skip frozen pid=\(pid) bundle=\(bundleID ?? "?")")
+                return
+            }
             self.ax.scanAll()
             // Soft-missing ghosts stay in windowsByID briefly — only live AX windows count.
             let liveSamePid = self.ax.currentWindows.contains {

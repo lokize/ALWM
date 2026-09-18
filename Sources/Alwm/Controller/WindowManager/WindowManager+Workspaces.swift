@@ -1616,6 +1616,11 @@ extension WindowManager {
         refreshChrome()
 
         if homeWasActive || wasInColumns {
+            // AX destroy storms during sleep must not quit apps (Discord/WhatsApp — move.log).
+            guard !isLayoutMutationFrozen, !isResumeRecovering else {
+                logMove("quit skip ax-destroy frozen pid=\(pid) bundle=\(bundleID ?? "?")")
+                return
+            }
             scheduleQuitIfLastLayoutWindowClosed(pid: pid, bundleID: bundleID, homeWasActive: true)
         }
     }

@@ -192,10 +192,12 @@ extension WindowManager {
             let home = windowWorkspace[id] ?? workspaces.workspaceID(containing: id)
             let homeWasActive = home.map { isHomeActiveOnAnyMonitor($0) } ?? false
             // User clicked the red X on an active workspace — forget quickly (not a park blip).
+            // Never treat sleep/wake AX mass-drop as red-X (that quit Discord/WhatsApp — move.log).
             let closedOnActive = homeWasActive
                 && workspaces.workspaceID(containing: id) != nil
                 && !isApplyingVisibility
                 && !isResumeRecovering
+                && !isLayoutMutationFrozen
             let threshold = (id == quake.windowID) ? 20
                 : (isFloatGhost ? 2 : (closedOnActive ? 2 : 4))
             let count = (missingScanCounts[id] ?? 0) + 1
@@ -287,15 +289,23 @@ extension WindowManager {
         }
         windowsByID = merged
         syncTokenIndex()
-        if !isBootstrapping, !isResumeRecovering, !lastWindowQuitPIDs.isEmpty {
+        if !isBootstrapping, !isResumeRecovering, !isLayoutMutationFrozen, !lastWindowQuitPIDs.isEmpty {
             var seen = Set<pid_t>()
-            for item in lastWindowQuitPIDs where seen.insert(item.pid).inserted {
-                if added.contains(where: { $0.pid == item.pid }) { continue }
-                scheduleQuitIfLastLayoutWindowClosed(
-                    pid: item.pid,
-                    bundleID: item.bundleID,
-                    homeWasActive: item.homeWasActive
+            let unique = lastWindowQuitPIDs.filter { seen.insert($0.pid).inserted }
+            // Sleep AX mass-drop arms quit for every tiled app at once — never flock-terminate.
+            if unique.count >= 2 || strippedLayouts.count >= 2 {
+                logMove(
+                    "quit skip mass-drop pids=\(unique.count) stripped=\(strippedLayouts.sorted().joined(separator: ","))"
                 )
+            } else {
+                for item in unique {
+                    if added.contains(where: { $0.pid == item.pid }) { continue }
+                    scheduleQuitIfLastLayoutWindowClosed(
+                        pid: item.pid,
+                        bundleID: item.bundleID,
+                        homeWasActive: item.homeWasActive
+                    )
+                }
             }
         }
         if !added.isEmpty, !isBootstrapping {
