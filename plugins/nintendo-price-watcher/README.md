@@ -8,7 +8,7 @@ Enable in **Settings → Plugins**, click the chip to open the panel. Search Swi
 
 Data: `~/.config/alwm/plugins/dev.alwm.nintendo-price-watcher.json`
 
-Prices and search scrape public Deku Deals pages (unofficial; may break if their HTML changes).
+Prices and search scrape public Deku Deals pages (unofficial; may break if their HTML changes). Search expands each hit with **Included In** editions (Deluxe / Special / Complete) so eShop version branches appear alongside the base SKU.
 
 ## License
 

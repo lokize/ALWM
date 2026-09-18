@@ -163,21 +163,81 @@ enum DekuDealsAPI {
 
     static func searchWithPrices(query: String, country: String, limit: Int = 5) async throws -> [NintendoSearchHit] {
         let baseHits = try await search(query: query)
-        // Prefer prices already on search cards (same session country). Only hit item
-        // pages when the card has no price — fewer Cloudflare challenges.
+        // Prefer prices already on search cards (same session country). Still fetch the
+        // item page so we can expand "Included In" editions (Deluxe / Special) — Deku
+        // search often returns only the base SKU (eShop version selector siblings).
         var out: [NintendoSearchHit] = []
+        var seen = Set<String>()
         for hit in baseHits.prefix(limit) {
             var enriched = hit
-            if enriched.price == nil {
-                try? await Task.sleep(nanoseconds: 350_000_000)
+            if seen.insert(enriched.slug).inserted == false { continue }
+
+            try? await Task.sleep(nanoseconds: 280_000_000)
+            let html = try? await fetchItemHTML(slug: hit.slug)
+            if let html {
+                if enriched.price == nil,
+                   let detail = priceFromItemHTML(html, country: country) {
+                    enriched.price = detail.price
+                    if enriched.imageURL == nil { enriched.imageURL = detail.imageURL }
+                }
+                if let title = parseTitle(html), !title.isEmpty {
+                    enriched.name = title
+                }
+            } else if enriched.price == nil {
                 if let detail = try? await fetchPrice(slug: hit.slug, country: country) {
                     enriched.price = detail.price
                     if enriched.imageURL == nil { enriched.imageURL = detail.imageURL }
                 }
             }
             out.append(enriched)
+
+            let editions = html.map(parseIncludedInEditions) ?? []
+            for edition in editions where seen.insert(edition.slug).inserted {
+                var ed = edition
+                if ed.price == nil, let html,
+                   let detail = priceFromItemHTML(html, country: country) {
+                    // Unlikely — edition price is usually on the related card.
+                    _ = detail
+                }
+                if ed.price == nil {
+                    try? await Task.sleep(nanoseconds: 250_000_000)
+                    if let detail = try? await fetchPrice(slug: ed.slug, country: country) {
+                        ed.price = detail.price
+                        if ed.imageURL == nil { ed.imageURL = detail.imageURL }
+                    }
+                }
+                out.append(ed)
+            }
         }
         return out
+    }
+
+    /// Editions/bundles that include this game (eShop "select a version" siblings).
+    static func fetchIncludedEditions(slug: String) async throws -> [NintendoSearchHit] {
+        let html = try await fetchItemHTML(slug: slug)
+        return parseIncludedInEditions(html)
+    }
+
+    private static func fetchItemHTML(slug: String) async throws -> String {
+        try await warmUpIfNeeded()
+        return try await fetchHTML(itemURL(slug: slug), referer: base + "/search")
+    }
+
+    private static func priceFromItemHTML(_ html: String, country: String) -> (
+        price: Double, discount: Int?, imageURL: String?, name: String?
+    )? {
+        if let fromAnalytics = parseEshopAnalytics(html: html, country: country) {
+            return (
+                fromAnalytics.price,
+                fromAnalytics.discountPercent,
+                parseImageURL(html),
+                parseTitle(html)
+            )
+        }
+        if let offer = parseAggregateOffer(html) {
+            return (offer.price, nil, parseImageURL(html), parseTitle(html))
+        }
+        return nil
     }
 
     static func fetchPrice(slug: String, country: String) async throws -> (
@@ -305,6 +365,82 @@ enum DekuDealsAPI {
                 hits.append(NintendoSearchHit(slug: slug, name: name, price: nil, imageURL: nil))
                 if hits.count >= 12 { stop.pointee = true }
             }
+        }
+        return hits
+    }
+
+    /// Parse Deku "Included In" (Deluxe / Special editions that contain the base SKU).
+    private static func parseIncludedInEditions(_ html: String) -> [NintendoSearchHit] {
+        guard let sectionStart = html.range(of: "id='included-inCollapse'")
+            ?? html.range(of: #"id="included-inCollapse""#)
+            ?? html.range(of: "id='included-in'")
+        else { return [] }
+        let after = html[sectionStart.upperBound...]
+        // Cut before the next major section — avoid fragile `</div>\n<hr>` (whitespace varies).
+        let endMarkers = ["Other users also liked", "<h3>Other users"]
+        var sectionEnd = after.endIndex
+        for marker in endMarkers {
+            if let r = after.range(of: marker) {
+                sectionEnd = min(sectionEnd, r.lowerBound)
+            }
+        }
+        let maxLen = 12_000
+        if after.distance(from: after.startIndex, to: sectionEnd) > maxLen {
+            sectionEnd = after.index(after.startIndex, offsetBy: maxLen)
+        }
+        let section = String(after[..<sectionEnd])
+        var hits: [NintendoSearchHit] = []
+
+        // Prefer img + link + price; fall back to link-only if CDN markup differs.
+        let patterns = [
+            #"(?s)<div class='related-item'>.*?(?:src='(https://cdn\.dekudeals\.com/images/[^']+)'[^>]*>).*?<a class='main-link' href='/items/([^']+)'>\s*(.*?)\s*</a>.*?<div class='price'>\s*(.*?)\s*</div>"#,
+            #"(?s)<a class='main-link' href='/items/([^']+)'>\s*(.*?)\s*</a>\s*</div>\s*<div class='price'>\s*(.*?)\s*</div>"#
+        ]
+        for (idx, pattern) in patterns.enumerated() {
+            let regex = try? NSRegularExpression(pattern: pattern, options: [])
+            let range = NSRange(section.startIndex..<section.endIndex, in: section)
+            regex?.enumerateMatches(in: section, options: [], range: range) { match, _, stop in
+                guard let match else { return }
+                let slug: String
+                let name: String
+                let priceHTML: String
+                var img: String?
+                if idx == 0 {
+                    guard match.numberOfRanges >= 5,
+                          let imgR = Range(match.range(at: 1), in: section),
+                          let slugR = Range(match.range(at: 2), in: section),
+                          let nameR = Range(match.range(at: 3), in: section),
+                          let priceR = Range(match.range(at: 4), in: section)
+                    else { return }
+                    img = normalizeCoverURL(String(section[imgR]))
+                    slug = String(section[slugR]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    name = decodeHTML(stripTags(String(section[nameR])))
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    priceHTML = String(section[priceR])
+                } else {
+                    guard match.numberOfRanges >= 4,
+                          let slugR = Range(match.range(at: 1), in: section),
+                          let nameR = Range(match.range(at: 2), in: section),
+                          let priceR = Range(match.range(at: 3), in: section)
+                    else { return }
+                    slug = String(section[slugR]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    name = decodeHTML(stripTags(String(section[nameR])))
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    priceHTML = String(section[priceR])
+                }
+                guard !slug.isEmpty, !name.isEmpty else { return }
+                let price: Double? = {
+                    if let strong = firstCapture(priceHTML, pattern: #"<strong>(.*?)</strong>"#) {
+                        return parseMoney(stripTags(strong))
+                    }
+                    return parseMoney(stripTags(priceHTML))
+                }()
+                if !hits.contains(where: { $0.slug == slug }) {
+                    hits.append(NintendoSearchHit(slug: slug, name: name, price: price, imageURL: img))
+                }
+                if hits.count >= 10 { stop.pointee = true }
+            }
+            if !hits.isEmpty { break }
         }
         return hits
     }

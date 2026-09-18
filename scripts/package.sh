@@ -141,31 +141,33 @@ fi
 
 stage_shared_dylib() {
   local name="$1"   # e.g. libAlwmStatsKit.dylib
-  local src
-  src="$(find "$BIN_ROOT" -path "*/$CONFIG/${name}" -type f 2>/dev/null | head -1)"
-  if [[ -z "${src:-}" || ! -f "$src" ]]; then
+  local src=""
+  # Prefer stable .build/{debug,release}/ symlink — find|head-1 can pick a stale
+  # .build/arm64-… copy and ship frameworks without recent symbols.
+  if [[ -f "$BIN_ROOT/$CONFIG/${name}" ]]; then
     src="$BIN_ROOT/$CONFIG/${name}"
-  fi
-  # AlwmShared products may land under .build/out/Products/{Debug,Release}/
-  if [[ ! -f "$src" ]]; then
+  else
     local products_cfg
     if [[ "$CONFIG" == "release" ]]; then products_cfg="Release"; else products_cfg="Debug"; fi
-    src="$BIN_ROOT/out/Products/${products_cfg}/${name}"
+    if [[ -f "$BIN_ROOT/out/Products/${products_cfg}/${name}" ]]; then
+      src="$BIN_ROOT/out/Products/${products_cfg}/${name}"
+    fi
   fi
-  if [[ ! -f "$src" ]]; then
-    src="$(find "$BIN_ROOT" -name "${name}" -type f 2>/dev/null | head -1)"
+  if [[ -z "${src:-}" || ! -f "$src" ]]; then
+    src="$(find "$BIN_ROOT" -name "${name}" -type f -print0 2>/dev/null \
+      | xargs -0 ls -t 2>/dev/null | head -1 || true)"
   fi
-  if [[ ! -f "$src" ]]; then
+  if [[ -z "${src:-}" || ! -f "$src" ]]; then
     echo "AVISO: shared dylib ausente: ${name}" >&2
     return 0
   fi
+  echo "  Framework: ${name}  (${src#"$BIN_ROOT"/})"
   cp -f "$src" "$FRAMEWORKS/${name}"
   install_name_tool -id "@rpath/${name}" "$FRAMEWORKS/${name}" 2>/dev/null || true
   # Host binary may link these too.
   otool -L "$MACOS/ALWM" | awk -v n="$name" 'index($1, n) {print $1}' | while read -r old; do
     install_name_tool -change "$old" "@rpath/${name}" "$MACOS/ALWM" 2>/dev/null || true
   done
-  echo "  Framework: ${name}"
 }
 
 # rpath so ALWM finds Frameworks/ (once)
@@ -188,15 +190,24 @@ package_plugin() {
   local bundle_name="$3"
   local plugin_id="$4"
 
-  local dylib
-  dylib="$(find "$BIN_ROOT" -path "*/$CONFIG/${product_dylib_name}" -type f 2>/dev/null | head -1)"
-  if [[ -z "${dylib:-}" || ! -f "$dylib" ]]; then
+  local dylib=""
+  # Prefer the stable SPM/Xcode product symlink (.build/debug|release/…), then newest match.
+  # `find | head -1` used to pick a stale .build/arm64-…/debug copy and ship old plugins.
+  if [[ -f "$BIN_ROOT/$CONFIG/${product_dylib_name}" ]]; then
     dylib="$BIN_ROOT/$CONFIG/${product_dylib_name}"
+  elif [[ -f "$BIN_ROOT/out/Products/$CONFIG/${product_dylib_name}" ]]; then
+    dylib="$BIN_ROOT/out/Products/$CONFIG/${product_dylib_name}"
+  elif [[ -f "$BIN_ROOT/out/Products/Debug/${product_dylib_name}" && "$CONFIG" == "debug" ]]; then
+    dylib="$BIN_ROOT/out/Products/Debug/${product_dylib_name}"
+  else
+    dylib="$(find "$BIN_ROOT" -name "${product_dylib_name}" -type f -print0 2>/dev/null \
+      | xargs -0 ls -t 2>/dev/null | head -1 || true)"
   fi
-  if [[ ! -f "$dylib" ]]; then
+  if [[ -z "${dylib:-}" || ! -f "$dylib" ]]; then
     echo "AVISO: plugin dylib ausente: ${product_dylib_name}" >&2
     return 0
   fi
+  echo "  dylib: ${dylib#"$BIN_ROOT"/}"
 
   local bundle="$DIST_PLUGINS/${bundle_name}.alwmplugin"
   local macos_dir="$bundle/Contents/MacOS"

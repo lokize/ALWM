@@ -38,6 +38,10 @@ enum NintendoPanelController {
         win.level = .floating
         win.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         win.minSize = NSSize(width: 380, height: 460)
+        if let panel = win as? NSPanel {
+            panel.becomesKeyOnlyIfNeeded = false
+            panel.isFloatingPanel = true
+        }
 
         if let view, let screen = view.window?.screen ?? NSScreen.main {
             let rect = view.window?.convertToScreen(view.convert(view.bounds, to: nil))
@@ -161,9 +165,12 @@ struct NintendoPanelView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(t("plugin.nintendo.search.title")).font(.subheadline.weight(.semibold))
             HStack {
-                TextField(t("plugin.nintendo.search.placeholder"), text: $query)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit { Task { await runSearch() } }
+                PluginPasteableTextField(
+                    placeholder: t("plugin.nintendo.search.placeholder"),
+                    text: $query,
+                    onSubmit: { Task { await runSearch() } }
+                )
+                .frame(minHeight: 22)
                 Button(t("plugin.nintendo.search.button")) { Task { await runSearch() } }
                     .disabled(searching || query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
@@ -367,7 +374,8 @@ struct NintendoPanelView: View {
         do {
             results = try await DekuDealsAPI.searchWithPrices(
                 query: query,
-                country: store.settings.country
+                country: store.settings.country,
+                limit: 6
             )
             store.setError(nil)
         } catch {

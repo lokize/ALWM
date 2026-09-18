@@ -38,6 +38,10 @@ enum SteamPanelController {
         win.level = .floating
         win.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         win.minSize = NSSize(width: 380, height: 460)
+        if let panel = win as? NSPanel {
+            panel.becomesKeyOnlyIfNeeded = false
+            panel.isFloatingPanel = true
+        }
 
         if let view, let screen = view.window?.screen ?? NSScreen.main {
             let rect = view.window?.convertToScreen(view.convert(view.bounds, to: nil))
@@ -177,9 +181,12 @@ struct SteamPanelView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(t("plugin.steam.search.title")).font(.subheadline.weight(.semibold))
             HStack {
-                TextField(t("plugin.steam.search.placeholder"), text: $query)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit { Task { await runSearch() } }
+                PluginPasteableTextField(
+                    placeholder: t("plugin.steam.search.placeholder"),
+                    text: $query,
+                    onSubmit: { Task { await runSearch() } }
+                )
+                .frame(minHeight: 22)
                 Button(t("plugin.steam.search.button")) { Task { await runSearch() } }
                     .disabled(searching || query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
