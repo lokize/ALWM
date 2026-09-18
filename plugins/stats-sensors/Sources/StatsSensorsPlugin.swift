@@ -80,7 +80,9 @@ public final class StatsSensorsPlugin: AlwmPlugin {
             return "sens:absent:\(PluginL10n.currentCode)"
         }
         let chip = Int((store.snapshot.primaryCelsius ?? 0).rounded())
-        return "sens:\(chip):\(PluginL10n.currentCode)"
+        let gpu = store.snapshot.gpuCelsius.map { Int($0.rounded()) } ?? -1
+        let alert = store.alerts.enabled ? Int(store.alerts.cpuThresholdCelsius) : 0
+        return "sens:\(chip):\(gpu):\(alert):\(PluginL10n.currentCode)"
     }
 }
 

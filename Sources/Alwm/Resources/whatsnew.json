@@ -1,6 +1,20 @@
 {
   "releases": [
     {
+      "version": "0.9.2",
+      "items": [
+        "Localization updates",
+        "Update SensorsSampler",
+        "Plugins: stats-sensors/README.md",
+        "Plugins: stats-sensors/Sources/SensorsPanel.swift",
+        "Plugins: stats-sensors/Sources/SensorsStore.swift",
+        "Plugins: stats-sensors/Sources/StatsSensorsPlugin.swift",
+        "Plugins: stats-sensors/l10n/en.md",
+        "Plugins: stats-sensors/l10n/pt-BR.md",
+        "Build and release scripts"
+      ]
+    },
+    {
       "version": "0.9.1",
       "items": [
         "Nintendo Price Watcher plugin updates",
@@ -242,12 +256,6 @@
         "Window manager improvements",
         "Runtime support updates",
         "UI updates"
-      ]
-    },
-    {
-      "version": "0.5.1",
-      "items": [
-        "Runtime support updates"
       ]
     }
   ]

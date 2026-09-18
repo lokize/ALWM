@@ -28,7 +28,7 @@ enum SensorsPanelController {
             .pluginLocalized()
         let hosting = NSHostingController(rootView: root)
         let width: CGFloat = 300
-        let height: CGFloat = 560
+        let height: CGFloat = 620
         let win = window ?? NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: width, height: height),
             styleMask: [.borderless, .nonactivatingPanel, .utilityWindow],
@@ -95,27 +95,8 @@ struct SensorsPanelView: View {
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 12)
                 } else {
-                    if let primary = snap.primaryCelsius {
-                        HStack {
-                            StatsRingGauge(
-                                value: ringFraction(primary),
-                                label: StatsFormat.temperature(primary, useFahrenheit: store.useFahrenheit),
-                                color: tempColor(primary)
-                            )
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(t("plugin.sensors.primary"))
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                                Text(StatsFormat.temperature(primary, useFahrenheit: store.useFahrenheit))
-                                    .font(.system(size: 20, weight: .semibold).monospacedDigit())
-                                Text("\(snap.readings.count) \(t("plugin.sensors.count"))")
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer(minLength: 0)
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
+                    summaryBlock
+                    alertsBlock
 
                     StatsSectionHeader(t("plugin.sensors.section.temperature"))
                     ForEach(Array(snap.grouped.enumerated()), id: \.offset) { _, pair in
@@ -150,6 +131,110 @@ struct SensorsPanelView: View {
         .padding(2)
     }
 
+    @ViewBuilder
+    private var summaryBlock: some View {
+        if let primary = snap.primaryCelsius {
+            HStack(alignment: .top, spacing: 12) {
+                StatsRingGauge(
+                    value: ringFraction(primary),
+                    label: StatsFormat.temperature(primary, useFahrenheit: store.useFahrenheit),
+                    color: tempColor(primary)
+                )
+                VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(t("plugin.sensors.primary"))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                        Text(StatsFormat.temperature(primary, useFahrenheit: store.useFahrenheit))
+                            .font(.system(size: 18, weight: .semibold).monospacedDigit())
+                    }
+                    HStack(spacing: 6) {
+                        Text(t("plugin.sensors.group.gpu"))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                        if let gpu = snap.gpuCelsius {
+                            Text(StatsFormat.temperature(gpu, useFahrenheit: store.useFahrenheit))
+                                .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                                .foregroundStyle(tempColor(gpu))
+                        } else {
+                            Text(t("plugin.sensors.gpu.unavailable"))
+                                .font(.system(size: 11))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    Text("\(snap.readings.count) \(t("plugin.sensors.count"))")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    private var alertsBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            StatsSectionHeader(t("plugin.sensors.section.alerts"))
+            Toggle(isOn: Binding(
+                get: { store.alerts.enabled },
+                set: { store.setAlertsEnabled($0) }
+            )) {
+                Text(t("plugin.sensors.alerts.enabled"))
+                    .font(.system(size: 12))
+            }
+            .toggleStyle(.switch)
+            .controlSize(.small)
+
+            if store.alerts.enabled {
+                thresholdRow(
+                    title: t("plugin.sensors.alerts.cpu"),
+                    value: store.alerts.cpuThresholdCelsius,
+                    onChange: { store.setCPUThreshold($0) }
+                )
+                thresholdRow(
+                    title: t("plugin.sensors.alerts.gpu"),
+                    value: store.alerts.gpuThresholdCelsius,
+                    onChange: { store.setGPUThreshold($0) },
+                    disabled: snap.gpuCelsius == nil
+                )
+                Text(t("plugin.sensors.alerts.help"))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func thresholdRow(
+        title: String,
+        value: Double,
+        onChange: @escaping (Double) -> Void,
+        disabled: Bool = false
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(title)
+                    .font(.system(size: 11))
+                    .foregroundStyle(disabled ? .tertiary : .secondary)
+                Spacer()
+                Text(StatsFormat.temperature(value, useFahrenheit: store.useFahrenheit))
+                    .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(disabled ? .tertiary : .primary)
+            }
+            Slider(
+                value: Binding(
+                    get: { value },
+                    set: { onChange($0) }
+                ),
+                in: 50...105,
+                step: 1
+            )
+            .disabled(disabled)
+            .controlSize(.small)
+        }
+        .opacity(disabled ? 0.55 : 1)
+    }
+
     private func groupTitle(_ group: SensorsSampler.Group) -> String {
         switch group {
         case .cpu: return t("plugin.sensors.group.cpu")
@@ -164,7 +249,6 @@ struct SensorsPanelView: View {
     }
 
     private func ringFraction(_ celsius: Double) -> Double {
-        // Map ~20…95 °C into a soft ring.
         min(max((celsius - 20) / 75.0, 0), 1)
     }
 

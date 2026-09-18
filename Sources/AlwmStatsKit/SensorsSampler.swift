@@ -52,11 +52,19 @@ public final class SensorsSampler: @unchecked Sendable {
         public var readings: [Reading]
         /// Representative chip value — hottest CPU die, else hottest valid reading.
         public var primaryCelsius: Double?
+        /// Hottest GPU-side die when HID exposes GPU / PMU2 sensors.
+        public var gpuCelsius: Double?
 
-        public init(present: Bool = false, readings: [Reading] = [], primaryCelsius: Double? = nil) {
+        public init(
+            present: Bool = false,
+            readings: [Reading] = [],
+            primaryCelsius: Double? = nil,
+            gpuCelsius: Double? = nil
+        ) {
             self.present = present
             self.readings = readings
             self.primaryCelsius = primaryCelsius
+            self.gpuCelsius = gpuCelsius
         }
 
         public var grouped: [(Group, [Reading])] {
@@ -71,25 +79,47 @@ public final class SensorsSampler: @unchecked Sendable {
     public init() {}
 
     public func sample() -> Snapshot {
-        guard let client = IOHIDEventSystemClientCreate(kCFAllocatorDefault) else {
-            return Snapshot(present: false)
+        var readings: [Reading] = []
+        // Apple Vendor temperature (0xff00/5) + Apple Vendor Temperature Sensor page (0xff05/5).
+        for matching in [
+            ["PrimaryUsagePage": 0xff00, "PrimaryUsage": 5],
+            ["PrimaryUsagePage": 0xff05, "PrimaryUsage": 5]
+        ] as [[String: Any]] {
+            readings.append(contentsOf: sampleHID(matching: matching))
         }
-        // Create returns +1.
+
+        var seen = Set<String>()
+        readings = readings.filter { r in
+            let key = "\(r.group.rawValue)|\(r.name)|\(Int(r.celsius.rounded()))"
+            if seen.contains(key) { return false }
+            seen.insert(key)
+            return true
+        }
+
+        let cpuMax = readings.filter { $0.group == .cpu }.map(\.celsius).max()
+        let gpuMax = readings.filter { $0.group == .gpu }.map(\.celsius).max()
+        let anyMax = readings.map(\.celsius).max()
+        return Snapshot(
+            present: !readings.isEmpty,
+            readings: readings,
+            primaryCelsius: cpuMax ?? anyMax,
+            gpuCelsius: gpuMax
+        )
+    }
+
+    private func sampleHID(matching: [String: Any]) -> [Reading] {
+        guard let client = IOHIDEventSystemClientCreate(kCFAllocatorDefault) else {
+            return []
+        }
         defer { Unmanaged<CFTypeRef>.fromOpaque(client).release() }
 
-        let matching: [String: Any] = [
-            "PrimaryUsagePage": 0xff00,
-            "PrimaryUsage": 5
-        ]
         IOHIDEventSystemClientSetMatching(client, matching as CFDictionary)
 
         guard let cfServices = IOHIDEventSystemClientCopyServices(client)?.takeRetainedValue() else {
-            return Snapshot(present: false)
+            return []
         }
         let services = cfServices as [AnyObject]
-        guard !services.isEmpty else {
-            return Snapshot(present: false)
-        }
+        guard !services.isEmpty else { return [] }
 
         var readings: [Reading] = []
         readings.reserveCapacity(services.count)
@@ -99,7 +129,6 @@ public final class SensorsSampler: @unchecked Sendable {
             let product = copyStringProperty(service, "Product") ?? "Sensor \(index + 1)"
             let location = copyNumberProperty(service, "LocationID").map { String($0) } ?? "\(index)"
 
-            // CopyEvent returns +1 — takeRetainedValue hands ownership to ARC (do NOT manual release).
             guard let event = IOHIDServiceClientCopyEvent(service, kIOHIDEventTypeTemperature, 0, 0)?
                 .takeRetainedValue()
             else {
@@ -117,22 +146,7 @@ public final class SensorsSampler: @unchecked Sendable {
                 )
             )
         }
-
-        var seen = Set<String>()
-        readings = readings.filter { r in
-            let key = "\(r.group.rawValue)|\(r.name)|\(Int(r.celsius.rounded()))"
-            if seen.contains(key) { return false }
-            seen.insert(key)
-            return true
-        }
-
-        let cpuMax = readings.filter { $0.group == .cpu }.map(\.celsius).max()
-        let anyMax = readings.map(\.celsius).max()
-        return Snapshot(
-            present: !readings.isEmpty,
-            readings: readings,
-            primaryCelsius: cpuMax ?? anyMax
-        )
+        return readings
     }
 
     private static func classify(_ product: String) -> Group {
@@ -141,9 +155,16 @@ public final class SensorsSampler: @unchecked Sendable {
         if p.contains("nand") { return .nand }
         if p.contains("airport") || p.contains("wifi") || p.contains("wlan") { return .airport }
         if p.contains("als") { return .ambient }
-        if p.contains("gpu") || p.contains("agx") { return .gpu }
-        if p.contains("tdie") || p.contains("cpu") || p.contains("soc") { return .cpu }
-        if p.contains("pmu") || p.contains("tdev") || p.contains("tcal") { return .pmu }
+        // GPU before generic tdie — `PMU2 tdie` / `GPU MTR` are GPU-side on Apple Silicon.
+        if p.contains("gpu") || p.contains("agx") || p.contains("gfx") || p.contains("pmu2") {
+            return .gpu
+        }
+        if p.contains("pacc") || p.contains("eacc") || p.contains("cpu") || p.contains("soc") {
+            return .cpu
+        }
+        // Bare `PMU tdie` / `PMU tdev` → SOC/CPU die (Stats convention).
+        if p.contains("tdie") || (p.contains("pmu") && p.contains("tdev")) { return .cpu }
+        if p.contains("pmu") || p.contains("tcal") || p.contains("tp") { return .pmu }
         return .other
     }
 
