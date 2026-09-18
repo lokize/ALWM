@@ -141,24 +141,28 @@ fi
 
 stage_shared_dylib() {
   local name="$1"   # e.g. libAlwmStatsKit.dylib
+  local required="${2:-0}"
   local src=""
-  # Prefer stable .build/{debug,release}/ symlink — find|head-1 can pick a stale
-  # .build/arm64-… copy and ship frameworks without recent symbols.
-  if [[ -f "$BIN_ROOT/$CONFIG/${name}" ]]; then
-    src="$BIN_ROOT/$CONFIG/${name}"
-  else
-    local products_cfg
-    if [[ "$CONFIG" == "release" ]]; then products_cfg="Release"; else products_cfg="Debug"; fi
-    if [[ -f "$BIN_ROOT/out/Products/${products_cfg}/${name}" ]]; then
-      src="$BIN_ROOT/out/Products/${products_cfg}/${name}"
-    fi
+  local products_cfg
+  if [[ "$CONFIG" == "release" ]]; then products_cfg="Release"; else products_cfg="Debug"; fi
+  # Prefer the newest concrete build product — `.build/debug` can lag behind
+  # `.build/out/Products/Debug` (libAlwmPluginABI went missing from ~/Applications).
+  local candidates=()
+  [[ -f "$BIN_ROOT/out/Products/${products_cfg}/${name}" ]] && candidates+=("$BIN_ROOT/out/Products/${products_cfg}/${name}")
+  [[ -f "$BIN_ROOT/$CONFIG/${name}" ]] && candidates+=("$BIN_ROOT/$CONFIG/${name}")
+  if [[ ${#candidates[@]} -gt 0 ]]; then
+    src="$(ls -t "${candidates[@]}" 2>/dev/null | head -1 || true)"
   fi
   if [[ -z "${src:-}" || ! -f "$src" ]]; then
-    src="$(find "$BIN_ROOT" -name "${name}" -type f -print0 2>/dev/null \
+    src="$(find "$BIN_ROOT" -name "${name}" -type f ! -path '*/dSYM/*' -print0 2>/dev/null \
       | xargs -0 ls -t 2>/dev/null | head -1 || true)"
   fi
   if [[ -z "${src:-}" || ! -f "$src" ]]; then
     echo "AVISO: shared dylib ausente: ${name}" >&2
+    if [[ "$required" == "1" ]]; then
+      echo "ERRO: ${name} é obrigatório — plugins não carregam sem ele." >&2
+      exit 1
+    fi
     return 0
   fi
   echo "  Framework: ${name}  (${src#"$BIN_ROOT"/})"
@@ -174,14 +178,23 @@ stage_shared_dylib() {
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS/ALWM" 2>/dev/null || true
 
 if [[ -f "$API_DYLIB" ]]; then
-  stage_shared_dylib "libAlwmPluginAPI.dylib"
+  stage_shared_dylib "libAlwmPluginAPI.dylib" 1
 else
-  echo "AVISO: libAlwmPluginAPI.dylib ausente" >&2
+  echo "ERRO: libAlwmPluginAPI.dylib ausente" >&2
+  exit 1
 fi
-# Split ABI dylib (AlwmShared) — missing this prevents the app from launching.
-stage_shared_dylib "libAlwmPluginABI.dylib"
-stage_shared_dylib "libAlwmL10n.dylib"
-stage_shared_dylib "libAlwmStatsKit.dylib"
+# Split ABI dylib (AlwmShared) — missing this prevents plugins from loading.
+stage_shared_dylib "libAlwmPluginABI.dylib" 1
+stage_shared_dylib "libAlwmL10n.dylib" 1
+stage_shared_dylib "libAlwmStatsKit.dylib" 1
+
+# Fail closed if Frameworks lost ABI after staging (ditto/update regressions).
+for required in libAlwmPluginAPI.dylib libAlwmPluginABI.dylib libAlwmL10n.dylib libAlwmStatsKit.dylib; do
+  if [[ ! -f "$FRAMEWORKS/$required" ]]; then
+    echo "ERRO: Frameworks/$required não foi empacotado — abortando." >&2
+    exit 1
+  fi
+done
 
 # Always stage under dist/plugins. Optionally copy into the .app for local debug.
 package_plugin() {

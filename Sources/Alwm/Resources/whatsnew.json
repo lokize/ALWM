@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "0.9.9",
+      "items": [
+        "Build and release scripts"
+      ]
+    },
+    {
       "version": "0.9.8",
       "items": [
         "Settings UI updates",
@@ -256,12 +262,6 @@
       "version": "0.5.9",
       "items": [
         "Terminal ghost window"
-      ]
-    },
-    {
-      "version": "0.5.8",
-      "items": [
-        "Readme update"
       ]
     }
   ]
