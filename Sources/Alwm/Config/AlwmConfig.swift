@@ -165,7 +165,6 @@ public struct AlwmConfig: Equatable, Sendable {
         ],
         rules: [
             AppRule(bundleID: "com.apple.systempreferences", mode: .float),
-            AppRule(bundleID: "com.apple.finder", mode: .float),
             AppRule(appName: "Spotlight", mode: .ignore)
         ]
     )

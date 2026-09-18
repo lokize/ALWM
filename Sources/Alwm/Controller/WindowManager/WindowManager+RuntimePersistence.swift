@@ -418,19 +418,16 @@ extension WindowManager {
         return nil
     }
 
-    /// True when disk still remembers this window (sticky token or layout title/bundle slot).
-    /// Used so a late AX reappear rematches to WS5 instead of snapping onto the active WS2.
+    /// True when *persisted tiled column refs* still remember this window.
+    /// Do not consult live `snapshot.windowWorkspace` — settle/assign write that in-memory
+    /// before ingest decides mass-restore vs new-window snap, which falsely re-rematches
+    /// brand-new Finder tiles and strips the column.
     func diskLayoutClaimsWindow(_ id: WindowID, allowFuzzy: Bool) -> Bool {
-        if runtimeState.assignment(for: id) != nil { return true }
-        if let tokenHome = runtimeState.snapshot.windowWorkspace[id.token],
-           workspaces.workspaces[tokenHome] != nil {
-            return true
-        }
         guard let win = windowsByID[id] else { return false }
         let liveTitle = Self.normalizedWindowTitle(win.title)
         let bid = win.bundleID
         for (_, snap) in runtimeState.snapshot.workspaceLayouts {
-            for ref in snap.columns.flatMap(\.windows) + snap.floating {
+            for ref in snap.columns.flatMap(\.windows) {
                 if ref.token == id.token { return true }
                 guard let bid, let refBid = ref.bundleID, refBid == bid else { continue }
                 let refTitle = Self.normalizedWindowTitle(ref.title)

@@ -143,15 +143,18 @@ extension WindowManager {
             } else if let until = forcedTiledUntil[w.id], Date() < until {
                 applied.isFloating = false
             } else if !alreadyKnown.contains(w.id) {
-                // New windows: Electron often mis-labels *main* windows as dialogs — force tile
-                // only when the frame looks like a real app window. Emoji/sticker popups
-                // (WhatsApp) must stay floating or they equal-split the workspace.
+                // New windows: Electron often mis-labels *main* windows as dialogs — promote
+                // to tile when the frame looks real. AX-standard windows (Finder) always tile
+                // even when opening "small" on ultrawides; only AX dialogs/sheets that stay
+                // small (WhatsApp stickers) remain floating.
                 let usable = usableAreaNear(applied.frame)
                 if looksLikeMainTiledWindow(applied.frame, usable: usable) {
                     applied.isFloating = false
-                } else {
+                } else if w.isFloating {
                     applied.isFloating = true
                     floatingOverrides.insert(w.id)
+                } else {
+                    applied.isFloating = false
                 }
             } else if workspaces.workspaceID(containing: w.id) != nil
                 || windowWorkspace[w.id] != nil
@@ -323,7 +326,7 @@ extension WindowManager {
 
         // Heal accidental floats (AX dialog flag / bad restore) back into tile columns.
         retileAccidentalFloats()
-        // App-rule floats (e.g. Finder) must never occupy a tile slot.
+        // App-rule floats (System Settings, etc.) must never occupy a tile slot.
         strippedLayouts.formUnion(enforceAppRuleFloats())
         // Quake is sticky-float only — never a tile.
         enforceQuakeFloat()

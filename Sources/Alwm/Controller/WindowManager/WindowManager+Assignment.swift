@@ -18,12 +18,10 @@ extension WindowManager {
            workspaces.workspaces[sticky] != nil {
             return sticky
         }
-        if let home = savedHome(for: win, id: win.id) {
+        // Disk-tiled slots only — old float homes must not yank Finder onto WS1 while Cursor is on WS2.
+        if diskLayoutClaimsWindow(win.id, allowFuzzy: true),
+           let home = savedHome(for: win, id: win.id) {
             return home
-        }
-        if isBootstrapping || isInPostLaunchLayoutGrace() {
-            // Never dump orphans into the active workspace while restore / AX recovery is still pending.
-            return nil
         }
         let idx = workspaces.monitorIndex(of: monitor.id, in: monitors.monitors) ?? 0
         let pool = workspaces.definitionsVisible(onMonitorIndex: idx).map(\.id)
@@ -71,13 +69,15 @@ extension WindowManager {
             ensureFloatHome(id, win: floating)
             return
         }
-        // Fresh emoji/sticker/sheet popups must never become columns (WhatsApp equal-split).
-        // Only gate *new* windows — sticky tiles can briefly report a small AX frame.
+        // Fresh AX dialogs/sheets that are still small (WhatsApp emoji) must not become columns.
+        // Standard windows (Finder etc.) always tile — even when opening "small" on ultrawides.
         let usable = engine.usableArea(monitor: monitor.layoutFrame)
         let isFreshWindow = Date().timeIntervalSince(windowFirstTrackedAt[id] ?? .distantPast) < 8
         if floatingOverrides.contains(id)
             || (isFreshWindow
-                && windowsByID[id].map { !looksLikeMainTiledWindow($0.frame, usable: usable) } == true)
+                && windowsByID[id].map {
+                    $0.isFloating && !looksLikeMainTiledWindow($0.frame, usable: usable)
+                } == true)
         {
             if var floating = windowsByID[id] {
                 floating.isFloating = true
@@ -389,6 +389,9 @@ extension WindowManager {
     }
 
     func looksLikeMainTiledWindow(_ frame: Rect, usable: Rect) -> Bool {
+        // Absolute floor: Finder ≈800×600 must tile on ultrawides where relative
+        // 18%/40% thresholds treat it as a sticker/popup and leave Cursor fullscreen.
+        if frame.width >= 560, frame.height >= 380 { return true }
         let area = max(1, frame.width * frame.height)
         let usableArea = max(1, usable.width * usable.height)
         return area >= usableArea * 0.18
@@ -494,8 +497,9 @@ extension WindowManager {
             if AppRules.forcesFloat(rules: rules, window: win) { continue }
             if floatingOverrides.contains(id) { continue }
             let usable = usableAreaNear(win.frame)
-            if !looksLikeMainTiledWindow(win.frame, usable: usable) {
-                // Popup (WhatsApp emoji, etc.) — keep out of columns.
+            // Only eject AX-marked floats that are still small (stickers). Never eject
+            // standard windows that merely open below the relative ultrawide thresholds.
+            if win.isFloating, !looksLikeMainTiledWindow(win.frame, usable: usable) {
                 win.isFloating = true
                 windowsByID[id] = win
                 floatingOverrides.insert(id)
@@ -514,15 +518,21 @@ extension WindowManager {
             guard let monitor else { continue }
             let home = windowWorkspace[id]
                 ?? runtimeState.assignment(for: id)
-                ?? savedHome(for: win, id: id)
-                ?? (isInPostLaunchLayoutGrace() ? nil : resolveTargetWorkspace(for: win, on: monitor))
+                ?? resolveTargetWorkspace(for: win, on: monitor)
             guard let home, workspaces.workspaces[home] != nil else { continue }
             if workspaces.workspaceID(containing: id) == nil {
                 assignWindow(id, to: home, on: monitor)
             }
         }
-        // Mass snap of every "added" tile after update relaunch dumps all apps onto the active WS.
-        if isInPostLaunchLayoutGrace() || needsLayoutRecovery(force: false) { return }
+        // After launch/resume, ingest owns mass rematch — still snap homes we just filled so
+        // a single new window during grace is not left floating until the timer expires.
+        if isInPostLaunchLayoutGrace() || needsLayoutRecovery(force: false) {
+            let homes = Set(ids.compactMap { workspaces.workspaceID(containing: $0) })
+            for home in homes where isHomeActiveOnAnyMonitor(home) {
+                snapWorkspaceTilesAfterColumnChange(home)
+            }
+            return
+        }
         let homes = Set(ids.compactMap { workspaces.workspaceID(containing: $0) })
         for home in homes where isHomeActiveOnAnyMonitor(home) {
             snapWorkspaceTilesAfterColumnChange(home)
