@@ -53,13 +53,21 @@ public final class MemorySampler: @unchecked Sendable {
     }
 
     public struct ProcessUsage: Sendable, Identifiable {
+        /// Synthetic row: sum of processes outside the top-N list.
+        public static let othersPID: Int32 = -1
+
         public var id: Int32 { pid }
         public var pid: Int32
         public var name: String
         public var residentBytes: UInt64
+
+        public var isOthers: Bool { pid == Self.othersPID }
     }
 
-    private let processLimit = 8
+    /// Top apps by resident size (aggregated by name). Not meant to equal `usedBytes`
+    /// (that also includes wired + compressed kernel pages).
+    private let processLimit = 12
+    private let minResidentBytes: UInt64 = 1 * 1024 * 1024
     private let pageSize: UInt64
 
     public init() {
@@ -183,8 +191,10 @@ public final class MemorySampler: @unchecked Sendable {
 
     private func sampleTopProcesses() -> [ProcessUsage] {
         let pids = listPIDs()
-        var rows: [ProcessUsage] = []
-        rows.reserveCapacity(processLimit * 2)
+        // Aggregate helpers that share a name (e.g. many WebKit.WebContent) so the
+        // list reflects app-level footprint instead of truncating mid-family.
+        var byName: [String: (pid: Int32, bytes: UInt64)] = [:]
+        byName.reserveCapacity(64)
         for pid in pids {
             guard pid > 0 else { continue }
             var info = proc_taskinfo()
@@ -192,11 +202,31 @@ public final class MemorySampler: @unchecked Sendable {
             let result = proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &info, size)
             guard result == size else { continue }
             let resident = UInt64(info.pti_resident_size)
-            guard resident > 8 * 1024 * 1024 else { continue }
+            guard resident >= minResidentBytes else { continue }
             let name = processName(pid: pid) ?? "pid \(pid)"
-            rows.append(ProcessUsage(pid: pid, name: name, residentBytes: resident))
+            if let existing = byName[name] {
+                let keepPid = resident >= existing.bytes ? pid : existing.pid
+                byName[name] = (keepPid, existing.bytes &+ resident)
+            } else {
+                byName[name] = (pid, resident)
+            }
         }
-        return rows.sorted { $0.residentBytes > $1.residentBytes }.prefix(processLimit).map { $0 }
+        let sorted = byName
+            .map { ProcessUsage(pid: $0.value.pid, name: $0.key, residentBytes: $0.value.bytes) }
+            .sorted { $0.residentBytes > $1.residentBytes }
+        guard sorted.count > processLimit else { return sorted }
+        var top = Array(sorted.prefix(processLimit))
+        let restBytes = sorted.dropFirst(processLimit).reduce(UInt64(0)) { $0 &+ $1.residentBytes }
+        if restBytes > 0 {
+            top.append(
+                ProcessUsage(
+                    pid: ProcessUsage.othersPID,
+                    name: "Others",
+                    residentBytes: restBytes
+                )
+            )
+        }
+        return top
     }
 
     private func listPIDs() -> [Int32] {

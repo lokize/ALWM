@@ -1,6 +1,17 @@
 {
   "releases": [
     {
+      "version": "0.9.4",
+      "items": [
+        "Localization updates",
+        "Update DiskSampler",
+        "Update MemorySampler",
+        "Plugins: stats-disk/Sources/DiskPanel.swift",
+        "Plugins: stats-memory/Sources/MemoryPanel.swift",
+        "Build and release scripts"
+      ]
+    },
+    {
       "version": "0.9.3",
       "items": [
         "Window manager improvements"
@@ -248,12 +259,6 @@
       "version": "0.5.4",
       "items": [
         "Maintenance and fixes"
-      ]
-    },
-    {
-      "version": "0.5.3",
-      "items": [
-        "Contributors"
       ]
     }
   ]

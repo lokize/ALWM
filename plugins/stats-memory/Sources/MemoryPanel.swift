@@ -28,7 +28,7 @@ enum MemoryPanelController {
             .pluginLocalized()
         let hosting = NSHostingController(rootView: root)
         let width: CGFloat = 300
-        let height: CGFloat = 540
+        let height: CGFloat = 600
         let win = window ?? NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: width, height: height),
             styleMask: [.borderless, .nonactivatingPanel, .utilityWindow],
@@ -145,29 +145,7 @@ struct MemoryPanelView: View {
                 )
 
                 StatsSectionHeader(t("plugin.memory.section.processes"))
-                HStack {
-                    Text(t("plugin.memory.processes.name"))
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text(t("plugin.memory.processes.usage"))
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
-                if snap.topProcesses.isEmpty {
-                    Text(t("plugin.memory.processes.empty"))
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .padding(.vertical, 4)
-                } else {
-                    ForEach(snap.topProcesses) { proc in
-                        StatsProcessRow(
-                            name: proc.name,
-                            value: StatsFormat.bytes(proc.residentBytes, digits: 0),
-                            icon: StatsProcessIcon.icon(forProcessName: proc.name)
-                        )
-                    }
-                }
+                processesSection
             }
             .padding(14)
         }
@@ -181,6 +159,46 @@ struct MemoryPanelView: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .padding(2)
+    }
+
+    @ViewBuilder
+    private var processesSection: some View {
+        HStack {
+            Text(t("plugin.memory.processes.name"))
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(t("plugin.memory.processes.usage"))
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+        }
+        if snap.topProcesses.isEmpty {
+            Text(t("plugin.memory.processes.empty"))
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .padding(.vertical, 4)
+        } else {
+            ForEach(snap.topProcesses) { proc in
+                processRow(proc)
+            }
+            Text(t("plugin.memory.processes.hint"))
+                .font(.system(size: 10))
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 2)
+        }
+    }
+
+    private func processRow(_ proc: MemorySampler.ProcessUsage) -> some View {
+        let label = proc.isOthers ? t("plugin.memory.processes.others") : proc.name
+        let icon: NSImage? = proc.isOthers
+            ? NSImage(systemSymbolName: "square.stack.3d.up", accessibilityDescription: nil)
+            : StatsProcessIcon.icon(forProcessName: proc.name)
+        return StatsProcessRow(
+            name: label,
+            value: StatsFormat.bytes(proc.residentBytes, digits: 0),
+            icon: icon
+        )
     }
 
     private var freeFraction: Double {

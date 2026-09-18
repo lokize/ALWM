@@ -28,7 +28,7 @@ enum DiskPanelController {
             .pluginLocalized()
         let hosting = NSHostingController(rootView: root)
         let width: CGFloat = 300
-        let height: CGFloat = 520
+        let height: CGFloat = 580
         let win = window ?? NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: width, height: height),
             styleMask: [.borderless, .nonactivatingPanel, .utilityWindow],
@@ -133,9 +133,7 @@ struct DiskPanelView: View {
                 }
 
                 StatsSectionHeader(t("plugin.disk.section.processes"))
-                Text(t("plugin.disk.processes.unavailable"))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                processesSection
             }
             .padding(14)
         }
@@ -149,6 +147,39 @@ struct DiskPanelView: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .padding(2)
+    }
+
+    @ViewBuilder
+    private var processesSection: some View {
+        HStack {
+            Text(t("plugin.disk.processes.name"))
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(t("plugin.disk.processes.usage"))
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+        }
+        if snap.topProcesses.isEmpty {
+            Text(t("plugin.disk.processes.empty"))
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .padding(.vertical, 4)
+        } else {
+            ForEach(snap.topProcesses) { proc in
+                StatsProcessRow(
+                    name: proc.name,
+                    value: processRateLabel(proc),
+                    icon: StatsProcessIcon.icon(forProcessName: proc.name)
+                )
+            }
+        }
+    }
+
+    private func processRateLabel(_ proc: DiskSampler.ProcessUsage) -> String {
+        let down = StatsFormat.compactBytesPerSecond(proc.readBytesPerSecond)
+        let up = StatsFormat.compactBytesPerSecond(proc.writeBytesPerSecond)
+        return "↓\(down) ↑\(up)"
     }
 
     private var freeFraction: Double {
