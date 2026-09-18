@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.0.0",
+      "items": [
+        "Maintenance and fixes"
+      ]
+    },
+    {
       "version": "0.9.9",
       "items": [
         "Build and release scripts"
@@ -256,12 +262,6 @@
       "version": "0.6.0",
       "items": [
         "New stats plugins"
-      ]
-    },
-    {
-      "version": "0.5.9",
-      "items": [
-        "Terminal ghost window"
       ]
     }
   ]
