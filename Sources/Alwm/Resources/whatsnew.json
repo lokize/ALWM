@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "0.8.9",
+      "items": [
+        "Package"
+      ]
+    },
+    {
       "version": "0.8.8",
       "items": [
         "Window manager improvements",
@@ -241,12 +247,6 @@
         "Window manager improvements",
         "Runtime support updates",
         "UI updates"
-      ]
-    },
-    {
-      "version": "0.4.8",
-      "items": [
-        "Fix menu layout space"
       ]
     }
   ]
