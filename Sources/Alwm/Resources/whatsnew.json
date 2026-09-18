@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "0.8.8",
+      "items": [
+        "Window manager improvements",
+        "UI updates"
+      ]
+    },
+    {
       "version": "0.8.7",
       "items": [
         "Window manager improvements"
@@ -240,12 +247,6 @@
       "version": "0.4.8",
       "items": [
         "Fix menu layout space"
-      ]
-    },
-    {
-      "version": "0.4.7",
-      "items": [
-        "Maintenance and fixes"
       ]
     }
   ]

@@ -814,10 +814,13 @@ extension WindowManager {
     }
 
     func snapWorkspaceTilesAfterColumnChange(_ wsID: String) {
-        guard !isLayoutMutationFrozen else {
-            logMove("snap skip frozen ws=\(wsID)")
+        // Soft disk-protect alone must not block tiling new windows (Finder/Calendar after wake).
+        // Only skip while actively rebuilding columns from a resume pass.
+        guard !isResumeRecovering else {
+            logMove("snap skip resume-recovering ws=\(wsID)")
             return
         }
+        clearStaleLayoutMutationFreezeIfNeeded()
         guard !snappingWorkspaces.contains(wsID) else { return }
         snappingWorkspaces.insert(wsID)
         defer { snappingWorkspaces.remove(wsID) }

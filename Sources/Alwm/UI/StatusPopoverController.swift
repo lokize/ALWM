@@ -59,6 +59,7 @@ public final class StatusPopoverController {
         popover.behavior = .semitransient
         popover.animates = true
         let bridge = PopoverCloseBridge { [weak self] in
+            self?.removeClickOutsideMonitor()
             self?.anchorWindow.orderOut(nil)
         }
         popoverCloseBridge = bridge
@@ -128,6 +129,11 @@ public final class StatusPopoverController {
                 preferredEdge: .minY
             )
             NSApp.activate(ignoringOtherApps: true)
+            // Next turn — avoid treating the opening click as an outside dismiss.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                guard let self, self.popover.isShown else { return }
+                self.installClickOutsideMonitor()
+            }
         }
         pendingShowWorkItem = work
         DispatchQueue.main.async(execute: work)
@@ -136,8 +142,46 @@ public final class StatusPopoverController {
     public func close() {
         pendingShowWorkItem?.cancel()
         pendingShowWorkItem = nil
+        removeClickOutsideMonitor()
         popover.performClose(nil)
         anchorWindow.orderOut(nil)
+    }
+
+    private var clickOutsideGlobal: Any?
+    private var clickOutsideLocal: Any?
+    private var clickOutsideBridge: StatusMenuClickOutsideBridge?
+
+    private func installClickOutsideMonitor() {
+        removeClickOutsideMonitor()
+        let bridge = StatusMenuClickOutsideBridge { [weak self] in
+            self?.dismissIfClickOutside()
+        }
+        clickOutsideBridge = bridge
+        clickOutsideGlobal = bridge.installGlobal()
+        clickOutsideLocal = bridge.installLocal()
+    }
+
+    private func removeClickOutsideMonitor() {
+        if let clickOutsideGlobal {
+            NSEvent.removeMonitor(clickOutsideGlobal)
+            self.clickOutsideGlobal = nil
+        }
+        if let clickOutsideLocal {
+            NSEvent.removeMonitor(clickOutsideLocal)
+            self.clickOutsideLocal = nil
+        }
+        clickOutsideBridge = nil
+    }
+
+    private func dismissIfClickOutside() {
+        guard popover.isShown else { return }
+        let loc = NSEvent.mouseLocation
+        if let win = popover.contentViewController?.view.window {
+            if win.frame.insetBy(dx: -4, dy: -4).contains(loc) { return }
+        }
+        // Ignore the tiny anchor under the status chip that opened the menu.
+        if anchorWindow.frame.insetBy(dx: -12, dy: -12).contains(loc) { return }
+        close()
     }
 
     private func placeAnchor(under view: NSView) {
@@ -211,6 +255,30 @@ private final class PopoverCloseBridge: NSObject, NSPopoverDelegate {
 
     func popoverDidClose(_ notification: Notification) {
         onClose()
+    }
+}
+
+/// Click-outside monitors (same pattern as CommandPalette / plugins overlays).
+private final class StatusMenuClickOutsideBridge: @unchecked Sendable {
+    private let onClick: @MainActor () -> Void
+
+    init(onClick: @escaping @MainActor () -> Void) {
+        self.onClick = onClick
+    }
+
+    func installGlobal() -> Any? {
+        NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in self.onClick() }
+        }
+    }
+
+    func installLocal() -> Any? {
+        NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            guard let self else { return event }
+            Task { @MainActor in self.onClick() }
+            return event
+        }
     }
 }
 

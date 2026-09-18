@@ -191,7 +191,8 @@ extension WindowManager {
         // AX finished dropping windows, so rebalance persisted 1-column layouts to disk.
         allowDestructiveLayoutFlush = false
         softPersistProtectMissingTokens = true
-        layoutMutationFrozenUntil = Date().addingTimeInterval(6 * 60 * 60)
+        // Freeze only until wake recovery finishes — a multi-hour freeze blocked all new-window snaps.
+        layoutMutationFrozenUntil = Date.distantPast
         // Capture fingerprint while memory still looks good (before any soft write).
         if liveTiledWindowCount() > 0 {
             preSleepLayoutFingerprint = layoutContentFingerprint()
@@ -231,9 +232,22 @@ extension WindowManager {
     }
 
     var isLayoutMutationFrozen: Bool {
-        softPersistProtectMissingTokens
+        // Stuck freeze after incomplete wake used to block tiling forever (Finder etc.).
+        clearStaleLayoutMutationFreezeIfNeeded()
+        return softPersistProtectMissingTokens
             || isResumeRecovering
             || Date() < layoutMutationFrozenUntil
+    }
+
+    /// Drop sleep/wake freeze once recovery eligibility ended and we are not mid-recover.
+    func clearStaleLayoutMutationFreezeIfNeeded() {
+        guard softPersistProtectMissingTokens || Date() < layoutMutationFrozenUntil else { return }
+        guard !isResumeRecovering else { return }
+        // Still inside the wake eligibility window — keep protecting disk.
+        if Date() < resumeRecoveryEligibleUntil { return }
+        softPersistProtectMissingTokens = false
+        layoutMutationFrozenUntil = Date.distantPast
+        NSLog("ALWM: cleared stale layout mutation freeze")
     }
 
     func finishResumeRecoverySuccessfully() {

@@ -118,6 +118,7 @@ extension WindowManager {
     }
 
     func ingest(windows: [ManagedWindow]) {
+        clearStaleLayoutMutationFreezeIfNeeded()
         let rules = configStore.config.rules
         let blockingReassign = Date() < suppressIngestReassignUntil
         let alreadyKnown = Set(windowsByID.keys)
