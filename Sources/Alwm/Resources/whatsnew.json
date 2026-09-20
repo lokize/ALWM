@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.0.4",
+      "items": [
+        "Maintenance and fixes"
+      ]
+    },
+    {
       "version": "1.0.3",
       "items": [
         "Update Package",
@@ -265,12 +271,6 @@
       "version": "0.6.5",
       "items": [
         "Plugin search bar position"
-      ]
-    },
-    {
-      "version": "0.6.4",
-      "items": [
-        "Bluetooth plugin hid"
       ]
     }
   ]
