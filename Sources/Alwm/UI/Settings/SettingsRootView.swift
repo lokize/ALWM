@@ -188,7 +188,6 @@ struct SettingsRootView: View {
         if pane == .plugins {
             // Plugins owns its ScrollView; fill the detail column so GeometryReader
             // inside gets a finite height (otherwise catalog clips with no scroller).
-            // Do not `.clipped()` here — it hid the order footer below the catalog.
             paneForm
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .focusEffectDisabled()

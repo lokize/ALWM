@@ -75,6 +75,8 @@ extension SettingsRootView {
             } header: {
                 Text("Content")
             }
+
+            WorkspaceBarPluginOrderSection()
         }
         .formStyle(.grouped)
         .onChange(of: config.settings.workspaceBar) { _, bar in

@@ -44,6 +44,72 @@ private final class ScrollerProbeView: NSView {
     }
 }
 
+/// Captures / restores the Settings Form `NSScrollView` clip origin across SwiftUI updates.
+enum FormScrollPin {
+    struct Snapshot {
+        weak var scrollView: NSScrollView?
+        var origin: NSPoint
+    }
+
+    static func capture(from view: NSView? = nil) -> Snapshot? {
+        guard let scroll = findScrollView(startingAt: view) ?? findScrollViewInKeyWindow() else {
+            return nil
+        }
+        return Snapshot(scrollView: scroll, origin: scroll.contentView.bounds.origin)
+    }
+
+    static func restore(_ snapshot: Snapshot?) {
+        guard let snapshot, let scroll = snapshot.scrollView else { return }
+        let docHeight = scroll.documentView?.frame.height ?? scroll.contentView.bounds.height
+        let maxY = max(0, docHeight - scroll.contentView.bounds.height)
+        let y = min(max(0, snapshot.origin.y), maxY)
+        let point = NSPoint(x: 0, y: y)
+        scroll.contentView.setBoundsOrigin(point)
+        scroll.reflectScrolledClipView(scroll.contentView)
+    }
+
+    /// Restore now and after the next layout passes (Form often jumps asynchronously).
+    static func restoreAcrossLayout(_ snapshot: Snapshot?) {
+        restore(snapshot)
+        DispatchQueue.main.async { restore(snapshot) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { restore(snapshot) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { restore(snapshot) }
+    }
+
+    private static func findScrollView(startingAt view: NSView?) -> NSScrollView? {
+        var node = view
+        while let current = node {
+            if let scroll = current as? NSScrollView, scroll.documentView != nil {
+                return scroll
+            }
+            node = current.superview
+        }
+        return nil
+    }
+
+    private static func findScrollViewInKeyWindow() -> NSScrollView? {
+        guard let root = NSApp.keyWindow?.contentView else { return nil }
+        var best: NSScrollView?
+        var bestArea: CGFloat = 0
+        func walk(_ view: NSView) {
+            if let scroll = view as? NSScrollView,
+               scroll.hasVerticalScroller,
+               scroll.documentView != nil {
+                let area = scroll.bounds.width * scroll.bounds.height
+                if area > bestArea {
+                    bestArea = area
+                    best = scroll
+                }
+            }
+            for child in view.subviews {
+                walk(child)
+            }
+        }
+        walk(root)
+        return best
+    }
+}
+
 /// AppKit `NSScrollView` with **legacy** scrollers that never auto-hide.
 /// Prefer SwiftUI `ScrollView` / `Form` + `ForceLegacyVerticalScroller` for panes
 /// that use `Form` — nesting Form inside this view breaks trackpad scrolling.
@@ -112,11 +178,12 @@ struct MacAlwaysScrollView<Content: View>: NSViewRepresentable {
 
     func updateNSView(_ scroll: OverflowAwareScrollView, context: Context) {
         let idChanged = context.coordinator.lastContentID != contentID
-        // Always keep the latest builder, but only swap the hosted tree when the
-        // caller says content identity changed — reorder siblings must not reset scroll.
+        // Keep the latest builder, but only swap the hosted tree when contentID
+        // changes. Sibling-only updates must not remount (that resets scroll).
         context.coordinator.content = content()
         if idChanged {
-            let savedOrigin = scroll.contentView.bounds.origin
+            let savedOrigin = context.coordinator.lastStableOrigin
+                ?? scroll.contentView.bounds.origin
             context.coordinator.restoreOriginAfterUpdate = savedOrigin
             context.coordinator.lastContentID = contentID
             context.coordinator.hosting?.rootView = AnyView(context.coordinator.content)
@@ -127,7 +194,15 @@ struct MacAlwaysScrollView<Content: View>: NSViewRepresentable {
                 context.coordinator.applyScrollOrigin(savedOrigin)
             }
         } else {
+            // Parent re-rendered without a document identity change (e.g. unrelated
+            // ObservedObject). Re-pin clip origin so SwiftUI cannot jump the viewport.
+            let savedOrigin = context.coordinator.lastStableOrigin
+                ?? scroll.contentView.bounds.origin
             scroll.forceLegacyScrollers()
+            context.coordinator.applyScrollOrigin(savedOrigin)
+            DispatchQueue.main.async {
+                context.coordinator.applyScrollOrigin(savedOrigin)
+            }
         }
     }
 
@@ -146,6 +221,9 @@ struct MacAlwaysScrollView<Content: View>: NSViewRepresentable {
         private var lastContentHeight: CGFloat = -1
         private var pendingRelayout: DispatchWorkItem?
         var restoreOriginAfterUpdate: NSPoint?
+        /// Last clip origin from user scrolling (or a successful restore).
+        var lastStableOrigin: NSPoint = .zero
+        private var isApplyingOrigin = false
 
         init(content: Content, contentID: AnyHashable) {
             self.content = content
@@ -154,6 +232,9 @@ struct MacAlwaysScrollView<Content: View>: NSViewRepresentable {
 
         @objc func clipGeometryChanged(_ note: Notification) {
             guard let scroll = scrollView else { return }
+            if !isApplyingOrigin {
+                lastStableOrigin = scroll.contentView.bounds.origin
+            }
             let size = scroll.contentView.bounds.size
             let widthChanged = abs(size.width - lastClipSize.width) > 0.5
             let heightChanged = abs(size.height - lastClipSize.height) > 0.5
@@ -179,8 +260,11 @@ struct MacAlwaysScrollView<Content: View>: NSViewRepresentable {
             let maxY = max(0, docHeight - scroll.contentView.bounds.height)
             let y = min(max(0, origin.y), maxY)
             let point = NSPoint(x: 0, y: y)
+            isApplyingOrigin = true
             scroll.contentView.setBoundsOrigin(point)
             scroll.reflectScrolledClipView(scroll.contentView)
+            lastStableOrigin = point
+            isApplyingOrigin = false
         }
 
         func relayout(preserveScroll: Bool) {
