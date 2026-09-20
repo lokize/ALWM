@@ -1,12 +1,8 @@
 # Pomodoro
 
-Focus timer on the ALWM workspace bar.
+- El chip muestra el tiempo restante y la fase
+- Mantener despierto en foco · notificaciones de fase
 
-- Chip shows remaining time (`25:00`) and phase
-- Click: start / pause / skip / settings
-- **Keep awake during focus** — same idea as Prevent Sleep
-- Notifications when a phase ends
+Actívalo en **Ajustes → Plugins**.
 
-Enable under **Settings → Plugins**.
-
-License: **GPL-3.0** (same as ALWM).
+Licencia: **GPL-3.0** (igual que ALWM).

@@ -35,7 +35,10 @@ let package = Package(
         .library(name: "StatsUptimePlugin", type: .dynamic, targets: ["StatsUptimePlugin"]),
         .library(name: "PomodoroPlugin", type: .dynamic, targets: ["PomodoroPlugin"]),
         .library(name: "CalendarPlugin", type: .dynamic, targets: ["CalendarPlugin"]),
-        .library(name: "ClipboardPlugin", type: .dynamic, targets: ["ClipboardPlugin"])
+        .library(name: "ClipboardPlugin", type: .dynamic, targets: ["ClipboardPlugin"]),
+        .library(name: "DockerPlugin", type: .dynamic, targets: ["DockerPlugin"]),
+        .library(name: "BrewPlugin", type: .dynamic, targets: ["BrewPlugin"]),
+        .library(name: "DownloadsPlugin", type: .dynamic, targets: ["DownloadsPlugin"])
     ],
     dependencies: [
         .package(url: "https://github.com/mattt/swift-toml.git", from: "2.0.0"),
@@ -372,6 +375,60 @@ let package = Package(
                 .linkedFramework("SwiftUI"),
                 .linkedFramework("UniformTypeIdentifiers"),
                 .linkedFramework("Carbon")
+            ]
+        ),
+        .target(
+            name: "DockerPlugin",
+            dependencies: [sharedAPI, sharedABI, sharedL10n, sharedStats],
+            path: "plugins/docker",
+            exclude: [
+                "plugin.json",
+                "README.md",
+                "previews",
+                "l10n"
+            ],
+            swiftSettings: [
+                .swiftLanguageMode(.v6)
+            ],
+            linkerSettings: [
+                .linkedFramework("AppKit"),
+                .linkedFramework("SwiftUI")
+            ]
+        ),
+        .target(
+            name: "BrewPlugin",
+            dependencies: [sharedAPI, sharedABI, sharedL10n, sharedStats],
+            path: "plugins/brew",
+            exclude: [
+                "plugin.json",
+                "README.md",
+                "previews",
+                "l10n"
+            ],
+            swiftSettings: [
+                .swiftLanguageMode(.v6)
+            ],
+            linkerSettings: [
+                .linkedFramework("AppKit"),
+                .linkedFramework("SwiftUI")
+            ]
+        ),
+        .target(
+            name: "DownloadsPlugin",
+            dependencies: [sharedAPI, sharedABI, sharedL10n, sharedStats],
+            path: "plugins/downloads",
+            exclude: [
+                "plugin.json",
+                "README.md",
+                "previews",
+                "l10n"
+            ],
+            swiftSettings: [
+                .swiftLanguageMode(.v6)
+            ],
+            linkerSettings: [
+                .linkedFramework("AppKit"),
+                .linkedFramework("SwiftUI")
             ]
         ),
         .target(

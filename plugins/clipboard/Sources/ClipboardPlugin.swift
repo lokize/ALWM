@@ -35,6 +35,7 @@ public final class ClipboardPlugin: AlwmPlugin {
 
     private weak var context: AlwmPluginContext?
     private var languageObserver: NSObjectProtocol?
+    private var terminateObserver: NSObjectProtocol?
     private var hotkeyGlobal: Any?
     private var hotkeyLocal: Any?
 
@@ -62,6 +63,16 @@ public final class ClipboardPlugin: AlwmPlugin {
         ) { [weak self] _ in
             self?.context?.requestBarRefresh()
         }
+        if let terminateObserver {
+            NotificationCenter.default.removeObserver(terminateObserver)
+        }
+        terminateObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            ClipboardStore.shared.stop()
+        }
         store.start()
         installHotkey()
     }
@@ -77,6 +88,10 @@ public final class ClipboardPlugin: AlwmPlugin {
         if let languageObserver {
             NotificationCenter.default.removeObserver(languageObserver)
             self.languageObserver = nil
+        }
+        if let terminateObserver {
+            NotificationCenter.default.removeObserver(terminateObserver)
+            self.terminateObserver = nil
         }
         context = nil
     }

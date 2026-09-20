@@ -1,0 +1,13 @@
+{
+  "id": "dev.alwm.docker",
+  "name": "Docker",
+  "author": "ALWM",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "license": "GPL-3.0",
+  "summary": "Full Docker manager on the workspace bar — containers, restart policies, export/backup, and Compose projects.",
+  "category": "developer",
+  "preview": "previews/card.png",
+  "screenshots": ["previews/01.png"],
+  "defaultPlacement": "afterWorkspaces"
+}

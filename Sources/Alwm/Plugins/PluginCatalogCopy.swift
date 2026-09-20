@@ -60,6 +60,9 @@ enum PluginCatalogCopy {
         case "dev.alwm.pomodoro": return "plugin.pomodoro"
         case "dev.alwm.calendar": return "plugin.calendar"
         case "dev.alwm.clipboard": return "plugin.clipboard"
+        case "dev.alwm.docker": return "plugin.docker"
+        case "dev.alwm.brew": return "plugin.brew"
+        case "dev.alwm.downloads": return "plugin.downloads"
         default: return nil
         }
     }

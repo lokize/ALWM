@@ -149,6 +149,7 @@ final class ClipboardStore: ObservableObject, @unchecked Sendable {
     }
 
     func start() {
+        loadHistory()
         if pollTimer == nil {
             lastChangeCount = pasteboard.changeCount
             let t = Timer(timeInterval: 0.4, repeats: true) { [weak self] _ in
@@ -163,6 +164,8 @@ final class ClipboardStore: ObservableObject, @unchecked Sendable {
     func stop() {
         pollTimer?.invalidate()
         pollTimer = nil
+        persistHistory()
+        saveSettings()
     }
 
     func copyItem(_ item: ClipboardItem) {
@@ -643,31 +646,48 @@ final class ClipboardStore: ObservableObject, @unchecked Sendable {
     }
 
     private var settingsURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/alwm/plugins", isDirectory: true)
-            .appendingPathComponent("dev.alwm.clipboard.json")
+        clipboardRoot.appendingPathComponent("settings.json")
     }
 
     private var historyURL: URL {
+        clipboardRoot.appendingPathComponent("history.json")
+    }
+
+    private var legacySettingsURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/alwm/plugins", isDirectory: true)
-            .appendingPathComponent("dev.alwm.clipboard.history.json")
+            .appendingPathComponent(".config/alwm/plugins/dev.alwm.clipboard.json")
+    }
+
+    private var legacyHistoryURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/alwm/plugins/dev.alwm.clipboard.history.json")
+    }
+
+    private var clipboardRoot: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/alwm/clipboard", isDirectory: true)
     }
 
     private func loadSettings() {
-        guard let data = try? Data(contentsOf: settingsURL),
-              let decoded = try? JSONDecoder().decode(ClipboardSettings.self, from: data)
-        else { return }
-        settings = decoded
+        let urls = [settingsURL, legacySettingsURL]
+        for url in urls {
+            guard let data = try? Data(contentsOf: url),
+                  let decoded = try? JSONDecoder().decode(ClipboardSettings.self, from: data)
+            else { continue }
+            settings = decoded
+            return
+        }
     }
 
     private func saveSettings() {
         try? FileManager.default.createDirectory(
-            at: settingsURL.deletingLastPathComponent(),
+            at: clipboardRoot,
             withIntermediateDirectories: true
         )
         guard let data = try? JSONEncoder().encode(settings) else { return }
         try? data.write(to: settingsURL, options: .atomic)
+        // Keep legacy path updated for older builds.
+        try? data.write(to: legacySettingsURL, options: .atomic)
     }
 
     private struct PersistedItem: Codable {
@@ -706,29 +726,48 @@ final class ClipboardStore: ObservableObject, @unchecked Sendable {
             )
         }
         try? FileManager.default.createDirectory(
-            at: historyURL.deletingLastPathComponent(),
+            at: clipboardRoot,
             withIntermediateDirectories: true
         )
-        guard let data = try? JSONEncoder().encode(payload) else { return }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(payload) else { return }
+        // Write primary + legacy + backup so quit/repackage cannot wipe history.
         try? data.write(to: historyURL, options: .atomic)
+        try? data.write(to: legacyHistoryURL, options: .atomic)
+        try? data.write(
+            to: clipboardRoot.appendingPathComponent("history.backup.json"),
+            options: .atomic
+        )
     }
 
     private func loadHistory() {
-        // Prefer full history; fall back to legacy pins file.
-        let url = historyURL
-        let legacyPins = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/alwm/plugins/dev.alwm.clipboard.pins.json")
-        let data = (try? Data(contentsOf: url))
-            ?? (try? Data(contentsOf: legacyPins))
-        guard let data,
-              let decoded = try? JSONDecoder().decode([PersistedItem].self, from: data)
-        else { return }
+        let candidates = [
+            historyURL,
+            clipboardRoot.appendingPathComponent("history.backup.json"),
+            legacyHistoryURL,
+            FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".config/alwm/plugins/dev.alwm.clipboard.pins.json")
+        ]
+        var decoded: [PersistedItem]?
+        for url in candidates {
+            guard let data = try? Data(contentsOf: url), !data.isEmpty else { continue }
+            if let rows = try? JSONDecoder().decode([PersistedItem].self, from: data) {
+                decoded = rows
+                break
+            }
+        }
+        guard let decoded else { return }
 
         let fm = FileManager.default
         lock.lock()
         items = decoded.compactMap { row in
+            // Keep text/link even if an old image file vanished; only drop pure media
+            // entries whose backing file is gone and that have no text fallback.
             if let path = row.imagePath, !fm.fileExists(atPath: path) {
-                return nil
+                if row.text == nil, row.kind == .image || row.kind == .video {
+                    return nil
+                }
             }
             let key = row.contentKey ?? "\(row.kind.rawValue):\(row.id.uuidString)"
             return ClipboardItem(
@@ -738,7 +777,7 @@ final class ClipboardStore: ObservableObject, @unchecked Sendable {
                 preview: row.preview,
                 detail: row.detail,
                 text: row.text,
-                imagePath: row.imagePath,
+                imagePath: (row.imagePath).flatMap { fm.fileExists(atPath: $0) ? $0 : nil },
                 fileURL: row.fileURL,
                 sourceApp: row.sourceApp,
                 byteSize: row.byteSize,
@@ -750,5 +789,9 @@ final class ClipboardStore: ObservableObject, @unchecked Sendable {
         trimLocked()
         selectedID = items.first?.id
         lock.unlock()
+        // Migrate into the stable location immediately.
+        persistHistory()
+        objectWillChange.send()
+        onChange?()
     }
 }

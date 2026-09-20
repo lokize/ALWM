@@ -442,6 +442,27 @@ if [[ -d "$ROOT/plugins/clipboard" ]]; then
     "Clipboard" \
     "dev.alwm.clipboard"
 fi
+if [[ -d "$ROOT/plugins/docker" ]]; then
+  package_plugin \
+    "$ROOT/plugins/docker" \
+    "libDockerPlugin.dylib" \
+    "Docker" \
+    "dev.alwm.docker"
+fi
+if [[ -d "$ROOT/plugins/brew" ]]; then
+  package_plugin \
+    "$ROOT/plugins/brew" \
+    "libBrewPlugin.dylib" \
+    "Brew" \
+    "dev.alwm.brew"
+fi
+if [[ -d "$ROOT/plugins/downloads" ]]; then
+  package_plugin \
+    "$ROOT/plugins/downloads" \
+    "libDownloadsPlugin.dylib" \
+    "Downloads" \
+    "dev.alwm.downloads"
+fi
 
 # Catalog index for on-demand installs (also copied into the app for offline fallback).
 step "Write plugins-index.json"

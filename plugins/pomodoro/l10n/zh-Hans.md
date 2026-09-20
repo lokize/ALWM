@@ -1,12 +1,8 @@
-# Pomodoro
+# 番茄钟
 
-Focus timer on the ALWM workspace bar.
+- 芯片显示剩余时间和阶段
+- 专注时保持唤醒 · 阶段通知
 
-- Chip shows remaining time (`25:00`) and phase
-- Click: start / pause / skip / settings
-- **Keep awake during focus** — same idea as Prevent Sleep
-- Notifications when a phase ends
+在 **设置 → 插件** 中启用。
 
-Enable under **Settings → Plugins**.
-
-License: **GPL-3.0** (same as ALWM).
+许可：**GPL-3.0**（与 ALWM 相同）。

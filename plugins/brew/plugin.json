@@ -1,0 +1,13 @@
+{
+  "id": "dev.alwm.brew",
+  "name": "Brew Outdated",
+  "author": "ALWM",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "license": "GPL-3.0",
+  "summary": "Homebrew outdated packages on the workspace bar — list and upgrade from a chip.",
+  "category": "developer",
+  "preview": "previews/card.png",
+  "screenshots": ["previews/01.png"],
+  "defaultPlacement": "afterWorkspaces"
+}

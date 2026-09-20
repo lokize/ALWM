@@ -197,6 +197,7 @@ public final class NowPlayingSampler: @unchecked Sendable {
         let safari = safariRunning ? sampleSafari() : nil
 
         let chosen: (Snapshot, Source)?
+        // Always prefer a source that is actually playing.
         if let spotify, spotify.isPlaying {
             chosen = (spotify, .spotify)
         } else if let music, music.isPlaying {
@@ -208,6 +209,7 @@ public final class NowPlayingSampler: @unchecked Sendable {
         } else if let music, music.present {
             chosen = (music, .music)
         } else if let safari, safari.present {
+            // Only keep a paused Safari tab if nothing else is present.
             chosen = (safari, .safari)
         } else {
             chosen = nil
@@ -330,55 +332,88 @@ public final class NowPlayingSampler: @unchecked Sendable {
         )
     }
 
-    /// Front Safari tab when it looks like a video site (YouTube, Vimeo, Twitch, …).
-    /// Playback timeline uses `<video>` via Safari JavaScript when the user has enabled
-    /// Develop → Allow JavaScript from Apple Events.
+    /// Safari media tabs (YouTube/Vimeo/Twitch/…). Prefers a tab that is actually
+    /// playing over a paused one still open in the background.
     private func sampleSafari() -> Snapshot? {
-        // Prefer a media tab anywhere in Safari (not only the frontmost tab).
         let script = """
         tell application "Safari"
           try
             if (count of windows) is 0 then return "none"
             set sep to character id 31
-            set mediaTab to missing value
+            set lineSep to character id 30
+            set collected to ""
             repeat with w in windows
               repeat with t in tabs of w
                 try
                   set u to URL of t as text
-                  if u contains "youtube.com/watch" or u contains "youtube.com/shorts" or u contains "youtu.be/" or u contains "youtube.com/embed" or u contains "youtube.com/live" or u contains "vimeo.com/" or u contains "twitch.tv/" then
-                    set mediaTab to t
-                    exit repeat
+                  if u contains "youtube.com/watch" or u contains "youtube.com/shorts" or u contains "youtu.be/" or u contains "youtube.com/embed" or u contains "youtube.com/live" or u contains "vimeo.com/" or u contains "twitch.tv/" or u contains "netflix.com/" or u contains "primevideo.com/" or u contains "disneyplus.com/" or u contains "play.max.com/" or u contains "hulu.com/" then
+                    set row to (name of t) & sep & u
+                    if collected is "" then
+                      set collected to row
+                    else
+                      set collected to collected & lineSep & row
+                    end if
                   end if
                 end try
               end repeat
-              if mediaTab is not missing value then exit repeat
             end repeat
-            if mediaTab is missing value then set mediaTab to current tab of front window
-            return (name of mediaTab) & sep & (URL of mediaTab)
+            if collected is "" then
+              try
+                set ft to current tab of front window
+                set collected to (name of ft) & sep & (URL of ft)
+              end try
+            end if
+            if collected is "" then return "none"
+            return collected
           on error
             return "none"
           end try
         end tell
         """
-        guard let raw = runAppleScript(script, timeout: 2.5)?.trimmingCharacters(in: .whitespacesAndNewlines),
+        guard let raw = runAppleScript(script, timeout: 3.0)?.trimmingCharacters(in: .whitespacesAndNewlines),
               raw != "none", !raw.isEmpty
         else { return nil }
 
-        let parts = raw.split(separator: "\u{001f}", omittingEmptySubsequences: false).map(String.init)
-        guard parts.count >= 2 else { return nil }
-        let pageTitle = clean(parts[0]) ?? ""
-        let urlString = clean(parts[1]) ?? ""
-        guard var media = browserMedia(title: pageTitle, urlString: urlString) else { return nil }
+        struct Candidate {
+            var title: String
+            var urlString: String
+            var media: BrowserMedia
+            var playback: SafariPlayback?
+        }
+
+        var candidates: [Candidate] = []
+        let rows = raw.split(separator: "\u{001e}", omittingEmptySubsequences: true)
+        for row in rows.prefix(8) {
+            let parts = row.split(separator: "\u{001f}", omittingEmptySubsequences: false).map(String.init)
+            guard parts.count >= 2 else { continue }
+            let pageTitle = clean(parts[0]) ?? ""
+            let urlString = clean(parts[1]) ?? ""
+            guard let media = browserMedia(title: pageTitle, urlString: urlString) else { continue }
+            let playback = sampleSafariVideoPlayback(urlString: urlString)
+            candidates.append(Candidate(title: pageTitle, urlString: urlString, media: media, playback: playback))
+        }
+        guard !candidates.isEmpty else { return nil }
 
         lock.lock()
-        lastSafariMediaURL = urlString
+        let preferredURL = lastSafariMediaURL
         lock.unlock()
 
-        if let playback = sampleSafariVideoPlayback(urlString: urlString) {
+        // Prefer: currently playing → previously selected URL → first media tab.
+        let chosen =
+            candidates.first(where: { $0.playback?.isPlaying == true })
+            ?? candidates.first(where: { $0.urlString == preferredURL })
+            ?? candidates.first!
+
+        var media = chosen.media
+        if let playback = chosen.playback {
             media.isPlaying = playback.isPlaying
             media.duration = playback.duration
             media.elapsed = playback.elapsed
         }
+
+        lock.lock()
+        lastSafariMediaURL = chosen.urlString
+        lock.unlock()
 
         var artwork: Data?
         if let artURL = media.artworkURL {
@@ -405,7 +440,7 @@ public final class NowPlayingSampler: @unchecked Sendable {
     }
 
     private func sampleSafariVideoPlayback(urlString: String) -> SafariPlayback? {
-        let js = "(function(){var v=document.querySelector('video');if(!v)return 'novideo';return (v.paused?'paused':'playing')+'|'+(Number.isFinite(v.duration)?v.duration:0)+'|'+(Number.isFinite(v.currentTime)?v.currentTime:0);})()"
+        let js = "(function(){var vs=Array.prototype.slice.call(document.querySelectorAll('video'));if(!vs.length)return 'novideo';var v=vs.find(function(x){return !x.paused&&!x.ended;})||vs[0];return (v.paused?'paused':'playing')+'|'+(Number.isFinite(v.duration)?v.duration:0)+'|'+(Number.isFinite(v.currentTime)?v.currentTime:0);})()"
         guard let raw = runSafariJavaScript(js, inURL: urlString)?.trimmingCharacters(in: .whitespacesAndNewlines),
               raw != "novideo", !raw.isEmpty
         else { return nil }
@@ -637,11 +672,12 @@ public final class NowPlayingSampler: @unchecked Sendable {
             artworkURL = nil
         }
 
-        // Without video element access, treat a content URL on the front tab as playing.
+        // Without video element access, treat a content URL as present but paused —
+        // never assume "playing" or a paused tab shadows the real active source.
         return BrowserMedia(
             title: title,
             artist: artist,
-            isPlaying: true,
+            isPlaying: false,
             artworkURL: artworkURL,
             duration: nil,
             elapsed: nil
