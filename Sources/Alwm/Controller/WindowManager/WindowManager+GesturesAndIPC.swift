@@ -385,7 +385,14 @@ extension WindowManager {
             handleAction("float.\(mode)")
             return IPCResponse(id: request.id, ok: true, message: "float \(mode)")
         case "settings":
-            handleAction("settings.open")
+            let pane = parts.dropFirst().first
+            if pane == "workspaceBar" || pane == "workspace-bar" {
+                handleAction("settings.open.workspaceBar")
+            } else if pane == "plugins" {
+                handleAction("settings.open.plugins")
+            } else {
+                handleAction("settings.open")
+            }
             return IPCResponse(id: request.id, ok: true, message: "settings")
         case "dump":
             handleAction("debug.dump")
@@ -597,6 +604,9 @@ extension WindowManager {
             return
         case "settings.open.plugins":
             settingsUI.open(config: configStore.config, initialPane: SettingsPane.plugins.rawValue)
+            return
+        case "settings.open.workspaceBar":
+            settingsUI.open(config: configStore.config, initialPane: SettingsPane.workspaceBar.rawValue)
             return
         case "debug.dump":
             dumpRuntimeState()

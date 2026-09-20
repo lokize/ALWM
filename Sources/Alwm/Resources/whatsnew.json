@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "1.0.5",
+      "items": [
+        "Add Docker, Brew, and Downloads plugins with UI enhancements and localization updates",
+        "Implement drag-and-drop reordering for installed plugin cards with UI updates and localization improvements"
+      ]
+    },
+    {
       "version": "1.0.4",
       "items": [
         "Maintenance and fixes"
@@ -265,12 +272,6 @@
       "version": "0.6.6",
       "items": [
         "Now playing safari shortcuts"
-      ]
-    },
-    {
-      "version": "0.6.5",
-      "items": [
-        "Plugin search bar position"
       ]
     }
   ]

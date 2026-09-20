@@ -2,100 +2,84 @@ import AppKit
 import SwiftUI
 import AlwmPluginAPI
 
-/// Active plugin chip order for Settings → Workspace bar.
-struct WorkspaceBarPluginOrderSection: View {
-    @ObservedObject private var loc = LocalizationController.shared
-    @State private var rows: [Row] = []
+// MARK: - Plugin order helpers
 
-    struct Row: Identifiable, Equatable {
-        let id: String
-        let name: String
-    }
+struct PluginOrderRowData: Identifiable, Equatable {
+    let id: String
+    let name: String
+}
 
-    var body: some View {
-        Section {
-            if rows.isEmpty {
-                Text(L10n.t("wsbar.plugins_order.empty"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                    HStack(spacing: 10) {
-                        Text("\(index + 1)")
-                            .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .frame(width: 18, alignment: .trailing)
-                        Text(row.name)
-                            .font(.system(size: 13, weight: .medium))
-                            .lineLimit(1)
-                        Spacer(minLength: 8)
-                        Button {
-                            move(from: index, to: index - 1)
-                        } label: {
-                            Image(systemName: "chevron.up")
-                        }
-                        .buttonStyle(.borderless)
-                        .focusable(false)
-                        .focusEffectDisabled()
-                        .disabled(index == 0)
-                        .help(L10n.t("plugins.order.move_up"))
-
-                        Button {
-                            move(from: index, to: index + 1)
-                        } label: {
-                            Image(systemName: "chevron.down")
-                        }
-                        .buttonStyle(.borderless)
-                        .focusable(false)
-                        .focusEffectDisabled()
-                        .disabled(index >= rows.count - 1)
-                        .help(L10n.t("plugins.order.move_down"))
-                    }
-                }
-            }
-        } header: {
-            Text(L10n.t("wsbar.plugins_order"))
-        } footer: {
-            Text(L10n.t("wsbar.plugins_order.help"))
-                .font(.caption)
-        }
-        .id(loc.revision)
-        .onAppear(perform: reload)
-    }
-
-    func reload() {
+@MainActor
+enum PluginOrderInline {
+    static func loadRows() -> [PluginOrderRowData] {
         PluginManager.shared.refreshCatalog()
         let settings = PluginManager.shared.settings
-        let loaded = PluginManager.shared.barItemsSnapshot()
-        let byID = Dictionary(uniqueKeysWithValues: PluginManager.shared.catalog.map { ($0.id, $0) })
-        let orderedIDs = settings.orderedIDs(catalogIDs: loaded.map(\.id))
-        let next = orderedIDs.compactMap { id -> Row? in
-            guard loaded.contains(where: { $0.id == id }) else { return nil }
-            let name = byID[id]?.manifest.name ?? id
-            return Row(id: id, name: name)
+        let catalog = PluginManager.shared.catalog
+        let enabledIDs = catalog.map(\.id).filter { settings.state(for: $0).enabled }
+        let loadedIDs = PluginManager.shared.barItemsSnapshot().map(\.id)
+        let sourceIDs = !enabledIDs.isEmpty ? enabledIDs : loadedIDs
+        let fallbackIDs: [String] = {
+            guard sourceIDs.isEmpty else { return [] }
+            return settings.states.values
+                .filter(\.enabled)
+                .sorted { $0.order < $1.order }
+                .map(\.id)
+        }()
+        let ids = sourceIDs.isEmpty ? fallbackIDs : sourceIDs
+        let byName = Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, $0.manifest.name) })
+        return settings.orderedIDs(catalogIDs: ids).map { id in
+            PluginOrderRowData(id: id, name: byName[id] ?? id)
         }
-        guard next != rows else { return }
-        rows = next
     }
 
-    func move(from index: Int, to newIndex: Int) {
-        guard rows.indices.contains(index),
-              rows.indices.contains(newIndex)
-        else { return }
-        // Pin Form scroll before SwiftUI re-lays out the section.
+    static func move(id: String, delta: Int) {
+        var rows = loadRows()
+        guard let index = rows.firstIndex(where: { $0.id == id }) else { return }
+        let newIndex = index + delta
+        guard rows.indices.contains(newIndex) else { return }
         let pin = FormScrollPin.capture()
-        var next = rows
-        let item = next.remove(at: index)
-        next.insert(item, at: newIndex)
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            rows = next
-        }
-        PluginManager.shared.reorderBarPlugins(next.map(\.id), refreshBar: false)
+        rows.swapAt(index, newIndex)
+        PluginManager.shared.reorderBarPlugins(rows.map(\.id), refreshBar: false)
         FormScrollPin.restoreAcrossLayout(pin)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+        NotificationCenter.default.post(name: .alwmPluginOrderDidChange, object: nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
             PluginManager.shared.requestBarRefresh()
         }
+    }
+}
+
+extension Notification.Name {
+    static let alwmPluginOrderDidChange = Notification.Name("alwmPluginOrderDidChange")
+}
+
+struct PluginOrderRow: View {
+    let index: Int
+    let total: Int
+    let name: String
+    let onUp: () -> Void
+    let onDown: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("\(index + 1)")
+                .font(.system(.body, design: .monospaced).weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 22, alignment: .trailing)
+            Text(name)
+                .font(.body.weight(.medium))
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Button(action: onUp) {
+                Image(systemName: "chevron.up")
+            }
+            .buttonStyle(.borderless)
+            .disabled(index == 0)
+            Button(action: onDown) {
+                Image(systemName: "chevron.down")
+            }
+            .buttonStyle(.borderless)
+            .disabled(index >= total - 1)
+        }
+        .padding(.vertical, 4)
     }
 }

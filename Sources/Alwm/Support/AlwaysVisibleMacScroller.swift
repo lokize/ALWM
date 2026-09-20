@@ -45,6 +45,7 @@ private final class ScrollerProbeView: NSView {
 }
 
 /// Captures / restores the Settings Form `NSScrollView` clip origin across SwiftUI updates.
+@MainActor
 enum FormScrollPin {
     struct Snapshot {
         weak var scrollView: NSScrollView?
@@ -79,7 +80,9 @@ enum FormScrollPin {
     private static func findScrollView(startingAt view: NSView?) -> NSScrollView? {
         var node = view
         while let current = node {
-            if let scroll = current as? NSScrollView, scroll.documentView != nil {
+            if let scroll = current as? NSScrollView,
+               scroll.documentView != nil,
+               !(scroll is FormScrollPinIgnoredScrollView) {
                 return scroll
             }
             node = current.superview
@@ -94,7 +97,8 @@ enum FormScrollPin {
         func walk(_ view: NSView) {
             if let scroll = view as? NSScrollView,
                scroll.hasVerticalScroller,
-               scroll.documentView != nil {
+               scroll.documentView != nil,
+               !(scroll is FormScrollPinIgnoredScrollView) {
                 let area = scroll.bounds.width * scroll.bounds.height
                 if area > bestArea {
                     bestArea = area
@@ -109,6 +113,10 @@ enum FormScrollPin {
         return best
     }
 }
+
+/// Marker so Form scroll pin ignores nested list scrollers (plugin order footer).
+protocol FormScrollPinIgnoredScrollView: AnyObject {}
+
 
 /// AppKit `NSScrollView` with **legacy** scrollers that never auto-hide.
 /// Prefer SwiftUI `ScrollView` / `Form` + `ForceLegacyVerticalScroller` for panes
