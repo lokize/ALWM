@@ -57,6 +57,9 @@ enum PluginCatalogCopy {
         case "dev.alwm.steam-price-watcher": return "plugin.steam"
         case "dev.alwm.nintendo-price-watcher": return "plugin.nintendo"
         case "dev.alwm.sample-clock": return "plugin.clock"
+        case "dev.alwm.pomodoro": return "plugin.pomodoro"
+        case "dev.alwm.calendar": return "plugin.calendar"
+        case "dev.alwm.clipboard": return "plugin.clipboard"
         default: return nil
         }
     }

@@ -118,6 +118,7 @@ extension WindowManager {
         // Single delayed settle instead of 180ms + 420ms full rewrites + 4 Electron shrink/grow nudges
         // (that sequence made tiles flicker/resize for ~1–3s on every workspace switch).
         scheduleWorkspaceSwitchSettle(workspaceID: id, generation: switchGeneration)
+        applyNamedSession(for: id)
         refreshChrome()
     }
 

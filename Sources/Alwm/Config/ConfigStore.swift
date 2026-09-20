@@ -363,9 +363,22 @@ public final class ConfigStore: @unchecked Sendable {
                 id: $0.id,
                 name: $0.name,
                 layout: WorkspaceLayoutStyle(rawValue: $0.layout ?? "niri") ?? .niri,
-                monitorIndex: $0.monitorIndex
+                monitorIndex: $0.monitorIndex,
+                sessionApps: Self.normalizedBundleIDs($0.sessionApps ?? []),
+                sessionQuitOthers: $0.sessionQuitOthers ?? false
             )
         }
+    }
+
+    private static func normalizedBundleIDs(_ raw: [String]) -> [String] {
+        var seen = Set<String>()
+        var out: [String] = []
+        for item in raw {
+            let bid = item.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !bid.isEmpty, seen.insert(bid).inserted else { continue }
+            out.append(bid)
+        }
+        return out
     }
 
     public static func loadRules(from dir: URL) throws -> [AppRule] {
@@ -486,6 +499,8 @@ public final class ConfigStore: @unchecked Sendable {
             var name: String
             var layout: String?
             var monitorIndex: Int?
+            var sessionApps: [String]?
+            var sessionQuitOthers: Bool?
         }
         var workspaces: [Item]
     }

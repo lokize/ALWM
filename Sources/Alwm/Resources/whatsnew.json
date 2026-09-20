@@ -1,6 +1,19 @@
 {
   "releases": [
     {
+      "version": "1.0.3",
+      "items": [
+        "Update Package",
+        "Config updates",
+        "Window manager improvements",
+        "Plugin host updates",
+        "UI updates",
+        "Settings UI updates",
+        "Localization updates",
+        "Build and release scripts"
+      ]
+    },
+    {
       "version": "1.0.2",
       "items": [
         "Update Package",
@@ -258,12 +271,6 @@
       "version": "0.6.4",
       "items": [
         "Bluetooth plugin hid"
-      ]
-    },
-    {
-      "version": "0.6.3",
-      "items": [
-        "Window input"
       ]
     }
   ]

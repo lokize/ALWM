@@ -1,0 +1,15 @@
+{
+  "id": "dev.alwm.pomodoro",
+  "name": "Pomodoro",
+  "author": "ALWM",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "license": "GPL-3.0",
+  "summary": "Focus timer on the workspace bar with optional keep-awake (same idea as Prevent Sleep).",
+  "category": "utilities",
+  "preview": "previews/card.png",
+  "screenshots": [
+    "previews/01.png"
+  ],
+  "defaultPlacement": "afterWorkspaces"
+}

@@ -206,8 +206,11 @@ struct PluginsSettingsPane: View {
                 }
             } label: {
                 Label(L10n.t("plugins.publish"), systemImage: "arrow.up.right.square")
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.white)
             }
             .buttonStyle(.borderedProminent)
+            .tint(Color(nsColor: .systemBlue))
             .controlSize(.regular)
 
             Text(L10n.t("plugins.publish.help"))
@@ -219,7 +222,7 @@ struct PluginsSettingsPane: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.primary.opacity(0.04))
+                .fill(Color.primary.opacity(0.06))
         )
     }
 

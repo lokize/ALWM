@@ -114,9 +114,25 @@ enum ConfigWriter {
             if let idx = ws.monitorIndex {
                 block += "\nmonitorIndex = \(idx)"
             }
+            let apps = ws.sessionApps
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            if !apps.isEmpty {
+                let listed = apps.map { "\"\(escapeTomlString($0))\"" }.joined(separator: ", ")
+                block += "\nsessionApps = [\(listed)]"
+            }
+            if ws.sessionQuitOthers {
+                block += "\nsessionQuitOthers = true"
+            }
             lines.append(block)
         }
         try? lines.joined(separator: "\n\n").write(to: ConfigPaths.workspaces, atomically: true, encoding: .utf8)
+    }
+
+    private static func escapeTomlString(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
     }
 
     static func writeRules(_ rules: [AppRule]) {

@@ -55,7 +55,7 @@ extension SettingsRootView {
 
 
     var workspacesPane: some View {
-        WorkspacesSettingsPane(config: $config, monitors: monitors)
+        WorkspacesSettingsPane(config: $config, monitors: monitors, runningApps: runningAppsProvider())
     }
 
 

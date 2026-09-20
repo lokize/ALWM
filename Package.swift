@@ -32,7 +32,10 @@ let package = Package(
         .library(name: "StatsFansPlugin", type: .dynamic, targets: ["StatsFansPlugin"]),
         .library(name: "StatsBluetoothPlugin", type: .dynamic, targets: ["StatsBluetoothPlugin"]),
         .library(name: "NowPlayingPlugin", type: .dynamic, targets: ["NowPlayingPlugin"]),
-        .library(name: "StatsUptimePlugin", type: .dynamic, targets: ["StatsUptimePlugin"])
+        .library(name: "StatsUptimePlugin", type: .dynamic, targets: ["StatsUptimePlugin"]),
+        .library(name: "PomodoroPlugin", type: .dynamic, targets: ["PomodoroPlugin"]),
+        .library(name: "CalendarPlugin", type: .dynamic, targets: ["CalendarPlugin"]),
+        .library(name: "ClipboardPlugin", type: .dynamic, targets: ["ClipboardPlugin"])
     ],
     dependencies: [
         .package(url: "https://github.com/mattt/swift-toml.git", from: "2.0.0"),
@@ -308,6 +311,67 @@ let package = Package(
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("SwiftUI")
+            ]
+        ),
+        .target(
+            name: "PomodoroPlugin",
+            dependencies: [sharedAPI, sharedABI, sharedL10n, sharedStats],
+            path: "plugins/pomodoro",
+            exclude: [
+                "plugin.json",
+                "README.md",
+                "previews",
+                "l10n"
+            ],
+            swiftSettings: [
+                .swiftLanguageMode(.v6)
+            ],
+            linkerSettings: [
+                .linkedFramework("AppKit"),
+                .linkedFramework("SwiftUI"),
+                .linkedFramework("IOKit"),
+                .linkedFramework("UserNotifications")
+            ]
+        ),
+        .target(
+            name: "CalendarPlugin",
+            dependencies: [sharedAPI, sharedABI, sharedL10n, sharedStats],
+            path: "plugins/calendar",
+            exclude: [
+                "plugin.json",
+                "README.md",
+                "previews",
+                "l10n"
+            ],
+            swiftSettings: [
+                .swiftLanguageMode(.v6)
+            ],
+            linkerSettings: [
+                .linkedFramework("AppKit"),
+                .linkedFramework("SwiftUI"),
+                .linkedFramework("EventKit"),
+                .linkedFramework("UserNotifications"),
+                .linkedFramework("CoreLocation")
+            ]
+        ),
+        .target(
+            name: "ClipboardPlugin",
+            dependencies: [sharedAPI, sharedABI, sharedL10n, sharedStats],
+            path: "plugins/clipboard",
+            exclude: [
+                "plugin.json",
+                "README.md",
+                "previews",
+                "l10n"
+            ],
+            swiftSettings: [
+                .swiftLanguageMode(.v6)
+            ],
+            linkerSettings: [
+                .linkedFramework("AppKit"),
+                .linkedFramework("SwiftUI"),
+                .linkedFramework("UniformTypeIdentifiers"),
+                .linkedFramework("Carbon")
             ]
         ),
         .target(

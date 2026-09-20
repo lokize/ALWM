@@ -421,6 +421,27 @@ if [[ -d "$ROOT/plugins/stats-uptime" ]]; then
     "StatsUptime" \
     "dev.alwm.stats-uptime"
 fi
+if [[ -d "$ROOT/plugins/pomodoro" ]]; then
+  package_plugin \
+    "$ROOT/plugins/pomodoro" \
+    "libPomodoroPlugin.dylib" \
+    "Pomodoro" \
+    "dev.alwm.pomodoro"
+fi
+if [[ -d "$ROOT/plugins/calendar" ]]; then
+  package_plugin \
+    "$ROOT/plugins/calendar" \
+    "libCalendarPlugin.dylib" \
+    "Calendar" \
+    "dev.alwm.calendar"
+fi
+if [[ -d "$ROOT/plugins/clipboard" ]]; then
+  package_plugin \
+    "$ROOT/plugins/clipboard" \
+    "libClipboardPlugin.dylib" \
+    "Clipboard" \
+    "dev.alwm.clipboard"
+fi
 
 # Catalog index for on-demand installs (also copied into the app for offline fallback).
 step "Write plugins-index.json"

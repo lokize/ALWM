@@ -33,17 +33,25 @@ public struct WorkspaceDefinition: Equatable, Sendable, Codable, Identifiable {
     public var layout: WorkspaceLayoutStyle
     /// Preferred monitor index (0 = first display). `nil` = auto / any.
     public var monitorIndex: Int?
+    /// Named session: bundle IDs to open when switching to this workspace.
+    public var sessionApps: [String]
+    /// When true, quit running apps that are not in the active session(s) keep-set.
+    public var sessionQuitOthers: Bool
 
     public init(
         id: String,
         name: String,
         layout: WorkspaceLayoutStyle = .niri,
-        monitorIndex: Int? = nil
+        monitorIndex: Int? = nil,
+        sessionApps: [String] = [],
+        sessionQuitOthers: Bool = false
     ) {
         self.id = id
         self.name = name
         self.layout = layout
         self.monitorIndex = monitorIndex
+        self.sessionApps = sessionApps
+        self.sessionQuitOthers = sessionQuitOthers
     }
 }
 
