@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.1.1",
+      "items": [
+        "Window manager improvements"
+      ]
+    },
+    {
       "version": "1.1.0",
       "items": [
         "UI updates"
@@ -267,12 +273,6 @@
       "version": "0.7.2",
       "items": [
         "Plugin system"
-      ]
-    },
-    {
-      "version": "0.7.1",
-      "items": [
-        "New plugin download system"
       ]
     }
   ]

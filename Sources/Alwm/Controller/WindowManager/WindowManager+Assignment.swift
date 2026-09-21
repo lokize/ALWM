@@ -418,6 +418,8 @@ extension WindowManager {
             }
             if quake.pendingAdoptBundleID != nil, floatingOverrides.contains(id) { continue }
             if AppRules.forcesFloat(rules: rules, window: win) { continue }
+            // Probation for Safari/Electron AX siblings — finishSameBundleSiblingSettle owns promotion.
+            if sameBundleSiblingSettleWorkItems[id] != nil { continue }
 
             let hasOverride = floatingOverrides.contains(id)
             if hasOverride, !forceClearOverrides { continue }
@@ -491,6 +493,7 @@ extension WindowManager {
     func settleNewTiledWindows(_ ids: Set<WindowID>) {
         guard !ids.isEmpty else { return }
         let rules = configStore.config.rules
+        var deferred: Set<WindowID> = []
         for id in ids {
             guard var win = windowsByID[id], !win.isIgnored else { continue }
             if quake.windowID == id || isQuakeOwned(id) || isQuakeSessionWindow(win) { continue }
@@ -504,6 +507,21 @@ extension WindowManager {
                 windowsByID[id] = win
                 floatingOverrides.insert(id)
                 ensureFloatHome(id, win: win)
+                continue
+            }
+
+            // Same-bundle AX flicker (Safari temp windows): float briefly; tile only if it survives.
+            if shouldDeferSameBundleSiblingTile(id) {
+                win.isFloating = true
+                windowsByID[id] = win
+                floatingOverrides.insert(id)
+                ensureFloatHome(id, win: win)
+                markFloatRevealProtected(id, seconds: sameBundleSiblingProbation + 0.35)
+                scheduleSameBundleSiblingSettle(id)
+                deferred.insert(id)
+                logMove(
+                    "tile defer same-bundle sibling win=\(id.token) bundle=\(win.bundleID ?? "?")"
+                )
                 continue
             }
 
@@ -524,19 +542,81 @@ extension WindowManager {
                 assignWindow(id, to: home, on: monitor)
             }
         }
+        let tileIDs = ids.subtracting(deferred)
+        guard !tileIDs.isEmpty else { return }
         // After launch/resume, ingest owns mass rematch — still snap homes we just filled so
         // a single new window during grace is not left floating until the timer expires.
         if isInPostLaunchLayoutGrace() || needsLayoutRecovery(force: false) {
-            let homes = Set(ids.compactMap { workspaces.workspaceID(containing: $0) })
+            let homes = Set(tileIDs.compactMap { workspaces.workspaceID(containing: $0) })
             for home in homes where isHomeActiveOnAnyMonitor(home) {
                 snapWorkspaceTilesAfterColumnChange(home)
             }
             return
         }
-        let homes = Set(ids.compactMap { workspaces.workspaceID(containing: $0) })
+        let homes = Set(tileIDs.compactMap { workspaces.workspaceID(containing: $0) })
         for home in homes where isHomeActiveOnAnyMonitor(home) {
             snapWorkspaceTilesAfterColumnChange(home)
         }
+    }
+
+    /// True when another live tiled window of the same bundle already owns a column.
+    func shouldDeferSameBundleSiblingTile(_ id: WindowID) -> Bool {
+        guard let bid = windowsByID[id]?.bundleID, !bid.isEmpty else { return false }
+        // Disk already claims this window — rematch/restore, not a Safari flicker.
+        if diskLayoutClaimsWindow(id, allowFuzzy: true) { return false }
+        return windowsByID.contains { otherID, other in
+            otherID != id
+                && other.bundleID == bid
+                && other.isTiled
+                && !other.isIgnored
+                && missingScanCounts[otherID] == nil
+                && workspaces.workspaceID(containing: otherID) != nil
+        }
+    }
+
+    func scheduleSameBundleSiblingSettle(_ id: WindowID) {
+        sameBundleSiblingSettleWorkItems[id]?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.sameBundleSiblingSettleWorkItems.removeValue(forKey: id)
+            self?.finishSameBundleSiblingSettle(id)
+        }
+        sameBundleSiblingSettleWorkItems[id] = work
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + sameBundleSiblingProbation,
+            execute: work
+        )
+    }
+
+    func finishSameBundleSiblingSettle(_ id: WindowID) {
+        guard var win = windowsByID[id], !win.isIgnored else { return }
+        if quake.windowID == id || isQuakeOwned(id) || isQuakeSessionWindow(win) { return }
+        let rules = configStore.config.rules
+        if AppRules.forcesFloat(rules: rules, window: win) { return }
+        // Still looks like a real window — promote into a column now that it survived.
+        floatingOverrides.remove(id)
+        win.isFloating = false
+        win.isScratchpad = false
+        windowsByID[id] = win
+        let monitor = monitors.monitorContaining(pointX: win.frame.midX, pointY: win.frame.midY)
+            ?? primaryMonitor()
+            ?? monitors.monitors.first
+        guard let monitor else { return }
+        let home = windowWorkspace[id]
+            ?? runtimeState.assignment(for: id)
+            ?? resolveTargetWorkspace(for: win, on: monitor)
+        guard let home, workspaces.workspaces[home] != nil else { return }
+        if workspaces.workspaceID(containing: id) == nil {
+            assignWindow(id, to: home, on: monitor)
+        }
+        logMove("tile promote same-bundle sibling win=\(id.token) ws=\(home)")
+        if isHomeActiveOnAnyMonitor(home) {
+            snapWorkspaceTilesAfterColumnChange(home)
+        }
+    }
+
+    func cancelSameBundleSiblingSettle(_ id: WindowID) {
+        sameBundleSiblingSettleWorkItems[id]?.cancel()
+        sameBundleSiblingSettleWorkItems.removeValue(forKey: id)
     }
 
     func toggleFloatFocused() {

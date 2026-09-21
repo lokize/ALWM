@@ -252,6 +252,7 @@ extension WindowManager {
                 missingScanCounts.removeValue(forKey: id)
                 windowFirstTrackedAt.removeValue(forKey: id)
                 appRuleFramesApplied.remove(id)
+                cancelSameBundleSiblingSettle(id)
             }
             // Keep last known ManagedWindow (until forgotten) so we can still park by sticky id.
         }

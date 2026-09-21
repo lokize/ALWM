@@ -1593,6 +1593,7 @@ extension WindowManager {
 
         logMove("close ax-destroy win=\(id.token) bundle=\(bundleID ?? "?") home=\(home ?? "-")")
 
+        cancelSameBundleSiblingSettle(id)
         workspaces.removeWindowEverywhere(id)
         windowsByID.removeValue(forKey: id)
         windowWorkspace.removeValue(forKey: id)

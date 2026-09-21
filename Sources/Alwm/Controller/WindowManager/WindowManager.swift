@@ -103,6 +103,12 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
 
     let floatRevealGrace: TimeInterval = 3.0
 
+    /// Safari/Electron often expose a short-lived AX sibling that would steal a column,
+    /// shrink real tiles, then vanish — wait before tiling next to an existing same-bundle tile.
+    let sameBundleSiblingProbation: TimeInterval = 0.65
+
+    var sameBundleSiblingSettleWorkItems: [WindowID: DispatchWorkItem] = [:]
+
     var forcedFloatVisibleUntil: [WindowID: Date] = [:]
 
     var forceTileExpandUntil: [String: Date] = [:]
