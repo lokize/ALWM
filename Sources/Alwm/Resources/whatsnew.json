@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.0.6",
+      "items": [
+        "Maintenance and fixes"
+      ]
+    },
+    {
       "version": "1.0.5",
       "items": [
         "Add Docker, Brew, and Downloads plugins with UI enhancements and localization updates",
@@ -266,12 +272,6 @@
       "version": "0.6.7",
       "items": [
         "Workspace bar improves"
-      ]
-    },
-    {
-      "version": "0.6.6",
-      "items": [
-        "Now playing safari shortcuts"
       ]
     }
   ]
