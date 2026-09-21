@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.0.8",
+      "items": [
+        "Plugins: docker/Sources/DockerPlugin.swift"
+      ]
+    },
+    {
       "version": "1.0.7",
       "items": [
         "Settings UI updates"
@@ -266,12 +272,6 @@
       "version": "0.6.9",
       "items": [
         "Focus notepad and terminal"
-      ]
-    },
-    {
-      "version": "0.6.8",
-      "items": [
-        "Mouse focus when menus, plugins"
       ]
     }
   ]

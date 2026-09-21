@@ -100,9 +100,10 @@ public final class DockerPlugin: AlwmPlugin {
             host.heightAnchor.constraint(equalToConstant: chip.fittingSize.height),
             host.widthAnchor.constraint(equalToConstant: max(chip.fittingSize.width, 1))
         ])
-        host.onLeftClick = { [weak host] in
+        host.onLeftClick = {
             Task { @MainActor in
-                DockerPanelController.toggle(relativeTo: host)
+                // Position uses mouse location; avoid capturing NSView across isolation.
+                DockerPanelController.toggle(relativeTo: nil)
             }
         }
         host.menuBuilder = { [weak self] in
