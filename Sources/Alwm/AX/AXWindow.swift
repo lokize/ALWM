@@ -190,6 +190,37 @@ public final class AXWindow: @unchecked Sendable {
         }
     }
 
+    /// True when the window exposes a close (traffic-light) button — real documents do; tooltips don't.
+    public var hasCloseButton: Bool {
+        var buttonObj: AnyObject?
+        guard AXUIElementCopyAttributeValue(element, kAXCloseButtonAttribute as CFString, &buttonObj) == .success,
+              buttonObj != nil
+        else { return false }
+        return true
+    }
+
+    /// CGWindow layer when known (0 = normal document; 1…23 ≈ panels/tooltips).
+    public func cgWindowLayer() -> Int? {
+        guard id.windowNumber > 0,
+              let infos = CGWindowListCopyWindowInfo(
+                [.optionIncludingWindow],
+                CGWindowID(id.windowNumber)
+              ) as? [[String: Any]],
+              let info = infos.first
+        else { return nil }
+        return (info[kCGWindowLayer as String] as? NSNumber)?.intValue
+            ?? (info[kCGWindowLayer as String] as? Int)
+    }
+
+    /// Hover tooltips / transient Safari chrome that must never become tiling columns.
+    /// Prefer calling from same-bundle sibling paths — some apps omit AX close buttons.
+    public var isLikelyTransientOverlay: Bool {
+        if prefersFloating { return true }
+        if !hasCloseButton { return true }
+        if let layer = cgWindowLayer(), layer > 0, layer < 24 { return true }
+        return false
+    }
+
     public var isModal: Bool {
         var value: AnyObject?
         guard AXUIElementCopyAttributeValue(element, kAXModalAttribute as CFString, &value) == .success,

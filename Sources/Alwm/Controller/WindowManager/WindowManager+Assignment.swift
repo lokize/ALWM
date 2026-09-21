@@ -510,18 +510,25 @@ extension WindowManager {
                 continue
             }
 
-            // Same-bundle AX flicker (Safari temp windows): float briefly; tile only if it survives.
+            // Same-bundle AX flicker (Safari temp windows / tab tooltips): keep floating.
+            // Tooltips lack chrome — never schedule a promote that would steal a column.
             if shouldDeferSameBundleSiblingTile(id) {
                 win.isFloating = true
                 windowsByID[id] = win
                 floatingOverrides.insert(id)
                 ensureFloatHome(id, win: win)
-                markFloatRevealProtected(id, seconds: sameBundleSiblingProbation + 0.35)
-                scheduleSameBundleSiblingSettle(id)
                 deferred.insert(id)
-                logMove(
-                    "tile defer same-bundle sibling win=\(id.token) bundle=\(win.bundleID ?? "?")"
-                )
+                if isLikelyTransientSameBundleOverlay(id, win: win) {
+                    logMove(
+                        "tile skip same-bundle overlay win=\(id.token) bundle=\(win.bundleID ?? "?")"
+                    )
+                } else {
+                    markFloatRevealProtected(id, seconds: sameBundleSiblingProbation + 0.35)
+                    scheduleSameBundleSiblingSettle(id)
+                    logMove(
+                        "tile defer same-bundle sibling win=\(id.token) bundle=\(win.bundleID ?? "?")"
+                    )
+                }
                 continue
             }
 
@@ -592,6 +599,17 @@ extension WindowManager {
         if quake.windowID == id || isQuakeOwned(id) || isQuakeSessionWindow(win) { return }
         let rules = configStore.config.rules
         if AppRules.forcesFloat(rules: rules, window: win) { return }
+        // Safari tab tooltips survive hover longer than probation — never promote overlays.
+        if isLikelyTransientSameBundleOverlay(id, win: win) {
+            win.isFloating = true
+            windowsByID[id] = win
+            floatingOverrides.insert(id)
+            ensureFloatHome(id, win: win)
+            logMove(
+                "tile skip same-bundle overlay win=\(id.token) bundle=\(win.bundleID ?? "?") (late)"
+            )
+            return
+        }
         // Still looks like a real window — promote into a column now that it survived.
         floatingOverrides.remove(id)
         win.isFloating = false
@@ -612,6 +630,20 @@ extension WindowManager {
         if isHomeActiveOnAnyMonitor(home) {
             snapWorkspaceTilesAfterColumnChange(home)
         }
+    }
+
+    /// Safari tab tooltips / hover cards: no traffic lights, short vs usable, or popup layer.
+    func isLikelyTransientSameBundleOverlay(_ id: WindowID, win: ManagedWindow) -> Bool {
+        let usable = usableAreaNear(win.frame)
+        // Real browser windows fill most of the display; tooltips do not.
+        if win.frame.height < usable.height * 0.55 { return true }
+        if win.frame.width < usable.width * 0.20, win.frame.height < usable.height * 0.75 {
+            return true
+        }
+        if let ax = ax.currentAX[id] {
+            if ax.isLikelyTransientOverlay { return true }
+        }
+        return false
     }
 
     func cancelSameBundleSiblingSettle(_ id: WindowID) {
