@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "1.0.9",
+      "items": [
+        "UI updates",
+        "Localization updates"
+      ]
+    },
+    {
       "version": "1.0.8",
       "items": [
         "Plugins: docker/Sources/DockerPlugin.swift"
@@ -266,12 +273,6 @@
       "version": "0.7.0",
       "items": [
         "Nintendo store prices plugins"
-      ]
-    },
-    {
-      "version": "0.6.9",
-      "items": [
-        "Focus notepad and terminal"
       ]
     }
   ]

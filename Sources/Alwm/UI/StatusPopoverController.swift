@@ -315,6 +315,7 @@ struct StatusMenuView: View {
     @ObservedObject var model: StatusMenuModel
     @ObservedObject private var loc = LocalizationController.shared
     @ObservedObject private var updates = AppUpdateService.shared
+    @ObservedObject private var github = GitHubProjectService.shared
     var onToggleFocus: () -> Void
     var onToggleBorders: () -> Void
     var onToggleBar: () -> Void
@@ -408,7 +409,7 @@ struct StatusMenuView: View {
             }
             .padding(14)
         }
-        .frame(width: 340)
+        .frame(width: 360)
         // Hug content on large screens; only grow up to the visible display height.
         .frame(maxHeight: maxH, alignment: .top)
         .fixedSize(horizontal: true, vertical: true)
@@ -417,7 +418,7 @@ struct StatusMenuView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             AlwmLogoImage(side: 40, cornerRadius: 10)
             VStack(alignment: .leading, spacing: 2) {
                 Text("ALWM")
@@ -439,10 +440,74 @@ struct StatusMenuView: View {
                     }
                 }
             }
-            Spacer(minLength: 0)
-            headerUpdateAction
+            Spacer(minLength: 4)
+            HStack(spacing: 6) {
+                headerGitHubActions
+                headerUpdateAction
+            }
         }
         .padding(.bottom, 2)
+        .onAppear {
+            github.refreshIfNeeded()
+        }
+    }
+
+    private var headerGitHubActions: some View {
+        HStack(spacing: 6) {
+            Button {
+                github.starOrOpen()
+            } label: {
+                HStack(spacing: 4) {
+                    if case .starring = github.phase {
+                        ProgressView()
+                            .controlSize(.mini)
+                    } else {
+                        Image(systemName: github.isStarred ? "star.fill" : "star")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(github.isStarred ? Color.yellow : Color.primary.opacity(0.85))
+                    }
+                    Text(github.formattedStarCount)
+                        .font(.system(size: 11, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(.primary.opacity(0.9))
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color.primary.opacity(0.08))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(github.phase == .starring)
+            .help(L10n.t(github.isStarred ? "menu.github.starred.help" : "menu.github.star.help"))
+            .accessibilityLabel(L10n.tf("menu.github.stars.a11y", github.formattedStarCount))
+
+            Button {
+                github.openRepository()
+            } label: {
+                Text(L10n.t("menu.github"))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.primary.opacity(0.9))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(Color.primary.opacity(0.08))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                    )
+            }
+            .buttonStyle(.plain)
+            .help(L10n.t("menu.github.open.help"))
+            .accessibilityLabel(L10n.t("menu.github.open.help"))
+        }
     }
 
     @ViewBuilder
