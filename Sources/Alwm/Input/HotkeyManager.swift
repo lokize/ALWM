@@ -407,11 +407,22 @@ public final class HotkeyManager: @unchecked Sendable {
         guard let window else { return false }
         guard let fr = (window as AnyObject).value(forKey: "firstResponder") as? NSResponder else { return false }
         if fr is NSTextView || fr is NSTextField { return true }
+        // Field editor hosted by NSText / NSTextView.
+        if fr.responds(to: #selector(NSText.copy(_:)))
+            || fr.responds(to: #selector(NSText.paste(_:)))
+            || fr.responds(to: #selector(NSText.selectAll(_:))) {
+            let name = NSStringFromClass(type(of: fr))
+            if name.contains("Text") || name.contains("Field") || name.contains("Editor")
+                || name.contains("Input") {
+                return true
+            }
+        }
         // SwiftUI field editor / nested responders.
         var node: NSResponder? = fr
         while let current = node {
             let name = NSStringFromClass(type(of: current))
-            if name.contains("TextView") || name.contains("TextField") || name.contains("TextInput") {
+            if name.contains("TextView") || name.contains("TextField") || name.contains("TextInput")
+                || name.contains("TextEditor") || name.contains("FieldEditor") {
                 return true
             }
             node = current.nextResponder

@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "1.1.2",
+      "items": [
+        "Input handling updates",
+        "Update main"
+      ]
+    },
+    {
       "version": "1.1.1",
       "items": [
         "Window manager improvements"
@@ -267,12 +274,6 @@
       "version": "0.7.3",
       "items": [
         "Improve plugin system"
-      ]
-    },
-    {
-      "version": "0.7.2",
-      "items": [
-        "Plugin system"
       ]
     }
   ]

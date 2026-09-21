@@ -23,6 +23,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ProcessInfo.processInfo.disableAutomaticTermination("alwm-window-manager")
         ProcessInfo.processInfo.disableSuddenTermination()
 
+        // Without an Edit menu, ⌘C/⌘V/⌘A never reach text fields in panels/notepad.
+        AlwmStandardEditMenu.install()
+
         // Register login item before permissions gate — otherwise a first launch that
         // stops at the gate never enables "Open at Login".
         applyLaunchAtLoginPreference()
