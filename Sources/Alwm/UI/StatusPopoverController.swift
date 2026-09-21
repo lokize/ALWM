@@ -409,7 +409,7 @@ struct StatusMenuView: View {
             }
             .padding(14)
         }
-        .frame(width: 360)
+        .frame(width: 372)
         // Hug content on large screens; only grow up to the visible display height.
         .frame(maxHeight: maxH, alignment: .top)
         .fixedSize(horizontal: true, vertical: true)
@@ -418,21 +418,24 @@ struct StatusMenuView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
-            AlwmLogoImage(side: 40, cornerRadius: 10)
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: 8) {
+            AlwmLogoImage(side: 36, cornerRadius: 9)
+            VStack(alignment: .leading, spacing: 1) {
                 Text("ALWM")
-                    .font(.system(size: 16, weight: .semibold))
-                HStack(spacing: 6) {
+                    .font(.system(size: 14, weight: .semibold))
+                    .lineLimit(1)
+                HStack(spacing: 4) {
                     Text("v\(AlwmVersion.installed)")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                     if case .available = updates.phase, let latest = updates.latestVersion {
                         Text(L10n.tf("menu.update.badge", latest))
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: 9, weight: .semibold))
                             .foregroundStyle(AlwmUpdateChrome.green)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
+                            .lineLimit(1)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
                             .background(
                                 Capsule(style: .continuous)
                                     .fill(AlwmUpdateChrome.green.opacity(0.18))
@@ -440,11 +443,14 @@ struct StatusMenuView: View {
                     }
                 }
             }
-            Spacer(minLength: 4)
-            HStack(spacing: 6) {
+            .layoutPriority(1)
+            Spacer(minLength: 6)
+            HStack(spacing: 4) {
                 headerGitHubActions
                 headerUpdateAction
             }
+            .fixedSize(horizontal: true, vertical: false)
+            .layoutPriority(2)
         }
         .padding(.bottom, 2)
         .onAppear {
@@ -453,36 +459,38 @@ struct StatusMenuView: View {
     }
 
     private var headerGitHubActions: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
             Button {
                 github.starOrOpen()
             } label: {
-                HStack(spacing: 4) {
+                HStack(spacing: 3) {
                     if case .starring = github.phase {
                         ProgressView()
                             .controlSize(.mini)
                     } else {
                         Image(systemName: github.isStarred ? "star.fill" : "star")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 9, weight: .semibold))
                             .foregroundStyle(github.isStarred ? Color.yellow : Color.primary.opacity(0.85))
                     }
                     Text(github.formattedStarCount)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 10, weight: .semibold))
                         .monospacedDigit()
                         .foregroundStyle(.primary.opacity(0.9))
+                        .lineLimit(1)
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
                 .background(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(Color.primary.opacity(0.08))
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
                 )
             }
             .buttonStyle(.plain)
+            .fixedSize()
             .disabled(github.phase == .starring)
             .help(L10n.t(github.isStarred ? "menu.github.starred.help" : "menu.github.star.help"))
             .accessibilityLabel(L10n.tf("menu.github.stars.a11y", github.formattedStarCount))
@@ -491,20 +499,22 @@ struct StatusMenuView: View {
                 github.openRepository()
             } label: {
                 Text(L10n.t("menu.github"))
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.primary.opacity(0.9))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
+                    .lineLimit(1)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
                     .background(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
                             .fill(Color.primary.opacity(0.08))
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
                             .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
                     )
             }
             .buttonStyle(.plain)
+            .fixedSize()
             .help(L10n.t("menu.github.open.help"))
             .accessibilityLabel(L10n.t("menu.github.open.help"))
         }
@@ -514,14 +524,14 @@ struct StatusMenuView: View {
     private var headerUpdateAction: some View {
         switch updates.phase {
         case .available:
-            AlwmUpdateButton(compact: true) {
+            AlwmUpdateButton(mini: true) {
                 updates.installUpdate()
             }
         case .downloading, .installing:
             ProgressView()
-                .controlSize(.small)
+                .controlSize(.mini)
         case .failed(_) where updates.isUpdateAvailable:
-            AlwmUpdateButton(compact: true) {
+            AlwmUpdateButton(mini: true) {
                 updates.installUpdate()
             }
         default:

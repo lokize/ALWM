@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.1.0",
+      "items": [
+        "UI updates"
+      ]
+    },
+    {
       "version": "1.0.9",
       "items": [
         "UI updates",
@@ -267,12 +273,6 @@
       "version": "0.7.1",
       "items": [
         "New plugin download system"
-      ]
-    },
-    {
-      "version": "0.7.0",
-      "items": [
-        "Nintendo store prices plugins"
       ]
     }
   ]
