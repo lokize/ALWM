@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.0.7",
+      "items": [
+        "Settings UI updates"
+      ]
+    },
+    {
       "version": "1.0.6",
       "items": [
         "Maintenance and fixes"
@@ -266,12 +272,6 @@
       "version": "0.6.8",
       "items": [
         "Mouse focus when menus, plugins"
-      ]
-    },
-    {
-      "version": "0.6.7",
-      "items": [
-        "Workspace bar improves"
       ]
     }
   ]

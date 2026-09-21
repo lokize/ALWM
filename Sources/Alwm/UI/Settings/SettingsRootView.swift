@@ -188,8 +188,6 @@ struct SettingsRootView: View {
         // Native Form scrolling — wrapping Form in NSScrollView ate trackpad events
         // (SwiftUI Form swallowed the wheel; only the outer scrollbar knob moved).
         // Plugins embeds its own ScrollView — skip the Form scroller probe.
-        // Workspace Bar is tall (placement + content + plugin order); Form's internal
-        // scroller often under-measures and clips the bottom — host in ScrollView.
         if pane == .plugins {
             // Plugins owns its ScrollView; fill the detail column so GeometryReader
             // inside gets a finite height (otherwise catalog clips with no scroller).
@@ -198,79 +196,23 @@ struct SettingsRootView: View {
                 .focusEffectDisabled()
                 .id(pane)
         } else if pane == .workspaceBar {
-            ScrollView(.vertical, showsIndicators: true) {
-                workspaceBarSettings
-            }
-            .scrollIndicators(.visible)
-            .background(ForceLegacyVerticalScroller())
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Divider()
-                    Text(L10n.t("wsbar.plugins_order"))
-                        .font(.headline)
-                        .padding(.horizontal, 20)
-                        .padding(.top, 8)
-                    if pluginOrderRows.isEmpty {
-                        Text(L10n.t("wsbar.plugins_order.empty"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 20)
-                            .padding(.bottom, 12)
-                    } else {
-                        let listHeight = min(200, CGFloat(pluginOrderRows.count) * 36 + 8)
-                        ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 0) {
-                                ForEach(Array(pluginOrderRows.enumerated()), id: \.element.id) { index, row in
-                                    HStack(spacing: 8) {
-                                        Text("\(index + 1)")
-                                            .font(.system(.body, design: .monospaced).weight(.semibold))
-                                            .foregroundStyle(.secondary)
-                                            .frame(width: 22, alignment: .trailing)
-                                        Text(row.name)
-                                            .font(.body.weight(.medium))
-                                            .lineLimit(1)
-                                        Spacer(minLength: 8)
-                                        Button {
-                                            PluginOrderInline.move(id: row.id, delta: -1)
-                                        } label: {
-                                            Image(systemName: "chevron.up")
-                                        }
-                                        .buttonStyle(.borderless)
-                                        .disabled(index == 0)
-                                        Button {
-                                            PluginOrderInline.move(id: row.id, delta: 1)
-                                        } label: {
-                                            Image(systemName: "chevron.down")
-                                        }
-                                        .buttonStyle(.borderless)
-                                        .disabled(index >= pluginOrderRows.count - 1)
-                                    }
-                                    .padding(.horizontal, 20)
-                                    .padding(.vertical, 4)
-                                    if index < pluginOrderRows.count - 1 {
-                                        Divider().padding(.horizontal, 20)
-                                    }
-                                }
-                            }
-                        }
-                        .frame(height: listHeight)
-                        Text(L10n.t("wsbar.plugins_order.help"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 20)
-                            .padding(.bottom, 12)
+            // Form for settings (same look as other panes) + separate plugin-order
+            // inset so arrow reorder does not jump Form scroll to top.
+            workspaceBarPane
+                .scrollIndicators(.visible)
+                .background(ForceLegacyVerticalScroller())
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    VStack(spacing: 0) {
+                        Divider()
+                        workspaceBarPluginOrderPanel
+                    }
+                    .onReceive(NotificationCenter.default.publisher(for: .alwmPluginOrderDidChange)) { _ in
+                        pluginOrderRows = PluginOrderInline.loadRows()
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-                .background(.bar)
-                .onReceive(NotificationCenter.default.publisher(for: .alwmPluginOrderDidChange)) { _ in
-                    pluginOrderRows = PluginOrderInline.loadRows()
-                    pluginOrderEpoch += 1
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .onAppear { pluginOrderRows = PluginOrderInline.loadRows() }
-            .id(pane)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .onAppear { pluginOrderRows = PluginOrderInline.loadRows() }
+                .id(pane)
         } else {
             paneForm
                 .scrollIndicators(.visible)
