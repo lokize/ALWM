@@ -179,31 +179,31 @@ final class CalendarStore: ObservableObject, @unchecked Sendable {
                 object: eventStore,
                 queue: .main
             ) { [weak self] _ in
-                self?.refreshEvents()
+                Task { @MainActor in self?.refreshEvents() }
             }
         }
         if refreshTimer == nil {
             let t = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
-                self?.refreshEvents()
+                Task { @MainActor in self?.refreshEvents() }
             }
             RunLoop.main.add(t, forMode: .common)
             refreshTimer = t
         }
         if notifyTimer == nil {
             let t = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
-                self?.checkNotifications()
+                Task { @MainActor in self?.checkNotifications() }
             }
             RunLoop.main.add(t, forMode: .common)
             notifyTimer = t
         }
         if weatherTimer == nil {
             let t = Timer(timeInterval: 30 * 60, repeats: true) { [weak self] _ in
-                Task { await self?.refreshWeather() }
+                Task { @MainActor in await self?.refreshWeather() }
             }
             RunLoop.main.add(t, forMode: .common)
             weatherTimer = t
         }
-        Task {
+        Task { @MainActor in
             await ensureLocationAndWeather()
             await requestAccessIfNeeded()
         }
@@ -273,24 +273,20 @@ final class CalendarStore: ObservableObject, @unchecked Sendable {
         }
         locationSearching = true
         objectWillChange.send()
-        locationSuggestTask = Task { [weak self] in
+        locationSuggestTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 320_000_000)
             guard !Task.isCancelled, let self else { return }
             do {
                 let hits = try await WeatherService.search(query: query, count: 6)
                 guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    self.locationSuggestions = hits
-                    self.locationSearching = false
-                    self.objectWillChange.send()
-                }
+                self.locationSuggestions = hits
+                self.locationSearching = false
+                self.objectWillChange.send()
             } catch {
                 guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    self.locationSuggestions = []
-                    self.locationSearching = false
-                    self.objectWillChange.send()
-                }
+                self.locationSuggestions = []
+                self.locationSearching = false
+                self.objectWillChange.send()
             }
         }
     }
@@ -344,76 +340,97 @@ final class CalendarStore: ObservableObject, @unchecked Sendable {
 
         guard let lat = settings.latitude, let lon = settings.longitude else { return }
         if !forceRefresh, weather != nil { return }
-        weatherLoading = true
-        weatherError = nil
-        objectWillChange.send()
+        let label = settings.locationLabel.isEmpty ? locationDraft : settings.locationLabel
+        await MainActor.run {
+            self.weatherLoading = true
+            self.weatherError = nil
+            self.objectWillChange.send()
+        }
         do {
             try await fetchWeatherLocked(
                 latitude: lat,
                 longitude: lon,
-                label: settings.locationLabel.isEmpty ? locationDraft : settings.locationLabel
+                label: label
             )
         } catch {
-            weatherError = PluginL10n.t("plugin.calendar.weather.error.network", locale: localeCode())
-            weatherLoading = false
-            objectWillChange.send()
-            onChange?()
+            let message = PluginL10n.t("plugin.calendar.weather.error.network", locale: localeCode())
+            await MainActor.run {
+                self.weatherError = message
+                self.weatherLoading = false
+                self.objectWillChange.send()
+                self.onChange?()
+            }
         }
     }
 
     /// Returns true if Core Location succeeded.
     @discardableResult
     private func resolveAutomaticLocation() async -> Bool {
-        weatherLoading = true
-        weatherError = nil
-        objectWillChange.send()
+        await MainActor.run {
+            self.weatherLoading = true
+            self.weatherError = nil
+            self.objectWillChange.send()
+        }
         do {
             let loc = try await DeviceLocation.shared.requestCurrentLocation()
             let label = await WeatherService.reverseGeocodeLabel(
                 latitude: loc.coordinate.latitude,
                 longitude: loc.coordinate.longitude
             ) ?? PluginL10n.t("plugin.calendar.weather.location.current", locale: localeCode())
-            updateSettings {
-                $0.useAutomaticLocation = true
-                $0.locationQuery = label
-                $0.locationLabel = label
-                $0.latitude = loc.coordinate.latitude
-                $0.longitude = loc.coordinate.longitude
+            await MainActor.run {
+                self.updateSettings {
+                    $0.useAutomaticLocation = true
+                    $0.locationQuery = label
+                    $0.locationLabel = label
+                    $0.latitude = loc.coordinate.latitude
+                    $0.longitude = loc.coordinate.longitude
+                }
+                self.suppressLocationSuggest = true
+                self.locationDraft = label
+                self.locationSuggestions = []
+                self.weatherLoading = false
+                self.objectWillChange.send()
             }
-            suppressLocationSuggest = true
-            locationDraft = label
-            locationSuggestions = []
-            weatherLoading = false
-            objectWillChange.send()
             return true
         } catch DeviceLocation.LocationError.denied {
-            weatherError = PluginL10n.t("plugin.calendar.weather.error.location_denied", locale: localeCode())
-            weatherLoading = false
-            objectWillChange.send()
+            let message = PluginL10n.t("plugin.calendar.weather.error.location_denied", locale: localeCode())
+            await MainActor.run {
+                self.weatherError = message
+                self.weatherLoading = false
+                self.objectWillChange.send()
+            }
             return false
         } catch {
-            weatherError = PluginL10n.t("plugin.calendar.weather.error.location_failed", locale: localeCode())
-            weatherLoading = false
-            objectWillChange.send()
+            let message = PluginL10n.t("plugin.calendar.weather.error.location_failed", locale: localeCode())
+            await MainActor.run {
+                self.weatherError = message
+                self.weatherLoading = false
+                self.objectWillChange.send()
+            }
             return false
         }
     }
 
     private func resolveTimezoneFallback() async {
         let seed = defaultLocationSeed()
-        locationDraft = seed
+        await MainActor.run { self.locationDraft = seed }
         do {
             let geo = try await WeatherService.geocode(query: seed)
-            updateSettings {
-                $0.locationQuery = seed
-                $0.locationLabel = geo.displayName
-                $0.latitude = geo.latitude
-                $0.longitude = geo.longitude
+            await MainActor.run {
+                self.updateSettings {
+                    $0.locationQuery = seed
+                    $0.locationLabel = geo.displayName
+                    $0.latitude = geo.latitude
+                    $0.longitude = geo.longitude
+                }
+                self.locationDraft = geo.displayName
             }
-            locationDraft = geo.displayName
         } catch {
-            weatherError = PluginL10n.t("plugin.calendar.weather.error.network", locale: localeCode())
-            objectWillChange.send()
+            let message = PluginL10n.t("plugin.calendar.weather.error.network", locale: localeCode())
+            await MainActor.run {
+                self.weatherError = message
+                self.objectWillChange.send()
+            }
         }
     }
 
@@ -423,11 +440,13 @@ final class CalendarStore: ObservableObject, @unchecked Sendable {
             longitude: longitude,
             locationLabel: label
         )
-        weather = snap
-        weatherLoading = false
-        weatherError = nil
-        objectWillChange.send()
-        onChange?()
+        await MainActor.run {
+            self.weather = snap
+            self.weatherLoading = false
+            self.weatherError = nil
+            self.objectWillChange.send()
+            self.onChange?()
+        }
     }
 
     private func defaultLocationSeed() -> String {

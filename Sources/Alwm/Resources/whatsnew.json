@@ -1,6 +1,17 @@
 {
   "releases": [
     {
+      "version": "1.1.4",
+      "items": [
+        "Localization updates",
+        "Plugins: brew/Sources/BrewPanel.swift",
+        "Plugins: brew/Sources/BrewPlugin.swift",
+        "Plugins: brew/Sources/BrewStore.swift",
+        "Plugins: calendar/Sources/CalendarStore.swift",
+        "Build and release scripts"
+      ]
+    },
+    {
       "version": "1.1.3",
       "items": [
         "Accessibility bridge updates",
@@ -267,12 +278,6 @@
     },
     {
       "version": "0.7.5",
-      "items": [
-        "Scroll"
-      ]
-    },
-    {
-      "version": "0.7.4",
       "items": [
         "Scroll"
       ]

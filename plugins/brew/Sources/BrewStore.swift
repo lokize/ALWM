@@ -9,6 +9,8 @@ struct BrewPackage: Identifiable, Equatable, Sendable {
     let kind: Kind
     let installed: String
     let current: String
+    /// Homebrew marked the formula/cask as disabled (e.g. Gatekeeper) — upgrade is impossible.
+    let isDisabled: Bool
 
     enum Kind: String, Sendable {
         case formula
@@ -35,10 +37,15 @@ final class BrewStore: ObservableObject, @unchecked Sendable {
 
     private init() {}
 
-    var outdatedCount: Int {
+    /// Packages that can actually be upgraded (excludes Homebrew-disabled).
+    var upgradeablePackages: [BrewPackage] {
         lock.lock()
         defer { lock.unlock() }
-        return packages.count
+        return packages.filter { !$0.isDisabled }
+    }
+
+    var outdatedCount: Int {
+        upgradeablePackages.count
     }
 
     var barLabel: String {
@@ -110,7 +117,12 @@ final class BrewStore: ObservableObject, @unchecked Sendable {
             let output = try await Task.detached {
                 try Self.run(brew, args: ["outdated", "--json=v2"], timeout: 90)
             }.value
-            let parsed = try Self.parseOutdatedJSON(output)
+            let parsedJSON = output.stdout
+            let brewPath = brew
+            let parsed = try await Task.detached {
+                let base = try Self.parseOutdatedJSON(parsedJSON)
+                return Self.annotateDisabled(base, brew: brewPath)
+            }.value
             await MainActor.run {
                 brewAvailable = true
                 packages = parsed
@@ -134,18 +146,54 @@ final class BrewStore: ObservableObject, @unchecked Sendable {
 
     func upgradeAll() async {
         guard let brew = Self.brewPath() else { return }
+        let targets = upgradeablePackages
+        let disabledCount = packages.count - targets.count
         await MainActor.run {
             isUpgrading = true
+            lastError = nil
             statusLine = PluginL10n.t("plugin.brew.status.upgrading_all", locale: localeCode())
             objectWillChange.send()
         }
+        guard !targets.isEmpty else {
+            await MainActor.run {
+                isUpgrading = false
+                statusLine = ""
+                if disabledCount > 0 {
+                    lastError = PluginL10n.tf(
+                        "plugin.brew.error.only_disabled",
+                        locale: localeCode(),
+                        disabledCount
+                    )
+                }
+                objectWillChange.send()
+            }
+            return
+        }
+
         do {
+            let formulae = targets.filter { $0.kind == .formula }.map(\.name)
+            let casks = targets.filter { $0.kind == .cask }.map(\.name)
             _ = try await Task.detached {
-                try Self.run(brew, args: ["upgrade"], timeout: 600)
+                if !formulae.isEmpty {
+                    _ = try Self.run(brew, args: ["upgrade", "--formula"] + formulae, timeout: 900)
+                }
+                if !casks.isEmpty {
+                    _ = try Self.run(brew, args: ["upgrade", "--cask"] + casks, timeout: 900)
+                }
             }.value
             await MainActor.run {
                 isUpgrading = false
                 statusLine = ""
+                if disabledCount > 0 {
+                    lastError = PluginL10n.tf(
+                        "plugin.brew.status.skipped_disabled",
+                        locale: localeCode(),
+                        disabledCount
+                    )
+                } else {
+                    lastError = nil
+                }
+                objectWillChange.send()
             }
             await refresh()
         } catch {
@@ -155,22 +203,36 @@ final class BrewStore: ObservableObject, @unchecked Sendable {
                 lastError = error.localizedDescription
                 objectWillChange.send()
             }
+            await refresh()
         }
     }
 
     func upgrade(_ pkg: BrewPackage) async {
         guard let brew = Self.brewPath() else { return }
+        if pkg.isDisabled {
+            await MainActor.run {
+                lastError = PluginL10n.tf(
+                    "plugin.brew.error.disabled",
+                    locale: localeCode(),
+                    pkg.name
+                )
+                objectWillChange.send()
+            }
+            return
+        }
         await MainActor.run {
             isUpgrading = true
+            lastError = nil
             statusLine = PluginL10n.tf("plugin.brew.status.upgrading", locale: localeCode(), pkg.name)
             objectWillChange.send()
         }
         var args = ["upgrade"]
         if pkg.kind == .cask { args.append("--cask") }
+        else { args.append("--formula") }
         args.append(pkg.name)
         do {
             _ = try await Task.detached {
-                try Self.run(brew, args: args, timeout: 600)
+                try Self.run(brew, args: args, timeout: 900)
             }.value
             await MainActor.run {
                 isUpgrading = false
@@ -184,6 +246,7 @@ final class BrewStore: ObservableObject, @unchecked Sendable {
                 lastError = error.localizedDescription
                 objectWillChange.send()
             }
+            await refresh()
         }
     }
 
@@ -197,7 +260,7 @@ final class BrewStore: ObservableObject, @unchecked Sendable {
         }
         // Fallback: which brew via /bin/zsh
         if let out = try? run("/bin/zsh", args: ["-lc", "command -v brew"], timeout: 5) {
-            let path = out.trimmingCharacters(in: .whitespacesAndNewlines)
+            let path = out.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
             if !path.isEmpty, FileManager.default.isExecutableFile(atPath: path) {
                 return path
             }
@@ -220,7 +283,8 @@ final class BrewStore: ObservableObject, @unchecked Sendable {
                     name: name,
                     kind: .formula,
                     installed: installed,
-                    current: current
+                    current: current,
+                    isDisabled: false
                 ))
             }
         }
@@ -246,27 +310,110 @@ final class BrewStore: ObservableObject, @unchecked Sendable {
                     name: name,
                     kind: .cask,
                     installed: installed,
-                    current: current
+                    current: current,
+                    isDisabled: false
                 ))
             }
         }
         return result.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
+    /// Mark formulae/casks that Homebrew has disabled (cannot be upgraded).
+    private static func annotateDisabled(_ packages: [BrewPackage], brew: String) -> [BrewPackage] {
+        guard !packages.isEmpty else { return packages }
+        var disabled = Set<String>()
+
+        let caskNames = packages.filter { $0.kind == .cask }.map(\.name)
+        if !caskNames.isEmpty,
+           let out = try? run(brew, args: ["info", "--json=v2", "--cask"] + caskNames, timeout: 60) {
+            disabled.formUnion(disabledTokens(in: out.stdout, key: "casks"))
+        }
+
+        let formulaNames = packages.filter { $0.kind == .formula }.map(\.name)
+        if !formulaNames.isEmpty,
+           let out = try? run(brew, args: ["info", "--json=v2", "--formula"] + formulaNames, timeout: 60) {
+            disabled.formUnion(disabledTokens(in: out.stdout, key: "formulae"))
+        }
+
+        guard !disabled.isEmpty else { return packages }
+        return packages.map { pkg in
+            guard disabled.contains(pkg.name) else { return pkg }
+            return BrewPackage(
+                id: pkg.id,
+                name: pkg.name,
+                kind: pkg.kind,
+                installed: pkg.installed,
+                current: pkg.current,
+                isDisabled: true
+            )
+        }
+    }
+
+    private static func disabledTokens(in json: String, key: String) -> Set<String> {
+        guard let data = json.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let items = obj[key] as? [[String: Any]] else { return [] }
+        var result = Set<String>()
+        for item in items {
+            let isDisabled = (item["disabled"] as? Bool) == true
+            guard isDisabled else { continue }
+            if let token = item["token"] as? String {
+                result.insert(token)
+            } else if let name = item["name"] as? String {
+                result.insert(name)
+            } else if let names = item["name"] as? [String], let first = names.first {
+                result.insert(first)
+            }
+        }
+        return result
+    }
+
+    private struct CmdResult {
+        let stdout: String
+        let stderr: String
+        let status: Int32
+    }
+
     @discardableResult
-    private static func run(_ launchPath: String, args: [String], timeout: TimeInterval) throws -> String {
+    private static func run(_ launchPath: String, args: [String], timeout: TimeInterval) throws -> CmdResult {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: launchPath)
         proc.arguments = args
-        proc.environment = [
-            "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
-            "HOME": NSHomeDirectory(),
-            "LANG": "en_US.UTF-8"
-        ]
+        // Inherit the user environment so password prompts / Homebrew paths work from the GUI.
+        var env = ProcessInfo.processInfo.environment
+        let path = env["PATH"] ?? ""
+        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + path
+        if env["HOME"] == nil { env["HOME"] = NSHomeDirectory() }
+        if env["LANG"] == nil { env["LANG"] = "en_US.UTF-8" }
+        env["HOMEBREW_NO_ENV_HINTS"] = "1"
+        env["HOMEBREW_NO_AUTO_UPDATE"] = "1"
+        proc.environment = env
+
         let out = Pipe()
         let err = Pipe()
         proc.standardOutput = out
         proc.standardError = err
+
+        // Drain pipes while the process runs — otherwise a chatty `brew upgrade`
+        // fills the OS pipe buffer and deadlocks until our timeout kills it.
+        let outBox = DataBox()
+        let errBox = DataBox()
+        out.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            if chunk.isEmpty {
+                handle.readabilityHandler = nil
+            } else {
+                outBox.append(chunk)
+            }
+        }
+        err.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            if chunk.isEmpty {
+                handle.readabilityHandler = nil
+            } else {
+                errBox.append(chunk)
+            }
+        }
 
         try proc.run()
 
@@ -278,7 +425,9 @@ final class BrewStore: ObservableObject, @unchecked Sendable {
         }
         let waited = group.wait(timeout: .now() + timeout)
         if waited == .timedOut {
-            proc.terminate()
+            out.fileHandleForReading.readabilityHandler = nil
+            err.fileHandleForReading.readabilityHandler = nil
+            Self.terminateProcessTree(proc)
             throw NSError(
                 domain: "BrewStore",
                 code: 1,
@@ -286,19 +435,56 @@ final class BrewStore: ObservableObject, @unchecked Sendable {
             )
         }
 
-        let stdout = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        let stderr = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        if proc.terminationStatus != 0 {
-            // `brew outdated` exits 0 even when empty; other commands may fail.
+        out.fileHandleForReading.readabilityHandler = nil
+        err.fileHandleForReading.readabilityHandler = nil
+        // Pick up any residual bytes after handlers are cleared.
+        outBox.append(out.fileHandleForReading.readDataToEndOfFile())
+        errBox.append(err.fileHandleForReading.readDataToEndOfFile())
+
+        let stdout = String(data: outBox.data, encoding: .utf8) ?? ""
+        let stderr = String(data: errBox.data, encoding: .utf8) ?? ""
+        let result = CmdResult(stdout: stdout, stderr: stderr, status: proc.terminationStatus)
+        if result.status != 0 {
             let msg = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
             if !msg.isEmpty {
                 throw NSError(
                     domain: "BrewStore",
-                    code: Int(proc.terminationStatus),
+                    code: Int(result.status),
                     userInfo: [NSLocalizedDescriptionKey: msg]
                 )
             }
+            throw NSError(
+                domain: "BrewStore",
+                code: Int(result.status),
+                userInfo: [NSLocalizedDescriptionKey: "brew exited with status \(result.status)"]
+            )
         }
-        return stdout
+        return result
+    }
+
+    private static func terminateProcessTree(_ proc: Process) {
+        // Do not signal -pid: brew shares ALWM's process group by default.
+        proc.terminate()
+        DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
+            if proc.isRunning {
+                kill(proc.processIdentifier, SIGKILL)
+            }
+        }
+    }
+
+    private final class DataBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var buffer = Data()
+        var data: Data {
+            lock.lock()
+            defer { lock.unlock() }
+            return buffer
+        }
+        func append(_ chunk: Data) {
+            guard !chunk.isEmpty else { return }
+            lock.lock()
+            buffer.append(chunk)
+            lock.unlock()
+        }
     }
 }

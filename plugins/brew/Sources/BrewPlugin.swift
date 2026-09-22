@@ -71,7 +71,7 @@ public final class BrewPlugin: AlwmPlugin {
 
     public func barSignature() -> String {
         let store = BrewStore.shared
-        return "brew:\(store.outdatedCount):\(store.isRefreshing):\(store.brewAvailable):\(PluginL10n.currentCode)"
+        return "brew:\(store.outdatedCount):\(store.isRefreshing):\(store.isUpgrading):\(store.brewAvailable):\(PluginL10n.currentCode)"
     }
 }
 

@@ -150,7 +150,7 @@ struct BrewPanelView: View {
                 Label(t("plugin.brew.upgrade_all"), systemImage: "arrow.up.circle.fill")
             }
             .buttonStyle(.borderedProminent)
-            .disabled(store.packages.isEmpty || store.isRefreshing || store.isUpgrading)
+            .disabled(store.upgradeablePackages.isEmpty || store.isRefreshing || store.isUpgrading)
             Spacer(minLength: 0)
         }
         .controlSize(.small)
@@ -178,16 +178,28 @@ struct BrewPanelView: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(pkg.name)
                                         .font(.callout.weight(.medium))
-                                    Text("\(pkg.installed) → \(pkg.current) · \(pkg.kind == .cask ? t("plugin.brew.kind.cask") : t("plugin.brew.kind.formula"))")
+                                    Text(packageSubtitle(pkg))
                                         .font(.caption2)
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(pkg.isDisabled ? .orange : .secondary)
                                 }
                                 Spacer(minLength: 0)
-                                Button(t("plugin.brew.upgrade")) {
-                                    Task { await store.upgrade(pkg) }
+                                if pkg.isDisabled {
+                                    Text(t("plugin.brew.kind.disabled"))
+                                        .font(.caption2.weight(.medium))
+                                        .foregroundStyle(.orange)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 3)
+                                        .background(
+                                            Capsule(style: .continuous)
+                                                .fill(Color.orange.opacity(0.15))
+                                        )
+                                } else {
+                                    Button(t("plugin.brew.upgrade")) {
+                                        Task { await store.upgrade(pkg) }
+                                    }
+                                    .controlSize(.small)
+                                    .disabled(store.isUpgrading || store.isRefreshing)
                                 }
-                                .controlSize(.small)
-                                .disabled(store.isUpgrading || store.isRefreshing)
                             }
                             .padding(8)
                             .background(
@@ -200,5 +212,13 @@ struct BrewPanelView: View {
             }
         }
         .frame(maxHeight: .infinity)
+    }
+
+    private func packageSubtitle(_ pkg: BrewPackage) -> String {
+        let kind = pkg.kind == .cask ? t("plugin.brew.kind.cask") : t("plugin.brew.kind.formula")
+        if pkg.isDisabled {
+            return "\(pkg.installed) → \(pkg.current) · \(kind) · \(t("plugin.brew.kind.disabled"))"
+        }
+        return "\(pkg.installed) → \(pkg.current) · \(kind)"
     }
 }
