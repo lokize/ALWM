@@ -58,7 +58,8 @@ public final class QuotesPlugin: AlwmPlugin {
         let store = QuotesStore.shared
         let scale = context?.barScale ?? 1
         return QuotesBarChipView(
-            quotes: store.settings.watchlist,
+            quote: store.barQuote,
+            watchCount: store.settings.watchlist.count,
             onTargetCount: store.onTarget.count,
             isChecking: store.isChecking,
             fxDecimals: store.settings.fxDecimals,
@@ -70,18 +71,18 @@ public final class QuotesPlugin: AlwmPlugin {
 
     public func barSignature() -> String {
         let store = QuotesStore.shared
-        let sig = store.settings.watchlist
-            .map { "\($0.id):\($0.currentPrice.map { String(format: "%.4f", $0) } ?? "-"):\($0.change24h.map { String(format: "%.2f", $0) } ?? "")" }
-            .joined(separator: ",")
-        return "quotes:\(PluginL10n.currentCode):\(sig):\(store.isChecking):\(store.onTarget.count):\(store.settings.fxDecimals):\(store.settings.cryptoDecimals)"
+        let q = store.barQuote
+        let price = q?.currentPrice.map { String(format: "%.6f", $0) } ?? "-"
+        return "quotes:\(PluginL10n.currentCode):\(store.barCycleIndex):\(q?.id ?? ""):\(price):\(store.settings.watchlist.count):\(store.isChecking):\(store.onTarget.count):\(store.settings.fxDecimals):\(store.settings.cryptoDecimals)"
     }
 }
 
 // MARK: - Bar chip
 
-/// Cycles through watchlist: pair + price (badge when any target hit).
+/// Shows the current rotating quote from the store (store advances every few seconds).
 private final class QuotesBarChipView: NSView {
-    private let quotes: [QuoteItem]
+    private let quote: QuoteItem?
+    private let watchCount: Int
     private let onTargetCount: Int
     private let isChecking: Bool
     private let fxDecimals: Int
@@ -96,12 +97,9 @@ private final class QuotesBarChipView: NSView {
     private let idleIcon = NSImageView()
     private let idleLabel = NSTextField(labelWithString: "")
 
-    private var index = 0
-    nonisolated(unsafe) private var cycleTimer: Timer?
-    private var tracking: NSTrackingArea?
-
     init(
-        quotes: [QuoteItem],
+        quote: QuoteItem?,
+        watchCount: Int,
         onTargetCount: Int,
         isChecking: Bool,
         fxDecimals: Int,
@@ -109,7 +107,8 @@ private final class QuotesBarChipView: NSView {
         scale: CGFloat,
         tooltip: String
     ) {
-        self.quotes = quotes
+        self.quote = quote
+        self.watchCount = watchCount
         self.onTargetCount = onTargetCount
         self.isChecking = isChecking
         self.fxDecimals = fxDecimals
@@ -122,44 +121,11 @@ private final class QuotesBarChipView: NSView {
         setContentHuggingPriority(.defaultLow, for: .horizontal)
         setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
         build()
-        render(animated: false)
-        if quotes.count > 1 {
-            startCycle()
-        }
+        render()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
-
-    deinit {
-        cycleTimer?.invalidate()
-        cycleTimer = nil
-    }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(
-            rect: bounds,
-            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-            owner: self,
-            userInfo: nil
-        )
-        addTrackingArea(area)
-        tracking = area
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        guard quotes.count > 1 else { return }
-        startCycle()
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        if quotes.count > 1, index != 0 {
-            index = 0
-            renderQuote(animated: true)
-        }
-    }
 
     override func mouseDown(with event: NSEvent) {
         let geometry = PluginPanelAnchor.geometry(of: self)
@@ -241,9 +207,10 @@ private final class QuotesBarChipView: NSView {
         ])
     }
 
-    private func render(animated: Bool) {
+    private func render() {
         row.arrangedSubviews.forEach { row.removeArrangedSubview($0); $0.removeFromSuperview() }
-        if quotes.isEmpty {
+
+        guard let item = quote else {
             let symbol = NSImage(
                 systemSymbolName: isChecking ? "arrow.triangle.2.circlepath" : "chart.line.uptrend.xyaxis",
                 accessibilityDescription: PluginL10n.t("plugin.quotes.title")
@@ -257,20 +224,14 @@ private final class QuotesBarChipView: NSView {
             idleLabel.textColor = .labelColor
             row.addArrangedSubview(idleIcon)
             row.addArrangedSubview(idleLabel)
-        } else {
-            renderQuote(animated: animated)
+            return
         }
-    }
 
-    private func renderQuote(animated: Bool) {
-        guard !quotes.isEmpty else { return }
-        let item = quotes[index % quotes.count]
-
-        row.arrangedSubviews.forEach { row.removeArrangedSubview($0); $0.removeFromSuperview() }
         if onTargetCount > 0 {
             badgeField.stringValue = onTargetCount > 99 ? "99+" : "\(onTargetCount)"
             row.addArrangedSubview(badgeField)
         }
+
         let iconName = item.kind == .fx ? "coloncurrencysign.circle.fill" : "bitcoinsign.circle.fill"
         symbolIcon.image = NSImage(systemSymbolName: iconName, accessibilityDescription: nil)
         symbolIcon.contentTintColor = item.kind == .fx ? .systemTeal : .systemOrange
@@ -278,55 +239,19 @@ private final class QuotesBarChipView: NSView {
         row.addArrangedSubview(pairField)
         row.addArrangedSubview(priceField)
 
-        let apply = { [weak self] in
-            guard let self else { return }
-            self.pairField.stringValue = PluginBarChipLayout.short(item.pairLabel, max: 10)
-            if let price = item.currentPrice {
-                let decimals = item.kind == .fx ? self.fxDecimals : self.cryptoDecimals
-                self.priceField.stringValue = QuotesFormat.compactPrice(
-                    price,
-                    kind: item.kind,
-                    vs: item.quote,
-                    decimals: decimals
-                )
-            } else {
-                self.priceField.stringValue = self.isChecking ? "…" : "—"
-            }
-        }
-
-        if animated {
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.18
-                row.animator().alphaValue = 0.15
-            } completionHandler: { [weak self] in
-                apply()
-                NSAnimationContext.runAnimationGroup { ctx in
-                    ctx.duration = 0.18
-                    self?.row.animator().alphaValue = 1
-                }
-            }
+        pairField.stringValue = PluginBarChipLayout.short(item.pairLabel, max: 10)
+        if let price = item.currentPrice {
+            let decimals = item.kind == .fx ? fxDecimals : cryptoDecimals
+            priceField.stringValue = QuotesFormat.compactPrice(
+                price,
+                kind: item.kind,
+                vs: item.quote,
+                decimals: decimals
+            )
         } else {
-            row.alphaValue = 1
-            apply()
+            priceField.stringValue = isChecking ? "…" : "—"
         }
-    }
-
-    private func startCycle() {
-        stopCycle()
-        let t = Timer(timeInterval: PluginBarChipLayout.cycleInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, self.quotes.count > 1 else { return }
-                self.index = (self.index + 1) % self.quotes.count
-                self.renderQuote(animated: true)
-            }
-        }
-        RunLoop.main.add(t, forMode: .common)
-        cycleTimer = t
-    }
-
-    private func stopCycle() {
-        cycleTimer?.invalidate()
-        cycleTimer = nil
+        _ = watchCount
     }
 }
 

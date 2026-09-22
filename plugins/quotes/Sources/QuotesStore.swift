@@ -311,9 +311,12 @@ final class QuotesStore: ObservableObject, @unchecked Sendable {
     @Published private(set) var isChecking = false
     @Published private(set) var lastError: String?
     @Published private(set) var lastRefresh: Date?
+    /// Rotating index for the bar chip (cycles through watchlist).
+    @Published private(set) var barCycleIndex: Int = 0
 
     private let url: URL
     private var timer: Timer?
+    private var barCycleTimer: Timer?
     var onChange: (() -> Void)?
     var localeCode: () -> String = { PluginL10n.currentCode }
 
@@ -356,18 +359,23 @@ final class QuotesStore: ObservableObject, @unchecked Sendable {
         encoder.dateEncodingStrategy = .iso8601
         guard let data = try? encoder.encode(settings) else { return }
         try? data.write(to: url, options: .atomic)
+        clampBarCycle()
+        restartBarCycle()
         emitChange()
     }
 
     func startMonitoring() {
         QuotesNotifier.requestAuthorization()
         restartTimer()
+        restartBarCycle()
         Task { await refresh(notify: true) }
     }
 
     func stopMonitoring() {
         timer?.invalidate()
         timer = nil
+        barCycleTimer?.invalidate()
+        barCycleTimer = nil
     }
 
     func setInterval(_ minutes: Int) {
@@ -439,6 +447,41 @@ final class QuotesStore: ObservableObject, @unchecked Sendable {
     }
 
     var onTarget: [QuoteItem] { settings.watchlist.filter(\.isOnTarget) }
+
+    /// Quote currently shown on the bar chip.
+    var barQuote: QuoteItem? {
+        let list = settings.watchlist
+        guard !list.isEmpty else { return nil }
+        return list[barCycleIndex % list.count]
+    }
+
+    func advanceBarCycle() {
+        let n = settings.watchlist.count
+        guard n > 1 else { return }
+        barCycleIndex = (barCycleIndex + 1) % n
+        emitChange()
+    }
+
+    private func clampBarCycle() {
+        let n = settings.watchlist.count
+        if n == 0 {
+            barCycleIndex = 0
+        } else {
+            barCycleIndex = barCycleIndex % n
+        }
+    }
+
+    private func restartBarCycle() {
+        barCycleTimer?.invalidate()
+        barCycleTimer = nil
+        clampBarCycle()
+        guard settings.watchlist.count > 1 else { return }
+        let t = Timer(timeInterval: 4.0, repeats: true) { [weak self] _ in
+            self?.advanceBarCycle()
+        }
+        RunLoop.main.add(t, forMode: .common)
+        barCycleTimer = t
+    }
 
     var barTooltip: String {
         if settings.watchlist.isEmpty { return t("plugin.quotes.tooltip.empty") }
