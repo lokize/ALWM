@@ -81,6 +81,8 @@ struct QuotesSettings: Codable, Equatable, Sendable {
     var fxDecimals: Int
     /// Decimal places for crypto (0…8).
     var cryptoDecimals: Int
+    /// Seconds between bar-chip rotations (2…30).
+    var barCycleSeconds: Int
 
     static let `default` = QuotesSettings(
         watchlist: [
@@ -93,11 +95,12 @@ struct QuotesSettings: Codable, Equatable, Sendable {
         notifiedIDs: [],
         preferredVs: "usd",
         fxDecimals: 4,
-        cryptoDecimals: 2
+        cryptoDecimals: 2,
+        barCycleSeconds: 4
     )
 
     enum CodingKeys: String, CodingKey {
-        case watchlist, checkIntervalMinutes, notifiedIDs, preferredVs, fxDecimals, cryptoDecimals
+        case watchlist, checkIntervalMinutes, notifiedIDs, preferredVs, fxDecimals, cryptoDecimals, barCycleSeconds
     }
 
     init(
@@ -106,7 +109,8 @@ struct QuotesSettings: Codable, Equatable, Sendable {
         notifiedIDs: [String],
         preferredVs: String,
         fxDecimals: Int,
-        cryptoDecimals: Int
+        cryptoDecimals: Int,
+        barCycleSeconds: Int
     ) {
         self.watchlist = watchlist
         self.checkIntervalMinutes = checkIntervalMinutes
@@ -114,6 +118,7 @@ struct QuotesSettings: Codable, Equatable, Sendable {
         self.preferredVs = preferredVs
         self.fxDecimals = fxDecimals
         self.cryptoDecimals = cryptoDecimals
+        self.barCycleSeconds = barCycleSeconds
     }
 
     init(from decoder: Decoder) throws {
@@ -124,6 +129,7 @@ struct QuotesSettings: Codable, Equatable, Sendable {
         preferredVs = try c.decodeIfPresent(String.self, forKey: .preferredVs) ?? "usd"
         fxDecimals = min(8, max(0, try c.decodeIfPresent(Int.self, forKey: .fxDecimals) ?? 4))
         cryptoDecimals = min(8, max(0, try c.decodeIfPresent(Int.self, forKey: .cryptoDecimals) ?? 2))
+        barCycleSeconds = min(30, max(2, try c.decodeIfPresent(Int.self, forKey: .barCycleSeconds) ?? 4))
     }
 }
 
@@ -384,6 +390,12 @@ final class QuotesStore: ObservableObject, @unchecked Sendable {
         restartTimer()
     }
 
+    func setBarCycleSeconds(_ seconds: Int) {
+        settings.barCycleSeconds = min(30, max(2, seconds))
+        save()
+        restartBarCycle()
+    }
+
     func setPreferredVs(_ vs: String) {
         settings.preferredVs = vs.lowercased()
         save()
@@ -476,7 +488,8 @@ final class QuotesStore: ObservableObject, @unchecked Sendable {
         barCycleTimer = nil
         clampBarCycle()
         guard settings.watchlist.count > 1 else { return }
-        let t = Timer(timeInterval: 4.0, repeats: true) { [weak self] _ in
+        let seconds = Double(max(2, settings.barCycleSeconds))
+        let t = Timer(timeInterval: seconds, repeats: true) { [weak self] _ in
             self?.advanceBarCycle()
         }
         RunLoop.main.add(t, forMode: .common)

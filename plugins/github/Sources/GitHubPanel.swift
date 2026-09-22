@@ -385,6 +385,22 @@ struct GitHubPanelView: View {
                         .frame(width: 36, alignment: .trailing)
                 }
 
+                Text(t("plugin.common.bar_cycle_seconds"))
+                    .font(.subheadline.weight(.semibold))
+                HStack {
+                    Slider(
+                        value: Binding(
+                            get: { Double(store.settings.barCycleSeconds) },
+                            set: { store.setBarCycleSeconds(Int($0.rounded())) }
+                        ),
+                        in: 2...30,
+                        step: 1
+                    )
+                    Text("\(store.settings.barCycleSeconds)s")
+                        .monospacedDigit()
+                        .frame(width: 36, alignment: .trailing)
+                }
+
                 Toggle(t("plugin.github.settings.notify"), isOn: Binding(
                     get: { store.settings.notifyOnNew },
                     set: { store.setNotifyOnNew($0) }

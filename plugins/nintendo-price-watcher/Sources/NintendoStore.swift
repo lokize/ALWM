@@ -12,14 +12,47 @@ struct NintendoWatcherSettings: Codable, Equatable, Sendable {
     /// Deku Deals country code (`br`, `us`, …) — selects `eshop_{country}` prices.
     var country: String
     var currencySymbol: String
+    /// Seconds between bar-chip rotations (2…30).
+    var barCycleSeconds: Int
 
     static let `default` = NintendoWatcherSettings(
         watchlist: [],
         checkIntervalMinutes: 60,
         notifiedSlugs: [],
         country: "br",
-        currencySymbol: "R$"
+        currencySymbol: "R$",
+        barCycleSeconds: 4
     )
+
+    enum CodingKeys: String, CodingKey {
+        case watchlist, checkIntervalMinutes, notifiedSlugs, country, currencySymbol, barCycleSeconds
+    }
+
+    init(
+        watchlist: [NintendoGame],
+        checkIntervalMinutes: Int,
+        notifiedSlugs: [String],
+        country: String,
+        currencySymbol: String,
+        barCycleSeconds: Int
+    ) {
+        self.watchlist = watchlist
+        self.checkIntervalMinutes = checkIntervalMinutes
+        self.notifiedSlugs = notifiedSlugs
+        self.country = country
+        self.currencySymbol = currencySymbol
+        self.barCycleSeconds = barCycleSeconds
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        watchlist = try c.decodeIfPresent([NintendoGame].self, forKey: .watchlist) ?? []
+        checkIntervalMinutes = try c.decodeIfPresent(Int.self, forKey: .checkIntervalMinutes) ?? 60
+        notifiedSlugs = try c.decodeIfPresent([String].self, forKey: .notifiedSlugs) ?? []
+        country = try c.decodeIfPresent(String.self, forKey: .country) ?? "br"
+        currencySymbol = try c.decodeIfPresent(String.self, forKey: .currencySymbol) ?? "R$"
+        barCycleSeconds = min(30, max(2, try c.decodeIfPresent(Int.self, forKey: .barCycleSeconds) ?? 4))
+    }
 }
 
 struct NintendoGame: Codable, Equatable, Identifiable, Sendable, Hashable {
@@ -575,6 +608,7 @@ final class NintendoWatcherStore: ObservableObject, @unchecked Sendable {
     @Published private(set) var settings: NintendoWatcherSettings = .default
     @Published private(set) var isChecking = false
     @Published private(set) var lastError: String?
+    @Published private(set) var barCycleIndex: Int = 0
 
     func setError(_ message: String?) {
         lastError = message
@@ -582,6 +616,7 @@ final class NintendoWatcherStore: ObservableObject, @unchecked Sendable {
 
     private let url: URL
     private var timer: Timer?
+    private var barCycleTimer: Timer?
     var onChange: (() -> Void)?
     var localeCode: () -> String = { PluginL10n.currentCode }
 
@@ -622,24 +657,35 @@ final class NintendoWatcherStore: ObservableObject, @unchecked Sendable {
         encoder.dateEncodingStrategy = .iso8601
         guard let data = try? encoder.encode(settings) else { return }
         try? data.write(to: url, options: .atomic)
+        clampBarCycle()
+        restartBarCycle()
         emitChange()
     }
 
     func startMonitoring() {
         NintendoNotifier.requestAuthorization()
         restartTimer()
+        restartBarCycle()
         Task { await refreshPrices(notify: true) }
     }
 
     func stopMonitoring() {
         timer?.invalidate()
         timer = nil
+        barCycleTimer?.invalidate()
+        barCycleTimer = nil
     }
 
     func setInterval(_ minutes: Int) {
         settings.checkIntervalMinutes = min(1440, max(15, minutes))
         save()
         restartTimer()
+    }
+
+    func setBarCycleSeconds(_ seconds: Int) {
+        settings.barCycleSeconds = min(30, max(2, seconds))
+        save()
+        restartBarCycle()
     }
 
     func setCountry(_ code: String) {
@@ -679,6 +725,40 @@ final class NintendoWatcherStore: ObservableObject, @unchecked Sendable {
     }
 
     var gamesOnTarget: [NintendoGame] { settings.watchlist.filter(\.isOnTarget) }
+
+    /// Full watchlist rotates on the bar (badge still shows on-target count).
+    var barCycleGames: [NintendoGame] { settings.watchlist }
+
+    var barGame: NintendoGame? {
+        let list = barCycleGames
+        guard !list.isEmpty else { return nil }
+        return list[barCycleIndex % list.count]
+    }
+
+    func advanceBarCycle() {
+        let n = barCycleGames.count
+        guard n > 1 else { return }
+        barCycleIndex = (barCycleIndex + 1) % n
+        emitChange()
+    }
+
+    private func clampBarCycle() {
+        let n = barCycleGames.count
+        barCycleIndex = n == 0 ? 0 : barCycleIndex % n
+    }
+
+    private func restartBarCycle() {
+        barCycleTimer?.invalidate()
+        barCycleTimer = nil
+        clampBarCycle()
+        guard barCycleGames.count > 1 else { return }
+        let seconds = Double(max(2, settings.barCycleSeconds))
+        let t = Timer(timeInterval: seconds, repeats: true) { [weak self] _ in
+            self?.advanceBarCycle()
+        }
+        RunLoop.main.add(t, forMode: .common)
+        barCycleTimer = t
+    }
 
     var barTooltip: String {
         if settings.watchlist.isEmpty { return t("plugin.nintendo.tooltip.empty") }

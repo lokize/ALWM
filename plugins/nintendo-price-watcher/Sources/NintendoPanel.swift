@@ -145,6 +145,23 @@ struct NintendoPanelView: View {
                     .frame(width: 44, alignment: .trailing)
             }
 
+            Text(t("plugin.common.bar_cycle_seconds"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack {
+                Slider(
+                    value: Binding(
+                        get: { Double(store.settings.barCycleSeconds) },
+                        set: { store.setBarCycleSeconds(Int($0.rounded())) }
+                    ),
+                    in: 2...30,
+                    step: 1
+                )
+                Text("\(store.settings.barCycleSeconds)s")
+                    .monospacedDigit()
+                    .frame(width: 44, alignment: .trailing)
+            }
+
             Text(t("plugin.nintendo.region"))
                 .font(.caption)
                 .foregroundStyle(.secondary)

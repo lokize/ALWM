@@ -73,7 +73,7 @@ public final class QuotesPlugin: AlwmPlugin {
         let store = QuotesStore.shared
         let q = store.barQuote
         let price = q?.currentPrice.map { String(format: "%.6f", $0) } ?? "-"
-        return "quotes:\(PluginL10n.currentCode):\(store.barCycleIndex):\(q?.id ?? ""):\(price):\(store.settings.watchlist.count):\(store.isChecking):\(store.onTarget.count):\(store.settings.fxDecimals):\(store.settings.cryptoDecimals)"
+        return "quotes:\(PluginL10n.currentCode):\(store.barCycleIndex):\(q?.id ?? ""):\(price):\(store.settings.watchlist.count):\(store.isChecking):\(store.onTarget.count):\(store.settings.fxDecimals):\(store.settings.cryptoDecimals):\(store.settings.barCycleSeconds)"
     }
 }
 

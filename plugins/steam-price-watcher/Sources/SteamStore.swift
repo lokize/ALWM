@@ -11,17 +11,20 @@ struct SteamWatcherSettings: Codable, Equatable, Sendable {
     var notifiedAppIDs: [Int]
     var currency: String
     var currencySymbol: String
+    /// Seconds between bar-chip rotations (2…30).
+    var barCycleSeconds: Int
 
     static let `default` = SteamWatcherSettings(
         watchlist: [],
         checkIntervalMinutes: 30,
         notifiedAppIDs: [],
         currency: "br",
-        currencySymbol: "R$"
+        currencySymbol: "R$",
+        barCycleSeconds: 4
     )
 
     enum CodingKeys: String, CodingKey {
-        case watchlist, checkIntervalMinutes, notifiedAppIDs, currency, currencySymbol
+        case watchlist, checkIntervalMinutes, notifiedAppIDs, currency, currencySymbol, barCycleSeconds
         case checkInterval, notifiedGames
     }
 
@@ -30,13 +33,15 @@ struct SteamWatcherSettings: Codable, Equatable, Sendable {
         checkIntervalMinutes: Int,
         notifiedAppIDs: [Int],
         currency: String,
-        currencySymbol: String
+        currencySymbol: String,
+        barCycleSeconds: Int
     ) {
         self.watchlist = watchlist
         self.checkIntervalMinutes = checkIntervalMinutes
         self.notifiedAppIDs = notifiedAppIDs
         self.currency = currency
         self.currencySymbol = currencySymbol
+        self.barCycleSeconds = barCycleSeconds
     }
 
     init(from decoder: Decoder) throws {
@@ -54,6 +59,7 @@ struct SteamWatcherSettings: Codable, Equatable, Sendable {
         }
         currency = try c.decodeIfPresent(String.self, forKey: .currency) ?? "br"
         currencySymbol = try c.decodeIfPresent(String.self, forKey: .currencySymbol) ?? "R$"
+        barCycleSeconds = min(30, max(2, try c.decodeIfPresent(Int.self, forKey: .barCycleSeconds) ?? 4))
     }
 
     func encode(to encoder: Encoder) throws {
@@ -63,6 +69,7 @@ struct SteamWatcherSettings: Codable, Equatable, Sendable {
         try c.encode(notifiedAppIDs, forKey: .notifiedAppIDs)
         try c.encode(currency, forKey: .currency)
         try c.encode(currencySymbol, forKey: .currencySymbol)
+        try c.encode(barCycleSeconds, forKey: .barCycleSeconds)
     }
 }
 
@@ -231,6 +238,7 @@ final class SteamWatcherStore: ObservableObject, @unchecked Sendable {
     @Published private(set) var settings: SteamWatcherSettings = .default
     @Published private(set) var isChecking = false
     @Published private(set) var lastError: String?
+    @Published private(set) var barCycleIndex: Int = 0
 
     func setError(_ message: String?) {
         lastError = message
@@ -238,6 +246,7 @@ final class SteamWatcherStore: ObservableObject, @unchecked Sendable {
 
     private let url: URL
     private var timer: Timer?
+    private var barCycleTimer: Timer?
     var onChange: (() -> Void)?
     var localeCode: () -> String = { PluginL10n.currentCode }
 
@@ -280,24 +289,35 @@ final class SteamWatcherStore: ObservableObject, @unchecked Sendable {
         encoder.dateEncodingStrategy = .iso8601
         guard let data = try? encoder.encode(settings) else { return }
         try? data.write(to: url, options: .atomic)
+        clampBarCycle()
+        restartBarCycle()
         emitChange()
     }
 
     func startMonitoring() {
         SteamNotifier.requestAuthorization()
         restartTimer()
+        restartBarCycle()
         Task { await refreshPrices(notify: true) }
     }
 
     func stopMonitoring() {
         timer?.invalidate()
         timer = nil
+        barCycleTimer?.invalidate()
+        barCycleTimer = nil
     }
 
     func setInterval(_ minutes: Int) {
         settings.checkIntervalMinutes = min(1440, max(15, minutes))
         save()
         restartTimer()
+    }
+
+    func setBarCycleSeconds(_ seconds: Int) {
+        settings.barCycleSeconds = min(30, max(2, seconds))
+        save()
+        restartBarCycle()
     }
 
     func setCurrency(_ code: String) {
@@ -376,6 +396,40 @@ final class SteamWatcherStore: ObservableObject, @unchecked Sendable {
     }
 
     var gamesOnTarget: [SteamGame] { settings.watchlist.filter(\.isOnTarget) }
+
+    /// Full watchlist rotates on the bar (badge still shows on-target count).
+    var barCycleGames: [SteamGame] { settings.watchlist }
+
+    var barGame: SteamGame? {
+        let list = barCycleGames
+        guard !list.isEmpty else { return nil }
+        return list[barCycleIndex % list.count]
+    }
+
+    func advanceBarCycle() {
+        let n = barCycleGames.count
+        guard n > 1 else { return }
+        barCycleIndex = (barCycleIndex + 1) % n
+        emitChange()
+    }
+
+    private func clampBarCycle() {
+        let n = barCycleGames.count
+        barCycleIndex = n == 0 ? 0 : barCycleIndex % n
+    }
+
+    private func restartBarCycle() {
+        barCycleTimer?.invalidate()
+        barCycleTimer = nil
+        clampBarCycle()
+        guard barCycleGames.count > 1 else { return }
+        let seconds = Double(max(2, settings.barCycleSeconds))
+        let t = Timer(timeInterval: seconds, repeats: true) { [weak self] _ in
+            self?.advanceBarCycle()
+        }
+        RunLoop.main.add(t, forMode: .common)
+        barCycleTimer = t
+    }
 
     var barLabel: String {
         if isChecking { return "…" }

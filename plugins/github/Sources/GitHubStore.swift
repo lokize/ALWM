@@ -11,9 +11,11 @@ final class GitHubWatcherStore: ObservableObject, @unchecked Sendable {
     @Published private(set) var isRefreshing = false
     @Published private(set) var lastError: String?
     @Published private(set) var lastRefreshAt: Date?
+    @Published private(set) var barCycleIndex: Int = 0
 
     private let url: URL
     private var timer: Timer?
+    private var barCycleTimer: Timer?
     private var refreshTask: Task<Void, Never>?
     var onChange: (() -> Void)?
     var localeCode: () -> String = { PluginL10n.currentCode }
@@ -42,6 +44,8 @@ final class GitHubWatcherStore: ObservableObject, @unchecked Sendable {
     func save() {
         guard let data = try? JSONEncoder().encode(settings) else { return }
         try? data.write(to: url, options: .atomic)
+        clampBarCycle()
+        restartBarCycle()
         emitChange()
     }
 
@@ -57,6 +61,12 @@ final class GitHubWatcherStore: ObservableObject, @unchecked Sendable {
         settings.checkIntervalMinutes = min(120, max(5, minutes))
         save()
         restartTimer()
+    }
+
+    func setBarCycleSeconds(_ seconds: Int) {
+        settings.barCycleSeconds = min(30, max(2, seconds))
+        save()
+        restartBarCycle()
     }
 
     func setNotifyOnNew(_ enabled: Bool) {
@@ -77,12 +87,15 @@ final class GitHubWatcherStore: ObservableObject, @unchecked Sendable {
     func startMonitoring() {
         GitHubNotifier.requestAuthorization()
         restartTimer()
+        restartBarCycle()
         scheduleRefresh(notify: true)
     }
 
     func stopMonitoring() {
         timer?.invalidate()
         timer = nil
+        barCycleTimer?.invalidate()
+        barCycleTimer = nil
         refreshTask?.cancel()
         refreshTask = nil
     }
@@ -145,6 +158,37 @@ final class GitHubWatcherStore: ObservableObject, @unchecked Sendable {
             out.append(.profile(user, stars: dashboard.starredRepos.count))
         }
         return out
+    }
+
+    var barHighlight: GitHubBarHighlight? {
+        let list = highlightItems
+        guard !list.isEmpty else { return nil }
+        return list[barCycleIndex % list.count]
+    }
+
+    func advanceBarCycle() {
+        let n = highlightItems.count
+        guard n > 1 else { return }
+        barCycleIndex = (barCycleIndex + 1) % n
+        emitChange()
+    }
+
+    private func clampBarCycle() {
+        let n = highlightItems.count
+        barCycleIndex = n == 0 ? 0 : barCycleIndex % n
+    }
+
+    private func restartBarCycle() {
+        barCycleTimer?.invalidate()
+        barCycleTimer = nil
+        clampBarCycle()
+        guard highlightItems.count > 1 else { return }
+        let seconds = Double(max(2, settings.barCycleSeconds))
+        let t = Timer(timeInterval: seconds, repeats: true) { [weak self] _ in
+            self?.advanceBarCycle()
+        }
+        RunLoop.main.add(t, forMode: .common)
+        barCycleTimer = t
     }
 
     var totalUnreadBadge: Int {

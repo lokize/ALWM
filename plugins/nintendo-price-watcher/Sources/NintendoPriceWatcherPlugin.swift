@@ -58,7 +58,9 @@ public final class NintendoPriceWatcherPlugin: AlwmPlugin {
         let store = NintendoWatcherStore.shared
         let scale = context?.barScale ?? 1
         return NintendoBarChipView(
-            hits: store.gamesOnTarget,
+            game: store.barGame,
+            cycleCount: store.barCycleGames.count,
+            onTargetCount: store.gamesOnTarget.count,
             watchCount: store.settings.watchlist.count,
             isChecking: store.isChecking,
             currencySymbol: store.settings.currencySymbol,
@@ -69,18 +71,19 @@ public final class NintendoPriceWatcherPlugin: AlwmPlugin {
 
     public func barSignature() -> String {
         let store = NintendoWatcherStore.shared
-        let hits = store.gamesOnTarget
-            .map { "\($0.slug):\($0.currentPrice.map { String(format: "%.2f", $0) } ?? "-")" }
-            .joined(separator: ",")
-        return "nintendo:\(PluginL10n.currentCode):\(hits):\(store.settings.watchlist.count):\(store.isChecking)"
+        let g = store.barGame
+        let price = g?.currentPrice.map { String(format: "%.2f", $0) } ?? "-"
+        return "nintendo:\(PluginL10n.currentCode):\(store.barCycleIndex):\(g?.slug ?? ""):\(price):\(store.barCycleGames.count):\(store.gamesOnTarget.count):\(store.isChecking):\(store.settings.barCycleSeconds)"
     }
 }
 
 // MARK: - Bar chip
 
-/// Bar chip: idle count, or cover + name + price (hover cycles multiple hits).
+/// Rotating watchlist / on-target game (store advances every few seconds).
 private final class NintendoBarChipView: NSView {
-    private let hits: [NintendoGame]
+    private let game: NintendoGame?
+    private let cycleCount: Int
+    private let onTargetCount: Int
     private let watchCount: Int
     private let isChecking: Bool
     private let currencySymbol: String
@@ -94,19 +97,19 @@ private final class NintendoBarChipView: NSView {
     private let idleIcon = NSImageView()
     private let idleLabel = NSTextField(labelWithString: "")
 
-    private var index = 0
-    nonisolated(unsafe) private var cycleTimer: Timer?
-    private var tracking: NSTrackingArea?
-
     init(
-        hits: [NintendoGame],
+        game: NintendoGame?,
+        cycleCount: Int,
+        onTargetCount: Int,
         watchCount: Int,
         isChecking: Bool,
         currencySymbol: String,
         scale: CGFloat,
         tooltip: String
     ) {
-        self.hits = hits
+        self.game = game
+        self.cycleCount = cycleCount
+        self.onTargetCount = onTargetCount
         self.watchCount = watchCount
         self.isChecking = isChecking
         self.currencySymbol = currencySymbol
@@ -118,44 +121,11 @@ private final class NintendoBarChipView: NSView {
         setContentHuggingPriority(.defaultLow, for: .horizontal)
         setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
         build()
-        renderIdleOrHit(animated: false)
-        if hits.count > 1 {
-            startCycle()
-        }
+        render()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
-
-    deinit {
-        cycleTimer?.invalidate()
-        cycleTimer = nil
-    }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(
-            rect: bounds,
-            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-            owner: self,
-            userInfo: nil
-        )
-        addTrackingArea(area)
-        tracking = area
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        guard hits.count > 1 else { return }
-        startCycle()
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        if hits.count > 1, index != 0 {
-            index = 0
-            renderHit(animated: true)
-        }
-    }
 
     override func mouseDown(with event: NSEvent) {
         let geometry = PluginPanelAnchor.geometry(of: self)
@@ -247,9 +217,10 @@ private final class NintendoBarChipView: NSView {
         ])
     }
 
-    private func renderIdleOrHit(animated: Bool) {
+    private func render() {
         row.arrangedSubviews.forEach { row.removeArrangedSubview($0); $0.removeFromSuperview() }
-        if hits.isEmpty {
+
+        guard let game else {
             let symbol = NSImage(
                 systemSymbolName: isChecking ? "arrow.triangle.2.circlepath" : "gamecontroller.fill",
                 accessibilityDescription: PluginL10n.t("plugin.nintendo.title")
@@ -263,77 +234,34 @@ private final class NintendoBarChipView: NSView {
             idleLabel.textColor = .labelColor
             row.addArrangedSubview(idleIcon)
             row.addArrangedSubview(idleLabel)
-        } else {
-            renderHit(animated: animated)
+            return
         }
-    }
 
-    private func renderHit(animated: Bool) {
-        guard !hits.isEmpty else { return }
-        let game = hits[index % hits.count]
-
-        row.arrangedSubviews.forEach { row.removeArrangedSubview($0); $0.removeFromSuperview() }
-        badgeField.stringValue = hits.count > 99 ? "99+" : "\(hits.count)"
-        badgeField.alphaValue = 1
-        row.addArrangedSubview(badgeField)
+        if onTargetCount > 0 {
+            badgeField.stringValue = onTargetCount > 99 ? "99+" : "\(onTargetCount)"
+            row.addArrangedSubview(badgeField)
+        }
         row.addArrangedSubview(thumb)
         row.addArrangedSubview(nameField)
         row.addArrangedSubview(priceField)
 
-        let apply = { [weak self] in
-            guard let self else { return }
-            self.nameField.stringValue = PluginBarChipLayout.short(game.name, max: 12)
-            if let price = game.currentPrice {
-                self.priceField.stringValue = String(format: "%@ %.2f", self.currencySymbol, price)
-            } else {
-                self.priceField.stringValue = "—"
-            }
-            NintendoCoverCache.load(
-                urlString: game.imageURL,
-                into: self.thumb,
-                targetSize: NSSize(
-                    width: PluginBarChipLayout.nintendoThumbWidth(scale: self.scale),
-                    height: PluginBarChipLayout.nintendoThumbHeight(scale: self.scale)
-                )
-            )
-        }
-
-        if animated {
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.18
-                row.animator().alphaValue = 0.15
-            } completionHandler: { [weak self] in
-                apply()
-                NSAnimationContext.runAnimationGroup { ctx in
-                    ctx.duration = 0.18
-                    self?.row.animator().alphaValue = 1
-                }
-            }
+        nameField.stringValue = PluginBarChipLayout.short(game.name, max: 12)
+        if let price = game.currentPrice {
+            priceField.stringValue = String(format: "%@ %.2f", currencySymbol, price)
         } else {
-            row.alphaValue = 1
-            apply()
+            priceField.stringValue = isChecking ? "…" : "—"
         }
-    }
-
-    private func startCycle() {
-        stopCycle()
-        let t = Timer(timeInterval: PluginBarChipLayout.cycleInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, self.hits.count > 1 else { return }
-                self.index = (self.index + 1) % self.hits.count
-                self.renderHit(animated: true)
-            }
-        }
-        RunLoop.main.add(t, forMode: .common)
-        cycleTimer = t
-    }
-
-    private func stopCycle() {
-        cycleTimer?.invalidate()
-        cycleTimer = nil
+        NintendoCoverCache.load(
+            urlString: game.imageURL,
+            into: thumb,
+            targetSize: NSSize(
+                width: PluginBarChipLayout.nintendoThumbWidth(scale: scale),
+                height: PluginBarChipLayout.nintendoThumbHeight(scale: scale)
+            )
+        )
+        _ = cycleCount
     }
 }
-
 
 // MARK: - Cover image cache
 

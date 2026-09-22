@@ -59,7 +59,8 @@ public final class GitHubPlugin: AlwmPlugin {
         let locale = store.localeCode()
         return GitHubBarChipView(
             unread: store.totalUnreadBadge,
-            highlights: store.highlightItems,
+            highlight: store.barHighlight,
+            highlightCount: store.highlightItems.count,
             hasToken: store.hasToken,
             isRefreshing: store.isRefreshing,
             scale: scale,
@@ -71,7 +72,7 @@ public final class GitHubPlugin: AlwmPlugin {
     public func barSignature() -> String {
         let store = GitHubWatcherStore.shared
         let d = store.dashboard
-        return "github:\(PluginL10n.currentCode):\(store.hasToken):\(d.unreadCount):\(d.repoPullRequests.count):\(d.reviewRequests.count):\(d.assignedIssues.count):\(store.isRefreshing):\(store.highlightItems.count)"
+        return "github:\(PluginL10n.currentCode):\(store.hasToken):\(d.unreadCount):\(d.repoPullRequests.count):\(d.reviewRequests.count):\(d.assignedIssues.count):\(store.isRefreshing):\(store.highlightItems.count):\(store.barCycleIndex):\(store.settings.barCycleSeconds)"
     }
 }
 
@@ -79,7 +80,8 @@ public final class GitHubPlugin: AlwmPlugin {
 
 private final class GitHubBarChipView: NSView {
     private let unread: Int
-    private let highlights: [GitHubBarHighlight]
+    private let highlight: GitHubBarHighlight?
+    private let highlightCount: Int
     private let hasToken: Bool
     private let isRefreshing: Bool
     private let scale: CGFloat
@@ -91,13 +93,10 @@ private final class GitHubBarChipView: NSView {
     private let titleField = NSTextField(labelWithString: "")
     private let subtitleField = NSTextField(labelWithString: "")
 
-    private var index = 0
-    nonisolated(unsafe) private var cycleTimer: Timer?
-    private var tracking: NSTrackingArea?
-
     init(
         unread: Int,
-        highlights: [GitHubBarHighlight],
+        highlight: GitHubBarHighlight?,
+        highlightCount: Int,
         hasToken: Bool,
         isRefreshing: Bool,
         scale: CGFloat,
@@ -105,7 +104,8 @@ private final class GitHubBarChipView: NSView {
         tooltip: String
     ) {
         self.unread = unread
-        self.highlights = highlights
+        self.highlight = highlight
+        self.highlightCount = highlightCount
         self.hasToken = hasToken
         self.isRefreshing = isRefreshing
         self.scale = scale
@@ -117,53 +117,11 @@ private final class GitHubBarChipView: NSView {
         setContentHuggingPriority(.defaultLow, for: .horizontal)
         setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
         build()
-        render(animated: false)
-        if highlights.count > 1 {
-            startCycle()
-        }
+        render()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
-
-    deinit {
-        cycleTimer?.invalidate()
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        if window != nil, highlights.count > 1 {
-            startCycle()
-        } else {
-            stopCycle()
-        }
-    }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(
-            rect: bounds,
-            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-            owner: self,
-            userInfo: nil
-        )
-        addTrackingArea(area)
-        tracking = area
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        guard highlights.count > 1 else { return }
-        startCycle()
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        // Keep auto-rotation — only snap back to the first highlight when hover ends.
-        if highlights.count > 1, index != 0 {
-            index = 0
-            render(animated: true)
-        }
-    }
 
     override func mouseDown(with event: NSEvent) {
         let geometry = PluginPanelAnchor.geometry(of: self)
@@ -241,77 +199,38 @@ private final class GitHubBarChipView: NSView {
         ])
     }
 
-    private func render(animated: Bool) {
+    private func render() {
         row.arrangedSubviews.forEach { row.removeArrangedSubview($0); $0.removeFromSuperview() }
+        row.addArrangedSubview(iconView)
 
-        let apply = { [weak self] in
-            guard let self else { return }
-            self.row.arrangedSubviews.forEach { self.row.removeArrangedSubview($0); $0.removeFromSuperview() }
-            self.row.addArrangedSubview(self.iconView)
-
-            // Badge slot is always present so chip width stays stable when count changes.
-            if self.unread > 0 {
-                self.badgeField.stringValue = self.unread > 99 ? "99+" : "\(self.unread)"
-                self.badgeField.alphaValue = 1
-            } else {
-                self.badgeField.stringValue = ""
-                self.badgeField.alphaValue = 0
-            }
-            self.row.addArrangedSubview(self.badgeField)
-
-            if !self.hasToken {
-                self.titleField.stringValue = PluginL10n.t("plugin.github.title", locale: self.locale)
-                self.row.addArrangedSubview(self.titleField)
-                return
-            }
-
-            if self.highlights.isEmpty {
-                self.titleField.stringValue = self.unread > 0
-                    ? PluginL10n.t("plugin.github.title", locale: self.locale)
-                    : PluginL10n.t("plugin.github.bar.ok", locale: self.locale)
-                self.row.addArrangedSubview(self.titleField)
-                return
-            }
-
-            let item = self.highlights[self.index % self.highlights.count]
-            self.titleField.stringValue = PluginBarChipLayout.short(item.title(locale: self.locale), max: 14)
-            self.subtitleField.stringValue = PluginBarChipLayout.short(item.subtitle(locale: self.locale), max: 12)
-            self.row.addArrangedSubview(self.titleField)
-            self.row.addArrangedSubview(self.subtitleField)
-        }
-
-        if animated {
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.16
-                row.animator().alphaValue = 0.2
-            } completionHandler: {
-                apply()
-                NSAnimationContext.runAnimationGroup { ctx in
-                    ctx.duration = 0.16
-                    self.row.animator().alphaValue = 1
-                }
-            }
+        if unread > 0 {
+            badgeField.stringValue = unread > 99 ? "99+" : "\(unread)"
+            badgeField.alphaValue = 1
         } else {
-            apply()
+            badgeField.stringValue = ""
+            badgeField.alphaValue = 0
         }
-    }
+        row.addArrangedSubview(badgeField)
 
-    private func startCycle() {
-        stopCycle()
-        let t = Timer(timeInterval: PluginBarChipLayout.cycleInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, self.highlights.count > 1 else { return }
-                self.index = (self.index + 1) % self.highlights.count
-                self.render(animated: true)
-            }
+        if !hasToken {
+            titleField.stringValue = PluginL10n.t("plugin.github.title", locale: locale)
+            row.addArrangedSubview(titleField)
+            return
         }
-        RunLoop.main.add(t, forMode: .common)
-        cycleTimer = t
-    }
 
-    private func stopCycle() {
-        cycleTimer?.invalidate()
-        cycleTimer = nil
+        guard let item = highlight else {
+            titleField.stringValue = unread > 0
+                ? PluginL10n.t("plugin.github.title", locale: locale)
+                : PluginL10n.t("plugin.github.bar.ok", locale: locale)
+            row.addArrangedSubview(titleField)
+            return
+        }
+
+        titleField.stringValue = PluginBarChipLayout.short(item.title(locale: locale), max: 14)
+        subtitleField.stringValue = PluginBarChipLayout.short(item.subtitle(locale: locale), max: 12)
+        row.addArrangedSubview(titleField)
+        row.addArrangedSubview(subtitleField)
+        _ = highlightCount
     }
 }
 

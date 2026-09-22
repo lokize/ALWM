@@ -326,12 +326,15 @@ struct GitHubPluginSettings: Codable, Equatable, Sendable {
     var acknowledgedPRIDs: [Int]
     var acknowledgedIssueIDs: [Int]
     var seenStarRepoIDs: [Int]
+    /// Seconds between bar-chip rotations (2…30).
+    var barCycleSeconds: Int
 
     enum CodingKeys: String, CodingKey {
         case token, checkIntervalMinutes, notifyOnNew
         case trackNotifications, trackPullRequests, trackReviewRequests
         case trackAssignedIssues, trackStars, knownNotificationIDs
         case acknowledgedPRIDs, acknowledgedIssueIDs, seenStarRepoIDs
+        case barCycleSeconds
     }
 
     init(
@@ -346,7 +349,8 @@ struct GitHubPluginSettings: Codable, Equatable, Sendable {
         knownNotificationIDs: [String],
         acknowledgedPRIDs: [Int],
         acknowledgedIssueIDs: [Int],
-        seenStarRepoIDs: [Int]
+        seenStarRepoIDs: [Int],
+        barCycleSeconds: Int
     ) {
         self.token = token
         self.checkIntervalMinutes = checkIntervalMinutes
@@ -360,6 +364,7 @@ struct GitHubPluginSettings: Codable, Equatable, Sendable {
         self.acknowledgedPRIDs = acknowledgedPRIDs
         self.acknowledgedIssueIDs = acknowledgedIssueIDs
         self.seenStarRepoIDs = seenStarRepoIDs
+        self.barCycleSeconds = barCycleSeconds
     }
 
     init(from decoder: Decoder) throws {
@@ -376,6 +381,7 @@ struct GitHubPluginSettings: Codable, Equatable, Sendable {
         acknowledgedPRIDs = try c.decodeIfPresent([Int].self, forKey: .acknowledgedPRIDs) ?? []
         acknowledgedIssueIDs = try c.decodeIfPresent([Int].self, forKey: .acknowledgedIssueIDs) ?? []
         seenStarRepoIDs = try c.decodeIfPresent([Int].self, forKey: .seenStarRepoIDs) ?? []
+        barCycleSeconds = min(30, max(2, try c.decodeIfPresent(Int.self, forKey: .barCycleSeconds) ?? 4))
     }
 
     static let `default` = GitHubPluginSettings(
@@ -390,6 +396,7 @@ struct GitHubPluginSettings: Codable, Equatable, Sendable {
         knownNotificationIDs: [],
         acknowledgedPRIDs: [],
         acknowledgedIssueIDs: [],
-        seenStarRepoIDs: []
+        seenStarRepoIDs: [],
+        barCycleSeconds: 4
     )
 }

@@ -1,6 +1,19 @@
 {
   "releases": [
     {
+      "version": "1.2.2",
+      "items": [
+        "Localization updates",
+        "GitHub plugin: notifications, PRs, issues, and stars on the workspace bar",
+        "Nintendo Price Watcher plugin updates",
+        "Plugins: quotes/Sources/QuotesPanel.swift",
+        "Plugins: quotes/Sources/QuotesPlugin.swift",
+        "Plugins: quotes/Sources/QuotesStore.swift",
+        "Steam Price Watcher plugin updates",
+        "Build and release scripts"
+      ]
+    },
+    {
       "version": "1.2.1",
       "items": [
         "Plugins: quotes/Sources/QuotesPlugin.swift",
@@ -296,12 +309,6 @@
       "items": [
         "Update README.md",
         "Build and release scripts"
-      ]
-    },
-    {
-      "version": "0.8.2",
-      "items": [
-        "Restore session"
       ]
     }
   ]
