@@ -81,9 +81,10 @@ public enum PluginPanelAnchor {
             y = geo.chipFrame.maxY + max(gap, 0)
         }
 
-        // Horizontal: center on the chip. Never lead/trail-align (that reads as
-        // "opened to the left/right of the plugin").
-        var x = geo.chipMidX - size.width / 2
+        // Horizontal: align panel leading edge to the chip (Noctalia). Centering a
+        // wide panel near the left of the bar made Steam look like it belonged to
+        // the Nintendo chip beside it.
+        var x = geo.chipFrame.minX
         let maxX = full.maxX - size.width - 4
         let minX = full.minX + 4
         if x > maxX { x = max(minX, maxX) }

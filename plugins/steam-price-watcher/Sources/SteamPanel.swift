@@ -3,9 +3,14 @@ import SwiftUI
 import AlwmL10n
 import AlwmPluginAPI
 
+private final class SteamKeyPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
 @MainActor
 enum SteamPanelController {
-    private static var window: NSWindow?
+    private static var window: SteamKeyPanel?
 
     static func close() {
         PluginPanelOutsideClick.stop(for: window)
@@ -30,7 +35,12 @@ enum SteamPanelController {
             .pluginLocalized()
             .frame(width: width, height: height)
         let hosting = NSHostingController(rootView: root)
-        let win = window ?? NSPanel(
+        if let old = window {
+            PluginPanelOutsideClick.stop(for: old)
+            old.orderOut(nil)
+            window = nil
+        }
+        let win = SteamKeyPanel(
             contentRect: NSRect(x: 0, y: 0, width: width, height: height),
             styleMask: [.borderless, .utilityWindow],
             backing: .buffered,
@@ -43,15 +53,13 @@ enum SteamPanelController {
         win.isOpaque = false
         win.hasShadow = true
         win.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        if let panel = win as? NSPanel {
-            panel.becomesKeyOnlyIfNeeded = false
-            panel.isFloatingPanel = true
-            panel.hidesOnDeactivate = false
-        }
+        win.becomesKeyOnlyIfNeeded = false
+        win.isFloatingPanel = true
+        win.hidesOnDeactivate = false
+        window = win
         PluginPanelAnchor.attachBeforePresenting(win, size: NSSize(width: width, height: height), to: geo)
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        window = win
         PluginPanelAnchor.attachAfterPresenting(win, size: NSSize(width: width, height: height), to: geo)
         PluginPanelOutsideClick.watch(win)
         _ = store
