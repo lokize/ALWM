@@ -111,11 +111,12 @@ final class BrewStore: ObservableObject, @unchecked Sendable {
 
         do {
             // Quiet update of the brew index (best-effort; ignore failures).
+            let loc = localeCode()
             _ = try? await Task.detached {
-                try Self.run(brew, args: ["update", "--quiet"], timeout: 120)
+                try Self.run(brew, args: ["update", "--quiet"], timeout: 120, locale: loc)
             }.value
             let output = try await Task.detached {
-                try Self.run(brew, args: ["outdated", "--json=v2"], timeout: 90)
+                try Self.run(brew, args: ["outdated", "--json=v2"], timeout: 90, locale: loc)
             }.value
             let parsedJSON = output.stdout
             let brewPath = brew
@@ -185,9 +186,10 @@ final class BrewStore: ObservableObject, @unchecked Sendable {
             if pkg.kind == .cask { args.append("--cask") }
             else { args.append("--formula") }
             args.append(pkg.name)
+            let loc = localeCode()
             do {
                 _ = try await Task.detached {
-                    try Self.run(brew, args: args, timeout: 900)
+                    try Self.run(brew, args: args, timeout: 900, locale: loc)
                 }.value
             } catch {
                 failures.append("\(pkg.name): \(error.localizedDescription)")
@@ -237,9 +239,10 @@ final class BrewStore: ObservableObject, @unchecked Sendable {
         if pkg.kind == .cask { args.append("--cask") }
         else { args.append("--formula") }
         args.append(pkg.name)
+        let loc = localeCode()
         do {
             _ = try await Task.detached {
-                try Self.run(brew, args: args, timeout: 900)
+                try Self.run(brew, args: args, timeout: 900, locale: loc)
             }.value
             await MainActor.run {
                 isUpgrading = false
@@ -383,12 +386,24 @@ final class BrewStore: ObservableObject, @unchecked Sendable {
         let status: Int32
     }
 
+    /// Escape a string for use inside an AppleScript `"…"` literal.
+    private static func appleScriptEscape(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
     /// osascript askpass so Homebrew's `sudo -A` works from the menu-bar app (no TTY).
-    private static func ensureAskpassHelper() -> String? {
+    /// Regenerated each call so the dialog matches the app language.
+    private static func ensureAskpassHelper(locale: String) -> String? {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
         let dir = base.appendingPathComponent("ALWM/Helpers", isDirectory: true)
         let script = dir.appendingPathComponent("brew-sudo-askpass.sh")
+        let title = appleScriptEscape(PluginL10n.t("plugin.brew.askpass.title", locale: locale))
+        let message = appleScriptEscape(PluginL10n.t("plugin.brew.askpass.message", locale: locale))
+        let cancel = appleScriptEscape(PluginL10n.t("plugin.brew.askpass.cancel", locale: locale))
+        let ok = appleScriptEscape(PluginL10n.t("plugin.brew.askpass.ok", locale: locale))
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let body = """
@@ -398,7 +413,7 @@ final class BrewStore: ObservableObject, @unchecked Sendable {
             try
               tell application "System Events"
                 activate
-                set dlg to display dialog "ALWM needs your macOS password to upgrade Homebrew packages." default answer "" with title "ALWM · Homebrew" with hidden answer buttons {"Cancel", "OK"} default button "OK" cancel button "Cancel"
+                set dlg to display dialog "\(message)" default answer "" with title "\(title)" with hidden answer buttons {"\(cancel)", "\(ok)"} default button "\(ok)" cancel button "\(cancel)"
                 return text returned of dlg
               end tell
             on error
@@ -464,7 +479,12 @@ final class BrewStore: ObservableObject, @unchecked Sendable {
     }
 
     @discardableResult
-    private static func run(_ launchPath: String, args: [String], timeout: TimeInterval) throws -> CmdResult {
+    private static func run(
+        _ launchPath: String,
+        args: [String],
+        timeout: TimeInterval,
+        locale: String = PluginL10n.currentCode
+    ) throws -> CmdResult {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: launchPath)
         proc.arguments = args
@@ -477,7 +497,7 @@ final class BrewStore: ObservableObject, @unchecked Sendable {
         env["HOMEBREW_NO_ENV_HINTS"] = "1"
         env["HOMEBREW_NO_AUTO_UPDATE"] = "1"
         // Without SUDO_ASKPASS, brew→sudo fails with "a terminal is required" from the GUI.
-        if let askpass = ensureAskpassHelper() {
+        if let askpass = ensureAskpassHelper(locale: locale) {
             env["SUDO_ASKPASS"] = askpass
         }
         proc.environment = env

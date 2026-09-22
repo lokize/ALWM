@@ -195,7 +195,11 @@
     "plugin.pomodoro.skip": "Saltar",
     "plugin.pomodoro.start": "Iniciar",
     "plugin.pomodoro.title": "Pomodoro",
-    "plugin.pomodoro.today": "Hoy: %d ciclo(s)"
+    "plugin.pomodoro.today": "Hoy: %d ciclo(s)",
+    "plugin.brew.askpass.title": "ALWM · Homebrew",
+    "plugin.brew.askpass.message": "ALWM necesita tu contraseña de macOS para actualizar los paquetes de Homebrew.",
+    "plugin.brew.askpass.cancel": "Cancelar",
+    "plugin.brew.askpass.ok": "Aceptar"
   },
   "fr": {
     "plugin.nowplaying.safari_js_hint": "Dans Safari, autorisez Apple Music / MediaSession pour le titre.",
@@ -393,7 +397,11 @@
     "plugin.pomodoro.skip": "Passer",
     "plugin.pomodoro.start": "Démarrer",
     "plugin.pomodoro.title": "Pomodoro",
-    "plugin.pomodoro.today": "Aujourd’hui : %d cycle(s)"
+    "plugin.pomodoro.today": "Aujourd’hui : %d cycle(s)",
+    "plugin.brew.askpass.title": "ALWM · Homebrew",
+    "plugin.brew.askpass.message": "ALWM a besoin de votre mot de passe macOS pour mettre à jour les paquets Homebrew.",
+    "plugin.brew.askpass.cancel": "Annuler",
+    "plugin.brew.askpass.ok": "OK"
   },
   "zh-Hans": {
     "plugin.nowplaying.safari_js_hint": "在 Safari 中允许 Apple Music / MediaSession 以显示标题。",
@@ -591,7 +599,11 @@
     "plugin.pomodoro.skip": "跳过",
     "plugin.pomodoro.start": "开始",
     "plugin.pomodoro.title": "番茄钟",
-    "plugin.pomodoro.today": "今天：%d 个循环"
+    "plugin.pomodoro.today": "今天：%d 个循环",
+    "plugin.brew.askpass.title": "ALWM · Homebrew",
+    "plugin.brew.askpass.message": "ALWM 需要你的 macOS 密码以升级 Homebrew 软件包。",
+    "plugin.brew.askpass.cancel": "取消",
+    "plugin.brew.askpass.ok": "好"
   },
   "hi": {
     "plugin.nowplaying.safari_js_hint": "Safari में शीर्षक के लिए Apple Music / MediaSession अनुमति दें।",
@@ -789,7 +801,11 @@
     "plugin.pomodoro.skip": "छोड़ें",
     "plugin.pomodoro.start": "शुरू",
     "plugin.pomodoro.title": "पोमोडोरो",
-    "plugin.pomodoro.today": "आज: %d चक्र"
+    "plugin.pomodoro.today": "आज: %d चक्र",
+    "plugin.brew.askpass.title": "ALWM · Homebrew",
+    "plugin.brew.askpass.message": "Homebrew पैकेज अपग्रेड करने के लिए ALWM को आपके macOS पासवर्ड की आवश्यकता है।",
+    "plugin.brew.askpass.cancel": "रद्द करें",
+    "plugin.brew.askpass.ok": "ठीक है"
   },
   "ar": {
     "plugin.nowplaying.safari_js_hint": "في Safari، اسمح لـ Apple Music / MediaSession لعرض العنوان.",
@@ -987,7 +1003,11 @@
     "plugin.pomodoro.skip": "تخطي",
     "plugin.pomodoro.start": "بدء",
     "plugin.pomodoro.title": "بومودورو",
-    "plugin.pomodoro.today": "اليوم: %d دورة"
+    "plugin.pomodoro.today": "اليوم: %d دورة",
+    "plugin.brew.askpass.title": "ALWM · Homebrew",
+    "plugin.brew.askpass.message": "يحتاج ALWM إلى كلمة مرور macOS لترقية حزم Homebrew.",
+    "plugin.brew.askpass.cancel": "إلغاء",
+    "plugin.brew.askpass.ok": "موافق"
   },
   "bn": {
     "plugin.nowplaying.safari_js_hint": "Safari-এ শিরোনামের জন্য Apple Music / MediaSession অনুমতি দিন।",
@@ -1185,7 +1205,11 @@
     "plugin.pomodoro.skip": "এড়িয়ে যান",
     "plugin.pomodoro.start": "শুরু",
     "plugin.pomodoro.title": "পোমোডোরো",
-    "plugin.pomodoro.today": "আজ: %d চক্র"
+    "plugin.pomodoro.today": "আজ: %d চক্র",
+    "plugin.brew.askpass.title": "ALWM · Homebrew",
+    "plugin.brew.askpass.message": "Homebrew প্যাকেজ আপগ্রেড করতে ALWM-এর আপনার macOS পাসওয়ার্ড প্রয়োজন।",
+    "plugin.brew.askpass.cancel": "বাতিল",
+    "plugin.brew.askpass.ok": "ঠিক আছে"
   },
   "ru": {
     "plugin.nowplaying.safari_js_hint": "В Safari разрешите Apple Music / MediaSession для названия.",
@@ -1383,7 +1407,11 @@
     "plugin.pomodoro.skip": "Пропустить",
     "plugin.pomodoro.start": "Старт",
     "plugin.pomodoro.title": "Помодоро",
-    "plugin.pomodoro.today": "Сегодня: %d цикл(ов)"
+    "plugin.pomodoro.today": "Сегодня: %d цикл(ов)",
+    "plugin.brew.askpass.title": "ALWM · Homebrew",
+    "plugin.brew.askpass.message": "ALWM требуется пароль macOS для обновления пакетов Homebrew.",
+    "plugin.brew.askpass.cancel": "Отмена",
+    "plugin.brew.askpass.ok": "OK"
   },
   "ur": {
     "plugin.nowplaying.safari_js_hint": "Safari میں عنوان کے لیے Apple Music / MediaSession اجازت دیں۔",
@@ -1581,7 +1609,11 @@
     "plugin.pomodoro.skip": "چھوڑیں",
     "plugin.pomodoro.start": "شروع",
     "plugin.pomodoro.title": "پوموڈورو",
-    "plugin.pomodoro.today": "آج: %d سائیکل"
+    "plugin.pomodoro.today": "آج: %d سائیکل",
+    "plugin.brew.askpass.title": "ALWM · Homebrew",
+    "plugin.brew.askpass.message": "Homebrew پیکجز اپ گریڈ کرنے کے لیے ALWM کو آپ کے macOS پاس ورڈ کی ضرورت ہے۔",
+    "plugin.brew.askpass.cancel": "منسوخ",
+    "plugin.brew.askpass.ok": "ٹھیک ہے"
   },
   "pt-BR": {
     "plugin.nowplaying.safari_js_hint": "No Safari, permita Apple Music / MediaSession para o título.",
