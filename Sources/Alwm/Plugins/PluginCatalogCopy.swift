@@ -63,6 +63,19 @@ enum PluginCatalogCopy {
         case "dev.alwm.docker": return "plugin.docker"
         case "dev.alwm.brew": return "plugin.brew"
         case "dev.alwm.downloads": return "plugin.downloads"
+        case "dev.alwm.calculator": return "plugin.calculator"
+        case "dev.alwm.quotes": return "plugin.quotes"
+        case "dev.alwm.now-playing": return "plugin.nowplaying"
+        case "dev.alwm.stats-cpu": return "plugin.cpu"
+        case "dev.alwm.stats-memory": return "plugin.memory"
+        case "dev.alwm.stats-network": return "plugin.network"
+        case "dev.alwm.stats-battery": return "plugin.battery"
+        case "dev.alwm.stats-disk": return "plugin.disk"
+        case "dev.alwm.stats-gpu": return "plugin.gpu"
+        case "dev.alwm.stats-sensors": return "plugin.sensors"
+        case "dev.alwm.stats-fans": return "plugin.fans"
+        case "dev.alwm.stats-bluetooth": return "plugin.bluetooth"
+        case "dev.alwm.stats-uptime": return "plugin.uptime"
         default: return nil
         }
     }

@@ -35,6 +35,7 @@ let package = Package(
         .library(name: "StatsUptimePlugin", type: .dynamic, targets: ["StatsUptimePlugin"]),
         .library(name: "PomodoroPlugin", type: .dynamic, targets: ["PomodoroPlugin"]),
         .library(name: "CalculatorPlugin", type: .dynamic, targets: ["CalculatorPlugin"]),
+        .library(name: "QuotesPlugin", type: .dynamic, targets: ["QuotesPlugin"]),
         .library(name: "CalendarPlugin", type: .dynamic, targets: ["CalendarPlugin"]),
         .library(name: "ClipboardPlugin", type: .dynamic, targets: ["ClipboardPlugin"]),
         .library(name: "DockerPlugin", type: .dynamic, targets: ["DockerPlugin"]),
@@ -353,6 +354,25 @@ let package = Package(
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("SwiftUI")
+            ]
+        ),
+        .target(
+            name: "QuotesPlugin",
+            dependencies: [sharedAPI, sharedABI, sharedL10n],
+            path: "plugins/quotes",
+            exclude: [
+                "plugin.json",
+                "README.md",
+                "previews",
+                "l10n"
+            ],
+            swiftSettings: [
+                .swiftLanguageMode(.v6)
+            ],
+            linkerSettings: [
+                .linkedFramework("AppKit"),
+                .linkedFramework("SwiftUI"),
+                .linkedFramework("UserNotifications")
             ]
         ),
         .target(

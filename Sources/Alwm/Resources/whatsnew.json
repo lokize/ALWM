@@ -1,6 +1,15 @@
 {
   "releases": [
     {
+      "version": "1.2.0",
+      "items": [
+        "Update Package",
+        "Plugin host updates",
+        "Localization updates",
+        "Build and release scripts"
+      ]
+    },
+    {
       "version": "1.1.9",
       "items": [
         "Update Package",
@@ -292,13 +301,6 @@
       "version": "0.8.1",
       "items": [
         "Window manager improvements"
-      ]
-    },
-    {
-      "version": "0.8.0",
-      "items": [
-        "Fix window blink",
-        "Workspace restore"
       ]
     }
   ]

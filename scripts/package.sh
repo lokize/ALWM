@@ -435,6 +435,13 @@ if [[ -d "$ROOT/plugins/calculator" ]]; then
     "Calculator" \
     "dev.alwm.calculator"
 fi
+if [[ -d "$ROOT/plugins/quotes" ]]; then
+  package_plugin \
+    "$ROOT/plugins/quotes" \
+    "libQuotesPlugin.dylib" \
+    "Quotes" \
+    "dev.alwm.quotes"
+fi
 if [[ -d "$ROOT/plugins/calendar" ]]; then
   package_plugin \
     "$ROOT/plugins/calendar" \
