@@ -33,7 +33,8 @@ let package = Package(
                 .swiftLanguageMode(.v6)
             ],
             linkerSettings: [
-                .linkedFramework("AppKit")
+                .linkedFramework("AppKit"),
+                .linkedFramework("SwiftUI")
             ]
         ),
         .target(

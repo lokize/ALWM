@@ -1,6 +1,23 @@
 {
   "releases": [
     {
+      "version": "1.1.5",
+      "items": [
+        "Update Package",
+        "Plugins: brew/Sources/BrewPanel.swift",
+        "Plugins: brew/Sources/BrewPlugin.swift",
+        "Plugins: brew/Sources/BrewStore.swift",
+        "Plugins: calendar/Sources/CalendarPanel.swift",
+        "Plugins: calendar/Sources/CalendarPlugin.swift",
+        "Plugins: clipboard/Sources/ClipboardPanel.swift",
+        "Plugins: clipboard/Sources/ClipboardPlugin.swift",
+        "Plugins: docker/Sources/DockerPanel.swift",
+        "Plugins: docker/Sources/DockerPlugin.swift",
+        "Plugins: downloads/Sources/DownloadsPanel.swift",
+        "Plugins: downloads/Sources/DownloadsPlugin.swift"
+      ]
+    },
+    {
       "version": "1.1.4",
       "items": [
         "Localization updates",
@@ -274,12 +291,6 @@
       "version": "0.7.6",
       "items": [
         "Focus in config panel, scroll"
-      ]
-    },
-    {
-      "version": "0.7.5",
-      "items": [
-        "Scroll"
       ]
     }
   ]

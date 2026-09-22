@@ -158,7 +158,11 @@ private final class SteamBarChipView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        SteamPanelController.toggle(relativeTo: self)
+        let geometry = PluginPanelAnchor.geometry(of: self)
+        Task { @MainActor in
+            PluginPanelAnchor.remember(geometry, forPlugin: "dev.alwm.steam-price-watcher")
+            SteamPanelController.toggle(anchoredTo: geometry)
+        }
     }
 
     private func build() {

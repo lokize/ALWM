@@ -64,9 +64,11 @@ public final class PomodoroPlugin: AlwmPlugin {
             scale: scale,
             tooltip: store.tooltip
         )
-        chip.onClick = {
+        chip.onClick = { [weak chip] in
+            let geometry = PluginPanelAnchor.geometry(of: chip)
             Task { @MainActor in
-                PomodoroPanelController.toggle(relativeTo: nil)
+                PluginPanelAnchor.remember(geometry, forPlugin: "dev.alwm.pomodoro")
+                PomodoroPanelController.toggle(anchoredTo: geometry)
             }
         }
         return chip

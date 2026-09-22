@@ -166,7 +166,11 @@ private final class GitHubBarChipView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        GitHubPanelController.toggle(relativeTo: self)
+        let geometry = PluginPanelAnchor.geometry(of: self)
+        Task { @MainActor in
+            PluginPanelAnchor.remember(geometry, forPlugin: "dev.alwm.github")
+            GitHubPanelController.toggle(anchoredTo: geometry)
+        }
     }
 
     private func build() {

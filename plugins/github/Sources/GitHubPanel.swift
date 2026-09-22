@@ -12,48 +12,49 @@ enum GitHubPanelController {
         window?.orderOut(nil)
     }
 
-    static func toggle(relativeTo view: NSView?) {
+    static func toggle(anchoredTo geometry: PluginPanelAnchor.Geometry?) {
         if let window, window.isVisible {
             PluginPanelOutsideClick.stop(for: window)
             window.orderOut(nil)
             return
         }
-        open(relativeTo: view)
+        open(anchoredTo: geometry)
     }
 
-    static func open(relativeTo view: NSView?) {
+    static func open(anchoredTo geometry: PluginPanelAnchor.Geometry?) {
+        let geo = geometry ?? PluginPanelAnchor.remembered(forPlugin: "dev.alwm.github")
         let store = GitHubWatcherStore.shared
+        let width: CGFloat = 520
+        let height: CGFloat = 640
         let root = GitHubPanelView()
             .pluginLocalized()
+            .frame(width: width, height: height)
         let hosting = NSHostingController(rootView: root)
         let win = window ?? NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 640),
-            styleMask: [.titled, .closable, .resizable, .utilityWindow],
+            contentRect: NSRect(x: 0, y: 0, width: width, height: height),
+            styleMask: [.borderless, .utilityWindow],
             backing: .buffered,
             defer: false
         )
-        win.title = PluginL10n.t("plugin.github.title", locale: store.localeCode())
         win.contentViewController = hosting
         win.isReleasedWhenClosed = false
         win.level = .floating
+        win.backgroundColor = .clear
+        win.isOpaque = false
+        win.hasShadow = true
         win.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        win.minSize = NSSize(width: 440, height: 480)
-
-        if let view, let screen = view.window?.screen ?? NSScreen.main {
-            let rect = view.window?.convertToScreen(view.convert(view.bounds, to: nil))
-                ?? NSRect(x: screen.visibleFrame.midX, y: screen.visibleFrame.midY, width: 1, height: 1)
-            var origin = NSPoint(x: rect.midX - 260, y: rect.minY - 660)
-            origin.x = min(max(origin.x, screen.visibleFrame.minX + 12), screen.visibleFrame.maxX - 530)
-            origin.y = min(max(origin.y, screen.visibleFrame.minY + 12), screen.visibleFrame.maxY - 500)
-            win.setFrameOrigin(origin)
-        } else {
-            win.center()
+        if let panel = win as? NSPanel {
+            panel.becomesKeyOnlyIfNeeded = false
+            panel.isFloatingPanel = true
+            panel.hidesOnDeactivate = false
         }
-
+        PluginPanelAnchor.attachBeforePresenting(win, size: NSSize(width: width, height: height), to: geo)
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         window = win
+        PluginPanelAnchor.attachAfterPresenting(win, size: NSSize(width: width, height: height), to: geo)
         PluginPanelOutsideClick.watch(win)
+        _ = store
     }
 }
 
@@ -86,7 +87,8 @@ struct GitHubPanelView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .frame(minWidth: 440, minHeight: 480)
+        .frame(width: 520, height: 640)
+        .pluginPanelChrome(cornerRadius: 14)
         .onAppear {
             tokenDraft = store.settings.token
         }

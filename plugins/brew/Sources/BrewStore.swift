@@ -170,41 +170,48 @@ final class BrewStore: ObservableObject, @unchecked Sendable {
             return
         }
 
-        do {
-            let formulae = targets.filter { $0.kind == .formula }.map(\.name)
-            let casks = targets.filter { $0.kind == .cask }.map(\.name)
-            _ = try await Task.detached {
-                if !formulae.isEmpty {
-                    _ = try Self.run(brew, args: ["upgrade", "--formula"] + formulae, timeout: 900)
-                }
-                if !casks.isEmpty {
-                    _ = try Self.run(brew, args: ["upgrade", "--cask"] + casks, timeout: 900)
-                }
-            }.value
+        // One-by-one so a single broken cask (missing app / sudo) does not abort the rest.
+        var failures: [String] = []
+        for pkg in targets {
             await MainActor.run {
-                isUpgrading = false
-                statusLine = ""
-                if disabledCount > 0 {
-                    lastError = PluginL10n.tf(
-                        "plugin.brew.status.skipped_disabled",
-                        locale: localeCode(),
-                        disabledCount
-                    )
-                } else {
-                    lastError = nil
-                }
+                statusLine = PluginL10n.tf(
+                    "plugin.brew.status.upgrading",
+                    locale: localeCode(),
+                    pkg.name
+                )
                 objectWillChange.send()
             }
-            await refresh()
-        } catch {
-            await MainActor.run {
-                isUpgrading = false
-                statusLine = ""
-                lastError = error.localizedDescription
-                objectWillChange.send()
+            var args = ["upgrade"]
+            if pkg.kind == .cask { args.append("--cask") }
+            else { args.append("--formula") }
+            args.append(pkg.name)
+            do {
+                _ = try await Task.detached {
+                    try Self.run(brew, args: args, timeout: 900)
+                }.value
+            } catch {
+                failures.append("\(pkg.name): \(error.localizedDescription)")
             }
-            await refresh()
         }
+
+        await MainActor.run {
+            isUpgrading = false
+            statusLine = ""
+            var notes: [String] = []
+            if disabledCount > 0 {
+                notes.append(PluginL10n.tf(
+                    "plugin.brew.status.skipped_disabled",
+                    locale: localeCode(),
+                    disabledCount
+                ))
+            }
+            if !failures.isEmpty {
+                notes.append(failures.joined(separator: "\n"))
+            }
+            lastError = notes.isEmpty ? nil : notes.joined(separator: "\n")
+            objectWillChange.send()
+        }
+        await refresh()
     }
 
     func upgrade(_ pkg: BrewPackage) async {
@@ -237,6 +244,8 @@ final class BrewStore: ObservableObject, @unchecked Sendable {
             await MainActor.run {
                 isUpgrading = false
                 statusLine = ""
+                lastError = nil
+                objectWillChange.send()
             }
             await refresh()
         } catch {
@@ -374,19 +383,103 @@ final class BrewStore: ObservableObject, @unchecked Sendable {
         let status: Int32
     }
 
+    /// osascript askpass so Homebrew's `sudo -A` works from the menu-bar app (no TTY).
+    private static func ensureAskpassHelper() -> String? {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        let dir = base.appendingPathComponent("ALWM/Helpers", isDirectory: true)
+        let script = dir.appendingPathComponent("brew-sudo-askpass.sh")
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let body = """
+            #!/bin/bash
+            # Used by ALWM Brew plugin — do not run manually.
+            osascript <<'APPLESCRIPT'
+            try
+              tell application "System Events"
+                activate
+                set dlg to display dialog "ALWM needs your macOS password to upgrade Homebrew packages." default answer "" with title "ALWM · Homebrew" with hidden answer buttons {"Cancel", "OK"} default button "OK" cancel button "Cancel"
+                return text returned of dlg
+              end tell
+            on error
+              return
+            end try
+            APPLESCRIPT
+            """
+            try body.write(to: script, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o755],
+                ofItemAtPath: script.path
+            )
+            return script.path
+        } catch {
+            NSLog("ALWM Brew: failed to write askpass helper: %@", error.localizedDescription)
+            return nil
+        }
+    }
+
+    private static func appendLog(_ text: String) {
+        let base = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library")
+        let dir = base.appendingPathComponent("Logs/ALWM", isDirectory: true)
+        let file = dir.appendingPathComponent("brew.log")
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let stamp = ISO8601DateFormatter().string(from: Date())
+            let chunk = "\n—— \(stamp) ——\n\(text)\n"
+            if !FileManager.default.fileExists(atPath: file.path) {
+                try chunk.write(to: file, atomically: true, encoding: .utf8)
+            } else if let handle = try? FileHandle(forWritingTo: file) {
+                defer { try? handle.close() }
+                try handle.seekToEnd()
+                if let data = chunk.data(using: .utf8) {
+                    try handle.write(contentsOf: data)
+                }
+            }
+        } catch {
+            NSLog("ALWM Brew: log write failed: %@", error.localizedDescription)
+        }
+    }
+
+    /// Prefer `Error:` lines from brew output — brew can exit 0 after partial failures.
+    private static func brewFailureMessage(stdout: String, stderr: String, status: Int32) -> String? {
+        let combined = [stderr, stdout].joined(separator: "\n")
+        let errorLines = combined
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { $0.hasPrefix("Error:") }
+        if !errorLines.isEmpty {
+            return errorLines.suffix(3).joined(separator: "\n")
+        }
+        if status != 0 {
+            let msg = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !msg.isEmpty { return msg }
+            return "brew exited with status \(status)"
+        }
+        if combined.localizedCaseInsensitiveContains("a password is required")
+            || combined.localizedCaseInsensitiveContains("a terminal is required to read the password") {
+            return "sudo: a password is required (Homebrew upgrade needs admin access)"
+        }
+        return nil
+    }
+
     @discardableResult
     private static func run(_ launchPath: String, args: [String], timeout: TimeInterval) throws -> CmdResult {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: launchPath)
         proc.arguments = args
-        // Inherit the user environment so password prompts / Homebrew paths work from the GUI.
         var env = ProcessInfo.processInfo.environment
         let path = env["PATH"] ?? ""
         env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + path
         if env["HOME"] == nil { env["HOME"] = NSHomeDirectory() }
         if env["LANG"] == nil { env["LANG"] = "en_US.UTF-8" }
+        if env["USER"] == nil { env["USER"] = NSUserName() }
         env["HOMEBREW_NO_ENV_HINTS"] = "1"
         env["HOMEBREW_NO_AUTO_UPDATE"] = "1"
+        // Without SUDO_ASKPASS, brew→sudo fails with "a terminal is required" from the GUI.
+        if let askpass = ensureAskpassHelper() {
+            env["SUDO_ASKPASS"] = askpass
+        }
         proc.environment = env
 
         let out = Pipe()
@@ -394,8 +487,6 @@ final class BrewStore: ObservableObject, @unchecked Sendable {
         proc.standardOutput = out
         proc.standardError = err
 
-        // Drain pipes while the process runs — otherwise a chatty `brew upgrade`
-        // fills the OS pipe buffer and deadlocks until our timeout kills it.
         let outBox = DataBox()
         let errBox = DataBox()
         out.fileHandleForReading.readabilityHandler = { handle in
@@ -415,6 +506,8 @@ final class BrewStore: ObservableObject, @unchecked Sendable {
             }
         }
 
+        let cmdline = ([launchPath] + args).joined(separator: " ")
+        NSLog("ALWM Brew: running %@", cmdline)
         try proc.run()
 
         let group = DispatchGroup()
@@ -428,42 +521,37 @@ final class BrewStore: ObservableObject, @unchecked Sendable {
             out.fileHandleForReading.readabilityHandler = nil
             err.fileHandleForReading.readabilityHandler = nil
             Self.terminateProcessTree(proc)
+            let msg = "brew timed out"
+            appendLog("$ \(cmdline)\n\(msg)")
             throw NSError(
                 domain: "BrewStore",
                 code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "brew timed out"]
+                userInfo: [NSLocalizedDescriptionKey: msg]
             )
         }
 
         out.fileHandleForReading.readabilityHandler = nil
         err.fileHandleForReading.readabilityHandler = nil
-        // Pick up any residual bytes after handlers are cleared.
         outBox.append(out.fileHandleForReading.readDataToEndOfFile())
         errBox.append(err.fileHandleForReading.readDataToEndOfFile())
 
         let stdout = String(data: outBox.data, encoding: .utf8) ?? ""
         let stderr = String(data: errBox.data, encoding: .utf8) ?? ""
         let result = CmdResult(stdout: stdout, stderr: stderr, status: proc.terminationStatus)
-        if result.status != 0 {
-            let msg = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !msg.isEmpty {
-                throw NSError(
-                    domain: "BrewStore",
-                    code: Int(result.status),
-                    userInfo: [NSLocalizedDescriptionKey: msg]
-                )
-            }
+        appendLog("$ \(cmdline)\nexit \(result.status)\n\(stderr)\n\(stdout)")
+
+        if let failure = brewFailureMessage(stdout: stdout, stderr: stderr, status: result.status) {
+            NSLog("ALWM Brew: failure — %@", failure)
             throw NSError(
                 domain: "BrewStore",
-                code: Int(result.status),
-                userInfo: [NSLocalizedDescriptionKey: "brew exited with status \(result.status)"]
+                code: Int(result.status == 0 ? 1 : result.status),
+                userInfo: [NSLocalizedDescriptionKey: failure]
             )
         }
         return result
     }
 
     private static func terminateProcessTree(_ proc: Process) {
-        // Do not signal -pid: brew shares ALWM's process group by default.
         proc.terminate()
         DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
             if proc.isRunning {

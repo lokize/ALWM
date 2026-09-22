@@ -64,9 +64,10 @@ public final class StatsNetworkPlugin: AlwmPlugin {
             tooltip: store.tooltip
         )
         chip.onClick = { [weak chip] in
-            guard let chip else { return }
+            let geometry = PluginPanelAnchor.geometry(of: chip)
             Task { @MainActor in
-                NetworkPanelController.toggle(relativeTo: chip)
+                PluginPanelAnchor.remember(geometry, forPlugin: "dev.alwm.stats-network")
+                NetworkPanelController.toggle(anchoredTo: geometry)
             }
         }
         return chip

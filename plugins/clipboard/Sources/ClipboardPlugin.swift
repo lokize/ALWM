@@ -120,9 +120,11 @@ public final class ClipboardPlugin: AlwmPlugin {
         ])
         // Chip draws; host owns all clicks (left + right-click menu).
         chip.onClick = nil
-        host.onLeftClick = {
+        host.onLeftClick = { [weak host] in
+            let geometry = PluginPanelAnchor.geometry(of: host)
             Task { @MainActor in
-                ClipboardPanelController.toggle(relativeTo: nil)
+                PluginPanelAnchor.remember(geometry, forPlugin: "dev.alwm.clipboard")
+                ClipboardPanelController.toggle(anchoredTo: geometry)
             }
         }
         host.menuBuilder = { [weak self] in
@@ -178,6 +180,14 @@ public final class ClipboardPlugin: AlwmPlugin {
     /// ⌘⇧V toggles the clipboard history panel.
     private func installHotkey() {
         removeHotkey()
+        let open: () -> Void = {
+            DispatchQueue.main.async {
+                Task { @MainActor in
+                    let geo = PluginPanelAnchor.remembered(forPlugin: "dev.alwm.clipboard")
+                    ClipboardPanelController.toggle(anchoredTo: geo)
+                }
+            }
+        }
         let handler: (NSEvent) -> Void = { event in
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             guard flags.contains(.command), flags.contains(.shift),
@@ -185,9 +195,7 @@ public final class ClipboardPlugin: AlwmPlugin {
             else { return }
             // keyCode 9 = V
             guard event.keyCode == 9 else { return }
-            DispatchQueue.main.async {
-                ClipboardPanelController.toggle(relativeTo: nil)
-            }
+            open()
         }
         hotkeyGlobal = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
             handler(event)
@@ -197,9 +205,7 @@ public final class ClipboardPlugin: AlwmPlugin {
             if flags.contains(.command), flags.contains(.shift),
                !flags.contains(.option), !flags.contains(.control),
                event.keyCode == 9 {
-                DispatchQueue.main.async {
-                    ClipboardPanelController.toggle(relativeTo: nil)
-                }
+                open()
                 return nil
             }
             return event
@@ -224,7 +230,8 @@ private final class ClipboardMenuTarget: NSObject, @unchecked Sendable {
 
     @objc func openPanel() {
         Task { @MainActor in
-            ClipboardPanelController.toggle(relativeTo: nil)
+            let geo = PluginPanelAnchor.remembered(forPlugin: "dev.alwm.clipboard")
+            ClipboardPanelController.toggle(anchoredTo: geo)
         }
     }
 

@@ -17,15 +17,16 @@ enum BrewPanelController {
         window?.orderOut(nil)
     }
 
-    static func toggle(relativeTo view: NSView?) {
+    static func toggle(anchoredTo geometry: PluginPanelAnchor.Geometry?) {
         if let window, window.isVisible {
             close()
             return
         }
-        open(relativeTo: view)
+        open(anchoredTo: geometry)
     }
 
-    static func open(relativeTo view: NSView?) {
+    static func open(anchoredTo geometry: PluginPanelAnchor.Geometry?) {
+        let geo = geometry ?? PluginPanelAnchor.remembered(forPlugin: "dev.alwm.brew")
         let root = BrewPanelView().pluginLocalized()
         let hosting = NSHostingController(rootView: root)
         let width: CGFloat = 360
@@ -53,20 +54,11 @@ enum BrewPanelController {
         win.hidesOnDeactivate = false
         win.becomesKeyOnlyIfNeeded = false
         win.isFloatingPanel = true
-
-        if let screen = NSScreen.main {
-            let mouse = NSEvent.mouseLocation
-            var origin = NSPoint(x: mouse.x - width / 2, y: mouse.y - height - 12)
-            origin.x = min(max(origin.x, screen.visibleFrame.minX + 8), screen.visibleFrame.maxX - width - 8)
-            origin.y = min(max(origin.y, screen.visibleFrame.minY + 8), screen.visibleFrame.maxY - height - 8)
-            win.setFrame(NSRect(origin: origin, size: NSSize(width: width, height: height)), display: true)
-        } else {
-            win.center()
-        }
-
         window = win
+        PluginPanelAnchor.attachBeforePresenting(win, size: NSSize(width: width, height: height), to: geo)
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        PluginPanelAnchor.attachAfterPresenting(win, size: NSSize(width: width, height: height), to: geo)
         PluginPanelOutsideClick.watch(win)
     }
 }
@@ -96,7 +88,8 @@ struct BrewPanelView: View {
                 Text(err)
                     .font(.caption2)
                     .foregroundStyle(.red)
-                    .lineLimit(3)
+                    .lineLimit(8)
+                    .textSelection(.enabled)
             }
             if !store.statusLine.isEmpty {
                 Text(store.statusLine)
@@ -106,10 +99,7 @@ struct BrewPanelView: View {
         }
         .padding(14)
         .frame(width: 360, height: 440, alignment: .topLeading)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.ultraThinMaterial)
-        )
+        .pluginPanelChrome(cornerRadius: 14)
     }
 
     private var header: some View {

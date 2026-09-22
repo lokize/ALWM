@@ -65,9 +65,10 @@ public final class StatsDiskPlugin: AlwmPlugin {
             tooltip: store.tooltip
         )
         chip.onClick = { [weak chip] in
-            guard let chip else { return }
+            let geometry = PluginPanelAnchor.geometry(of: chip)
             Task { @MainActor in
-                DiskPanelController.toggle(relativeTo: chip)
+                PluginPanelAnchor.remember(geometry, forPlugin: "dev.alwm.stats-disk")
+                DiskPanelController.toggle(anchoredTo: geometry)
             }
         }
         return chip

@@ -100,10 +100,11 @@ public final class DockerPlugin: AlwmPlugin {
             host.heightAnchor.constraint(equalToConstant: chip.fittingSize.height),
             host.widthAnchor.constraint(equalToConstant: max(chip.fittingSize.width, 1))
         ])
-        host.onLeftClick = {
+        host.onLeftClick = { [weak host] in
+            let geometry = PluginPanelAnchor.geometry(of: host)
             Task { @MainActor in
-                // Position uses mouse location; avoid capturing NSView across isolation.
-                DockerPanelController.toggle(relativeTo: nil)
+                PluginPanelAnchor.remember(geometry, forPlugin: "dev.alwm.docker")
+                DockerPanelController.toggle(anchoredTo: geometry)
             }
         }
         host.menuBuilder = { [weak self] in
@@ -146,7 +147,7 @@ private final class DockerMenuTarget: NSObject, @unchecked Sendable {
 
     @objc func openPanel(_ sender: Any?) {
         Task { @MainActor in
-            DockerPanelController.toggle(relativeTo: nil)
+            DockerPanelController.toggle(anchoredTo: nil)
         }
     }
 

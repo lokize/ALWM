@@ -65,9 +65,10 @@ public final class StatsBluetoothPlugin: AlwmPlugin {
             tooltip: store.tooltip
         )
         chip.onClick = { [weak chip] in
-            guard let chip else { return }
+            let geometry = PluginPanelAnchor.geometry(of: chip)
             Task { @MainActor in
-                BluetoothPanelController.toggle(relativeTo: chip)
+                PluginPanelAnchor.remember(geometry, forPlugin: "dev.alwm.stats-bluetooth")
+                BluetoothPanelController.toggle(anchoredTo: geometry)
             }
         }
         return chip

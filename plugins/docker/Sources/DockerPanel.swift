@@ -17,15 +17,16 @@ enum DockerPanelController {
         window?.orderOut(nil)
     }
 
-    static func toggle(relativeTo view: NSView?) {
+    static func toggle(anchoredTo geometry: PluginPanelAnchor.Geometry?) {
         if let window, window.isVisible {
             close()
             return
         }
-        open(relativeTo: view)
+        open(anchoredTo: geometry)
     }
 
-    static func open(relativeTo view: NSView?) {
+    static func open(anchoredTo geometry: PluginPanelAnchor.Geometry?) {
+        let geo = geometry ?? PluginPanelAnchor.remembered(forPlugin: "dev.alwm.docker")
         let root = DockerPanelView().pluginLocalized()
         let hosting = NSHostingController(rootView: root)
         let width: CGFloat = 560
@@ -53,20 +54,11 @@ enum DockerPanelController {
         win.hidesOnDeactivate = false
         win.becomesKeyOnlyIfNeeded = false
         win.isFloatingPanel = true
-
-        if let screen = NSScreen.main {
-            let mouse = NSEvent.mouseLocation
-            var origin = NSPoint(x: mouse.x - width / 2, y: mouse.y - height - 12)
-            origin.x = min(max(origin.x, screen.visibleFrame.minX + 8), screen.visibleFrame.maxX - width - 8)
-            origin.y = min(max(origin.y, screen.visibleFrame.minY + 8), screen.visibleFrame.maxY - height - 8)
-            win.setFrame(NSRect(origin: origin, size: NSSize(width: width, height: height)), display: true)
-        } else {
-            win.center()
-        }
-
         window = win
+        PluginPanelAnchor.attachBeforePresenting(win, size: NSSize(width: width, height: height), to: geo)
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        PluginPanelAnchor.attachAfterPresenting(win, size: NSSize(width: width, height: height), to: geo)
         PluginPanelOutsideClick.watch(win)
         Task { await DockerStore.shared.refresh() }
     }
@@ -105,10 +97,7 @@ struct DockerPanelView: View {
         }
         .padding(14)
         .frame(width: 560, height: 620, alignment: .topLeading)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.ultraThinMaterial)
-        )
+        .pluginPanelChrome(cornerRadius: 14)
         .sheet(isPresented: $showNewProject) {
             projectEditorSheet
         }

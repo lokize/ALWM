@@ -61,9 +61,11 @@ public final class BrewPlugin: AlwmPlugin {
             scale: scale,
             tooltip: store.tooltip
         )
-        chip.onClick = {
+        chip.onClick = { [weak chip] in
+            let geometry = PluginPanelAnchor.geometry(of: chip)
             Task { @MainActor in
-                BrewPanelController.toggle(relativeTo: nil)
+                PluginPanelAnchor.remember(geometry, forPlugin: "dev.alwm.brew")
+                BrewPanelController.toggle(anchoredTo: geometry)
             }
         }
         return chip

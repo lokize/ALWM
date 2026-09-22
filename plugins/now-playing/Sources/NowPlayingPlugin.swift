@@ -103,8 +103,10 @@ private final class NowPlayingBarChipView: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     override func mouseDown(with event: NSEvent) {
+        let geometry = PluginPanelAnchor.geometry(of: self)
         Task { @MainActor in
-            NowPlayingPanelController.toggle(relativeTo: self)
+            PluginPanelAnchor.remember(geometry, forPlugin: "dev.alwm.now-playing")
+            NowPlayingPanelController.toggle(anchoredTo: geometry)
         }
     }
 

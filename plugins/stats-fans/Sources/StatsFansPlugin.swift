@@ -67,9 +67,10 @@ public final class StatsFansPlugin: AlwmPlugin {
             tooltip: store.tooltip
         )
         chip.onClick = { [weak chip] in
-            guard let chip else { return }
+            let geometry = PluginPanelAnchor.geometry(of: chip)
             Task { @MainActor in
-                FansPanelController.toggle(relativeTo: chip)
+                PluginPanelAnchor.remember(geometry, forPlugin: "dev.alwm.stats-fans")
+                FansPanelController.toggle(anchoredTo: geometry)
             }
         }
         return chip

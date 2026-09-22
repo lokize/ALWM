@@ -65,9 +65,11 @@ public final class CalendarPlugin: AlwmPlugin {
             scale: scale,
             tooltip: store.tooltip
         )
-        chip.onClick = {
+        chip.onClick = { [weak chip] in
+            let geometry = PluginPanelAnchor.geometry(of: chip)
             Task { @MainActor in
-                CalendarPanelController.toggle(relativeTo: nil)
+                PluginPanelAnchor.remember(geometry, forPlugin: "dev.alwm.calendar")
+                CalendarPanelController.toggle(anchoredTo: geometry)
             }
         }
         return chip

@@ -22,24 +22,25 @@ enum ClipboardPanelController {
         window?.orderOut(nil)
     }
 
-    static func toggle(relativeTo view: NSView?) {
+    static func toggle(anchoredTo geometry: PluginPanelAnchor.Geometry?) {
         if let window, window.isVisible {
             close()
             return
         }
-        open(relativeTo: view)
+        open(anchoredTo: geometry)
     }
 
     static var isVisible: Bool {
         window?.isVisible == true
     }
 
-    static func open(relativeTo view: NSView?) {
+    static func open(anchoredTo geometry: PluginPanelAnchor.Geometry?) {
         let root = ClipboardPanelView()
             .pluginLocalized()
         let hosting = NSHostingController(rootView: root)
         let width: CGFloat = 400
         let height: CGFloat = 520
+        let geo = geometry ?? PluginPanelAnchor.remembered(forPlugin: "dev.alwm.clipboard")
 
         if let old = window {
             PluginPanelOutsideClick.stop(for: old)
@@ -67,29 +68,13 @@ enum ClipboardPanelController {
         win.hidesOnDeactivate = false
         win.becomesKeyOnlyIfNeeded = false
         win.isFloatingPanel = true
-        win.isMovableByWindowBackground = true
-
-        if let view, let screen = view.window?.screen ?? NSScreen.main {
-            let rect = view.window?.convertToScreen(view.convert(view.bounds, to: nil))
-                ?? NSRect(x: screen.visibleFrame.midX, y: screen.visibleFrame.midY, width: 1, height: 1)
-            var origin = NSPoint(x: rect.midX - width / 2, y: rect.minY - height - 8)
-            origin.x = min(max(origin.x, screen.visibleFrame.minX + 8), screen.visibleFrame.maxX - width - 8)
-            origin.y = min(max(origin.y, screen.visibleFrame.minY + 8), screen.visibleFrame.maxY - height - 8)
-            win.setFrame(NSRect(origin: origin, size: NSSize(width: width, height: height)), display: true)
-        } else if let screen = NSScreen.main {
-            let mouse = NSEvent.mouseLocation
-            var origin = NSPoint(x: mouse.x - width / 2, y: mouse.y - height - 12)
-            origin.x = min(max(origin.x, screen.visibleFrame.minX + 8), screen.visibleFrame.maxX - width - 8)
-            origin.y = min(max(origin.y, screen.visibleFrame.minY + 8), screen.visibleFrame.maxY - height - 8)
-            win.setFrame(NSRect(origin: origin, size: NSSize(width: width, height: height)), display: true)
-        } else {
-            win.center()
-        }
-
+        win.isMovableByWindowBackground = false
         window = win
         ClipboardStore.shared.ensureSelection()
+        PluginPanelAnchor.attachBeforePresenting(win, size: NSSize(width: width, height: height), to: geo)
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        PluginPanelAnchor.attachAfterPresenting(win, size: NSSize(width: width, height: height), to: geo)
         PluginPanelOutsideClick.watch(win)
         installKeyMonitor()
     }
@@ -153,10 +138,7 @@ struct ClipboardPanelView: View {
         }
         .padding(14)
         .frame(width: 400, height: 520, alignment: .topLeading)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.ultraThinMaterial)
-        )
+        .pluginPanelChrome(cornerRadius: 14)
         .onAppear { store.ensureSelection() }
         .onChange(of: store.searchQuery) { _, _ in store.ensureSelection() }
         .onChange(of: store.filter) { _, _ in store.ensureSelection() }

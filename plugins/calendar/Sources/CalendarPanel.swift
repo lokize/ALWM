@@ -18,16 +18,17 @@ enum CalendarPanelController {
         window?.orderOut(nil)
     }
 
-    static func toggle(relativeTo view: NSView?) {
+    static func toggle(anchoredTo geometry: PluginPanelAnchor.Geometry?) {
         if let window, window.isVisible {
             PluginPanelOutsideClick.stop(for: window)
             window.orderOut(nil)
             return
         }
-        open(relativeTo: view)
+        open(anchoredTo: geometry)
     }
 
-    static func open(relativeTo view: NSView?) {
+    static func open(anchoredTo geometry: PluginPanelAnchor.Geometry?) {
+        let geo = geometry ?? PluginPanelAnchor.remembered(forPlugin: "dev.alwm.calendar")
         let root = CalendarPanelView()
             .pluginLocalized()
         let hosting = NSHostingController(rootView: root)
@@ -59,27 +60,11 @@ enum CalendarPanelController {
         win.isFloatingPanel = true
         win.isMovableByWindowBackground = true
         win.acceptsMouseMovedEvents = true
-
-        if let view, let screen = view.window?.screen ?? NSScreen.main {
-            let rect = view.window?.convertToScreen(view.convert(view.bounds, to: nil))
-                ?? NSRect(x: screen.visibleFrame.midX, y: screen.visibleFrame.midY, width: 1, height: 1)
-            var origin = NSPoint(x: rect.midX - width / 2, y: rect.minY - height - 8)
-            origin.x = min(max(origin.x, screen.visibleFrame.minX + 8), screen.visibleFrame.maxX - width - 8)
-            origin.y = min(max(origin.y, screen.visibleFrame.minY + 8), screen.visibleFrame.maxY - height - 8)
-            win.setFrame(NSRect(origin: origin, size: NSSize(width: width, height: height)), display: true)
-        } else if let screen = NSScreen.main {
-            let mouse = NSEvent.mouseLocation
-            var origin = NSPoint(x: mouse.x - width / 2, y: mouse.y - height - 12)
-            origin.x = min(max(origin.x, screen.visibleFrame.minX + 8), screen.visibleFrame.maxX - width - 8)
-            origin.y = min(max(origin.y, screen.visibleFrame.minY + 8), screen.visibleFrame.maxY - height - 8)
-            win.setFrame(NSRect(origin: origin, size: NSSize(width: width, height: height)), display: true)
-        } else {
-            win.center()
-        }
-
         window = win
+        PluginPanelAnchor.attachBeforePresenting(win, size: NSSize(width: width, height: height), to: geo)
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        PluginPanelAnchor.attachAfterPresenting(win, size: NSSize(width: width, height: height), to: geo)
         PluginPanelOutsideClick.watch(win)
     }
 }
@@ -119,10 +104,7 @@ struct CalendarPanelView: View {
         }
         .padding(14)
         .frame(width: 380, height: 580, alignment: .topLeading)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.ultraThinMaterial)
-        )
+        .pluginPanelChrome(cornerRadius: 14)
     }
 
     private var header: some View {

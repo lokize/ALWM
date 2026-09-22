@@ -158,7 +158,11 @@ private final class NintendoBarChipView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        NintendoPanelController.toggle(relativeTo: self)
+        let geometry = PluginPanelAnchor.geometry(of: self)
+        Task { @MainActor in
+            PluginPanelAnchor.remember(geometry, forPlugin: "dev.alwm.nintendo-price-watcher")
+            NintendoPanelController.toggle(anchoredTo: geometry)
+        }
     }
 
     private func build() {

@@ -13,16 +13,17 @@ enum NowPlayingPanelController {
         window?.orderOut(nil)
     }
 
-    static func toggle(relativeTo view: NSView?) {
+    static func toggle(anchoredTo geometry: PluginPanelAnchor.Geometry?) {
         if let window, window.isVisible {
             PluginPanelOutsideClick.stop(for: window)
             window.orderOut(nil)
             return
         }
-        open(relativeTo: view)
+        open(anchoredTo: geometry)
     }
 
-    static func open(relativeTo view: NSView?) {
+    static func open(anchoredTo geometry: PluginPanelAnchor.Geometry?) {
+        let geo = geometry ?? PluginPanelAnchor.remembered(forPlugin: "dev.alwm.now-playing")
         let store = NowPlayingStore.shared
         let root = NowPlayingPanelView()
             .pluginLocalized()
@@ -43,20 +44,10 @@ enum NowPlayingPanelController {
         win.hasShadow = true
         win.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         win.hidesOnDeactivate = false
-
-        if let view, let screen = view.window?.screen ?? NSScreen.main {
-            let rect = view.window?.convertToScreen(view.convert(view.bounds, to: nil))
-                ?? NSRect(x: screen.visibleFrame.midX, y: screen.visibleFrame.midY, width: 1, height: 1)
-            var origin = NSPoint(x: rect.midX - width / 2, y: rect.minY - height - 8)
-            origin.x = min(max(origin.x, screen.visibleFrame.minX + 8), screen.visibleFrame.maxX - width - 8)
-            origin.y = min(max(origin.y, screen.visibleFrame.minY + 8), screen.visibleFrame.maxY - height - 8)
-            win.setFrame(NSRect(origin: origin, size: NSSize(width: width, height: height)), display: true)
-        } else {
-            win.center()
-        }
-
+        PluginPanelAnchor.attachBeforePresenting(win, size: NSSize(width: width, height: height), to: geo)
         win.orderFront(nil)
         window = win
+        PluginPanelAnchor.attachAfterPresenting(win, size: NSSize(width: width, height: height), to: geo)
         _ = store
         PluginPanelOutsideClick.watch(win)
     }
@@ -139,16 +130,7 @@ struct NowPlayingPanelView: View {
             }
             .padding(14)
         }
-        .background {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
-                )
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .padding(2)
+        .pluginPanelChrome(cornerRadius: 12)
     }
 
     @ViewBuilder

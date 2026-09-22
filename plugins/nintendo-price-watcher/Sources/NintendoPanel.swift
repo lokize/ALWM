@@ -12,52 +12,49 @@ enum NintendoPanelController {
         window?.orderOut(nil)
     }
 
-    static func toggle(relativeTo view: NSView?) {
+    static func toggle(anchoredTo geometry: PluginPanelAnchor.Geometry?) {
         if let window, window.isVisible {
             PluginPanelOutsideClick.stop(for: window)
             window.orderOut(nil)
             return
         }
-        open(relativeTo: view)
+        open(anchoredTo: geometry)
     }
 
-    static func open(relativeTo view: NSView?) {
+    static func open(anchoredTo geometry: PluginPanelAnchor.Geometry?) {
+        let geo = geometry ?? PluginPanelAnchor.remembered(forPlugin: "dev.alwm.nintendo-price-watcher")
         let store = NintendoWatcherStore.shared
+        let width: CGFloat = 460
+        let height: CGFloat = 620
         let root = NintendoPanelView()
             .pluginLocalized()
+            .frame(width: width, height: height)
         let hosting = NSHostingController(rootView: root)
         let win = window ?? NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 460, height: 620),
-            styleMask: [.titled, .closable, .resizable, .utilityWindow],
+            contentRect: NSRect(x: 0, y: 0, width: width, height: height),
+            styleMask: [.borderless, .utilityWindow],
             backing: .buffered,
             defer: false
         )
-        win.title = PluginL10n.t("plugin.nintendo.title", locale: store.localeCode())
         win.contentViewController = hosting
         win.isReleasedWhenClosed = false
         win.level = .floating
+        win.backgroundColor = .clear
+        win.isOpaque = false
+        win.hasShadow = true
         win.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        win.minSize = NSSize(width: 380, height: 460)
         if let panel = win as? NSPanel {
             panel.becomesKeyOnlyIfNeeded = false
             panel.isFloatingPanel = true
+            panel.hidesOnDeactivate = false
         }
-
-        if let view, let screen = view.window?.screen ?? NSScreen.main {
-            let rect = view.window?.convertToScreen(view.convert(view.bounds, to: nil))
-                ?? NSRect(x: screen.visibleFrame.midX - 230, y: screen.visibleFrame.midY - 310, width: 1, height: 1)
-            var origin = NSPoint(x: rect.midX - 230, y: rect.minY - 640)
-            origin.x = min(max(origin.x, screen.visibleFrame.minX + 12), screen.visibleFrame.maxX - 470)
-            origin.y = min(max(origin.y, screen.visibleFrame.minY + 12), screen.visibleFrame.maxY - 480)
-            win.setFrameOrigin(origin)
-        } else {
-            win.center()
-        }
-
+        PluginPanelAnchor.attachBeforePresenting(win, size: NSSize(width: width, height: height), to: geo)
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         window = win
+        PluginPanelAnchor.attachAfterPresenting(win, size: NSSize(width: width, height: height), to: geo)
         PluginPanelOutsideClick.watch(win)
+        _ = store
     }
 }
 
@@ -88,7 +85,8 @@ struct NintendoPanelView: View {
                 .padding(16)
             }
         }
-        .frame(minWidth: 380, minHeight: 460)
+        .frame(width: 460, height: 620)
+        .pluginPanelChrome(cornerRadius: 14)
         .sheet(item: $pendingHit) { hit in
             addSheet(hit)
         }

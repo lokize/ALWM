@@ -66,9 +66,10 @@ public final class StatsBatteryPlugin: AlwmPlugin {
             tooltip: store.tooltip
         )
         chip.onClick = { [weak chip] in
-            guard let chip else { return }
+            let geometry = PluginPanelAnchor.geometry(of: chip)
             Task { @MainActor in
-                BatteryPanelController.toggle(relativeTo: chip)
+                PluginPanelAnchor.remember(geometry, forPlugin: "dev.alwm.stats-battery")
+                BatteryPanelController.toggle(anchoredTo: geometry)
             }
         }
         return chip

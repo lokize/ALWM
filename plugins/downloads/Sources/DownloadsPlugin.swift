@@ -61,9 +61,11 @@ public final class DownloadsPlugin: AlwmPlugin {
             scale: scale,
             tooltip: store.tooltip
         )
-        chip.onClick = {
+        chip.onClick = { [weak chip] in
+            let geometry = PluginPanelAnchor.geometry(of: chip)
             Task { @MainActor in
-                DownloadsPanelController.toggle(relativeTo: nil)
+                PluginPanelAnchor.remember(geometry, forPlugin: "dev.alwm.downloads")
+                DownloadsPanelController.toggle(anchoredTo: geometry)
             }
         }
         return chip

@@ -66,9 +66,10 @@ public final class StatsGPUPlugin: AlwmPlugin {
             tooltip: store.tooltip
         )
         chip.onClick = { [weak chip] in
-            guard let chip else { return }
+            let geometry = PluginPanelAnchor.geometry(of: chip)
             Task { @MainActor in
-                GPUPanelController.toggle(relativeTo: chip)
+                PluginPanelAnchor.remember(geometry, forPlugin: "dev.alwm.stats-gpu")
+                GPUPanelController.toggle(anchoredTo: geometry)
             }
         }
         return chip
