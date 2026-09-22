@@ -1,0 +1,15 @@
+{
+  "id": "dev.alwm.calculator",
+  "name": "Calculator",
+  "author": "ALWM",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "license": "GPL-3.0",
+  "summary": "Full calculator on the workspace bar — history, notes, memory, and keyboard input.",
+  "category": "utilities",
+  "preview": "previews/card.png",
+  "screenshots": [
+    "previews/01.png"
+  ],
+  "defaultPlacement": "afterWorkspaces"
+}

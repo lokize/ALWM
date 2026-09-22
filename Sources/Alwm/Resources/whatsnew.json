@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "version": "1.1.9",
+      "items": [
+        "Update Package",
+        "Localization updates",
+        "Build and release scripts"
+      ]
+    },
+    {
       "version": "1.1.8",
       "items": [
         "Update PluginPanelAnchor",
@@ -291,12 +299,6 @@
       "items": [
         "Fix window blink",
         "Workspace restore"
-      ]
-    },
-    {
-      "version": "0.7.9",
-      "items": [
-        "Sleep fix"
       ]
     }
   ]

@@ -428,6 +428,13 @@ if [[ -d "$ROOT/plugins/pomodoro" ]]; then
     "Pomodoro" \
     "dev.alwm.pomodoro"
 fi
+if [[ -d "$ROOT/plugins/calculator" ]]; then
+  package_plugin \
+    "$ROOT/plugins/calculator" \
+    "libCalculatorPlugin.dylib" \
+    "Calculator" \
+    "dev.alwm.calculator"
+fi
 if [[ -d "$ROOT/plugins/calendar" ]]; then
   package_plugin \
     "$ROOT/plugins/calendar" \
