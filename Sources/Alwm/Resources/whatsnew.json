@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.2.3",
+      "items": [
+        "Runtime support updates"
+      ]
+    },
+    {
       "version": "1.2.2",
       "items": [
         "Localization updates",
@@ -302,13 +308,6 @@
       "version": "0.8.4",
       "items": [
         "Resume awake fix"
-      ]
-    },
-    {
-      "version": "0.8.3",
-      "items": [
-        "Update README.md",
-        "Build and release scripts"
       ]
     }
   ]

@@ -35,13 +35,26 @@ public final class AppUpdateService: ObservableObject {
     }
 
     private var checkTask: Task<Void, Never>?
+    private var lastSuccessfulCheck: Date?
+    private var rateLimitedUntil: Date?
 
-    private init() {}
+    private static let defaultsPrefix = "alwm.updateCache."
+
+    private init() {
+        restoreCachedCheck()
+    }
 
     public func checkForUpdates(force: Bool = false) {
         if !force, case .checking = phase { return }
         if !force, case .downloading = phase { return }
         if !force, case .installing = phase { return }
+        if !force, let until = rateLimitedUntil, until > Date() { return }
+        if !force,
+           let last = lastSuccessfulCheck,
+           Date().timeIntervalSince(last) < GitHubAPIRateLimit.publicMinInterval {
+            applyCachedPhase()
+            return
+        }
         checkTask?.cancel()
         checkTask = Task { await performCheck() }
     }
@@ -58,15 +71,60 @@ public final class AppUpdateService: ObservableObject {
             guard !Task.isCancelled else { return }
             latestVersion = release.version
             dmgURL = release.dmgURL
+            lastSuccessfulCheck = Date()
+            rateLimitedUntil = nil
+            persistCachedCheck()
             if Self.compareVersions(installedVersion, release.version) == .orderedAscending {
                 phase = .available
             } else {
                 phase = .upToDate
             }
+        } catch let UpdateError.rateLimited(until) {
+            guard !Task.isCancelled else { return }
+            rateLimitedUntil = until
+            if latestVersion != nil {
+                applyCachedPhase()
+            } else {
+                phase = .idle
+            }
         } catch {
             guard !Task.isCancelled else { return }
-            phase = .failed(error.localizedDescription)
+            if latestVersion != nil {
+                applyCachedPhase()
+            } else {
+                phase = .failed(error.localizedDescription)
+            }
         }
+    }
+
+    private func applyCachedPhase() {
+        guard let latest = latestVersion else {
+            phase = .idle
+            return
+        }
+        phase = Self.compareVersions(installedVersion, latest) == .orderedAscending
+            ? .available
+            : .upToDate
+    }
+
+    private func restoreCachedCheck() {
+        let d = UserDefaults.standard
+        guard let version = d.string(forKey: Self.defaultsPrefix + "version"), !version.isEmpty else { return }
+        latestVersion = version
+        if let raw = d.string(forKey: Self.defaultsPrefix + "dmg"), let url = URL(string: raw) {
+            dmgURL = url
+        }
+        if let ts = d.object(forKey: Self.defaultsPrefix + "checkedAt") as? Date {
+            lastSuccessfulCheck = ts
+        }
+        applyCachedPhase()
+    }
+
+    private func persistCachedCheck() {
+        let d = UserDefaults.standard
+        d.set(latestVersion, forKey: Self.defaultsPrefix + "version")
+        d.set(dmgURL?.absoluteString, forKey: Self.defaultsPrefix + "dmg")
+        d.set(lastSuccessfulCheck ?? Date(), forKey: Self.defaultsPrefix + "checkedAt")
     }
 
     private func performInstall(dmgURL: URL, version: String) async {
@@ -95,11 +153,15 @@ public final class AppUpdateService: ObservableObject {
         let api = URL(string: "https://api.github.com/repos/\(Self.githubOwner)/\(Self.githubRepo)/releases/latest")!
         var request = URLRequest(url: api)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.setValue("ALWM-Updater", forHTTPHeaderField: "User-Agent")
+        request.setValue("ALWM-Updater/\(AlwmVersion.installed)", forHTTPHeaderField: "User-Agent")
         request.timeoutInterval = 20
+        // Public endpoint — never attach a user token (would share plugin quota).
 
         let (data, response) = try await URLSession.shared.data(for: request)
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            if GitHubAPIRateLimit.isRateLimited(http) {
+                throw UpdateError.rateLimited(until: GitHubAPIRateLimit.retryAfter(from: http))
+            }
             throw UpdateError.httpStatus(http.statusCode)
         }
 
@@ -529,6 +591,7 @@ public final class AppUpdateService: ObservableObject {
 
     public enum UpdateError: LocalizedError {
         case httpStatus(Int)
+        case rateLimited(until: Date)
         case noDMG
         case mountFailed
         case appMissingInDMG
@@ -540,6 +603,7 @@ public final class AppUpdateService: ObservableObject {
         public var errorDescription: String? {
             switch self {
             case .httpStatus(let code): return "GitHub HTTP \(code)"
+            case .rateLimited: return "GitHub API rate limit — try again later"
             case .noDMG: return "No DMG asset in the latest release"
             case .mountFailed: return "Could not mount the DMG"
             case .appMissingInDMG: return "ALWM.app not found in the DMG"

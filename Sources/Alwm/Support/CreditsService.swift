@@ -28,6 +28,8 @@ public final class CreditsService: ObservableObject {
 
     private var loadTask: Task<Void, Never>?
     private var avatarCache: [URL: NSImage] = [:]
+    private var lastSuccessfulContributors: Date?
+    private var rateLimitedUntil: Date?
 
     private static let contributorsURL = URL(
         string: "https://api.github.com/repos/\(AppUpdateService.githubOwner)/\(AppUpdateService.githubRepo)/contributors?per_page=100"
@@ -39,7 +41,14 @@ public final class CreditsService: ObservableObject {
     private init() {}
 
     public func refreshIfNeeded(force: Bool = false) {
-        if !force, contributorsState == .ready || contributorsState == .loading { return }
+        if !force, contributorsState == .loading { return }
+        if !force, let until = rateLimitedUntil, until > Date() { return }
+        if !force,
+           contributorsState == .ready,
+           let last = lastSuccessfulContributors,
+           Date().timeIntervalSince(last) < GitHubAPIRateLimit.creditsMinInterval {
+            return
+        }
         loadTask?.cancel()
         loadTask = Task { await self.loadAll() }
     }
@@ -70,7 +79,12 @@ public final class CreditsService: ObservableObject {
         case .success(let people):
             contributors = people
             contributorsState = .ready
+            lastSuccessfulContributors = Date()
+            rateLimitedUntil = nil
         case .failure(let error):
+            if case CreditsAPIError.rateLimited(let until) = error {
+                rateLimitedUntil = until
+            }
             if contributors.isEmpty {
                 contributorsState = .failed(error.localizedDescription)
             } else {
@@ -96,7 +110,13 @@ public final class CreditsService: ObservableObject {
             request.setValue("ALWM/\(AlwmVersion.installed)", forHTTPHeaderField: "User-Agent")
             request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
             let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            guard let http = response as? HTTPURLResponse else {
+                throw URLError(.badServerResponse)
+            }
+            if GitHubAPIRateLimit.isRateLimited(http) {
+                throw CreditsAPIError.rateLimited(until: GitHubAPIRateLimit.retryAfter(from: http))
+            }
+            guard (200..<300).contains(http.statusCode) else {
                 throw URLError(.badServerResponse)
             }
             let decoded = try JSONDecoder().decode([GitHubContributor].self, from: data)
@@ -161,6 +181,16 @@ public final class CreditsService: ObservableObject {
                 avatarURL: entry.avatarURL.flatMap(URL.init(string:)),
                 profileURL: entry.url.flatMap(URL.init(string:))
             )
+        }
+    }
+}
+
+private enum CreditsAPIError: LocalizedError {
+    case rateLimited(until: Date)
+
+    var errorDescription: String? {
+        switch self {
+        case .rateLimited: return "GitHub API rate limit"
         }
     }
 }
