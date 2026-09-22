@@ -276,13 +276,34 @@ final class ClipboardStore: ObservableObject, @unchecked Sendable {
 
     func updateSettings(_ mutate: (inout ClipboardSettings) -> Void) {
         mutate(&settings)
-        settings.maxItems = min(200, max(10, settings.maxItems))
+        // 0 = keep everything; otherwise clamp to 10…200 in steps of 10.
+        if settings.maxItems <= 0 {
+            settings.maxItems = 0
+        } else {
+            let snapped = Int((Double(settings.maxItems) / 10.0).rounded()) * 10
+            settings.maxItems = min(200, max(10, snapped))
+        }
         settings.maxMediaBytes = min(50 * 1024 * 1024, max(512 * 1024, settings.maxMediaBytes))
         saveSettings()
         trimToMax()
         objectWillChange.send()
         onChange?()
     }
+
+    /// Cycle: … → 10 → 0 (all) → 200 → 190 → … when stepping past the ends.
+    func stepMaxItems(_ direction: Int) {
+        updateSettings { s in
+            if s.maxItems <= 0 {
+                s.maxItems = direction > 0 ? 10 : 200
+            } else if direction > 0 {
+                s.maxItems = s.maxItems >= 200 ? 0 : s.maxItems + 10
+            } else {
+                s.maxItems = s.maxItems <= 10 ? 0 : s.maxItems - 10
+            }
+        }
+    }
+
+    var keepsAllItems: Bool { settings.maxItems <= 0 }
 
     func thumbnail(for item: ClipboardItem) -> NSImage? {
         guard item.kind == .image, let path = item.imagePath else { return nil }
@@ -543,7 +564,7 @@ final class ClipboardStore: ObservableObject, @unchecked Sendable {
 
     private func trimLocked() {
         let limit = settings.maxItems
-        guard items.count > limit else { return }
+        guard limit > 0, items.count > limit else { return }
         var kept: [ClipboardItem] = []
         var removed: [ClipboardItem] = []
         for item in items {
@@ -675,6 +696,12 @@ final class ClipboardStore: ObservableObject, @unchecked Sendable {
                   let decoded = try? JSONDecoder().decode(ClipboardSettings.self, from: data)
             else { continue }
             settings = decoded
+            if settings.maxItems < 0 {
+                settings.maxItems = 0
+            } else if settings.maxItems > 0 {
+                let snapped = Int((Double(settings.maxItems) / 10.0).rounded()) * 10
+                settings.maxItems = min(200, max(10, snapped))
+            }
             return
         }
     }

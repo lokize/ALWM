@@ -366,15 +366,17 @@ struct ClipboardPanelView: View {
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
             HStack {
-                Stepper(
-                    tf("plugin.clipboard.max", store.settings.maxItems),
-                    value: Binding(
-                        get: { store.settings.maxItems },
-                        set: { v in store.updateSettings { $0.maxItems = v } }
-                    ),
-                    in: 10...200,
-                    step: 10
-                )
+                Stepper {
+                    Text(
+                        store.keepsAllItems
+                            ? t("plugin.clipboard.max.unlimited")
+                            : tf("plugin.clipboard.max", store.settings.maxItems)
+                    )
+                } onIncrement: {
+                    store.stepMaxItems(1)
+                } onDecrement: {
+                    store.stepMaxItems(-1)
+                }
                 .font(.caption)
                 Spacer()
                 Button(t("plugin.clipboard.clear")) {

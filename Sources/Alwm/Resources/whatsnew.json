@@ -1,6 +1,15 @@
 {
   "releases": [
     {
+      "version": "1.1.7",
+      "items": [
+        "Localization updates",
+        "Plugins: clipboard/Sources/ClipboardPanel.swift",
+        "Plugins: clipboard/Sources/ClipboardStore.swift",
+        "Build and release scripts"
+      ]
+    },
+    {
       "version": "1.1.6",
       "items": [
         "Localization updates",
@@ -287,12 +296,6 @@
       "items": [
         "Dont sleep mode, restore session",
         "Update file paths and remove unused components"
-      ]
-    },
-    {
-      "version": "0.7.7",
-      "items": [
-        "Enhance plugin management and scrolling behavior"
       ]
     }
   ]
