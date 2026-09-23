@@ -666,7 +666,7 @@ final class NintendoWatcherStore: ObservableObject, @unchecked Sendable {
         NintendoNotifier.requestAuthorization()
         restartTimer()
         restartBarCycle()
-        Task { await refreshPrices(notify: true) }
+        Task { @MainActor in await refreshPrices(notify: true) }
     }
 
     func stopMonitoring() {
@@ -693,7 +693,7 @@ final class NintendoWatcherStore: ObservableObject, @unchecked Sendable {
         settings.country = cur.rawValue
         settings.currencySymbol = cur.symbol
         save()
-        Task { await refreshPrices(notify: false) }
+        Task { @MainActor in await refreshPrices(notify: false) }
     }
 
     func addGame(_ hit: NintendoSearchHit, targetPrice: Double, currentPrice: Double?) {
@@ -754,7 +754,7 @@ final class NintendoWatcherStore: ObservableObject, @unchecked Sendable {
         guard barCycleGames.count > 1 else { return }
         let seconds = Double(max(2, settings.barCycleSeconds))
         let t = Timer(timeInterval: seconds, repeats: true) { [weak self] _ in
-            self?.advanceBarCycle()
+            Task { @MainActor in self?.advanceBarCycle() }
         }
         RunLoop.main.add(t, forMode: .common)
         barCycleTimer = t
@@ -775,6 +775,7 @@ final class NintendoWatcherStore: ObservableObject, @unchecked Sendable {
         return lines.joined(separator: "\n")
     }
 
+    @MainActor
     func refreshPrices(notify: Bool) async {
         guard !isChecking else { return }
         guard !settings.watchlist.isEmpty else {
@@ -829,7 +830,7 @@ final class NintendoWatcherStore: ObservableObject, @unchecked Sendable {
         let minutes = Double(max(15, settings.checkIntervalMinutes))
         let t = Timer(timeInterval: minutes * 60, repeats: true) { [weak self] _ in
             guard let self else { return }
-            Task { await self.refreshPrices(notify: true) }
+            Task { @MainActor in await self.refreshPrices(notify: true) }
         }
         RunLoop.main.add(t, forMode: .common)
         timer = t

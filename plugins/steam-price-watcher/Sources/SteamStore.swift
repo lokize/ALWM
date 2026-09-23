@@ -298,7 +298,7 @@ final class SteamWatcherStore: ObservableObject, @unchecked Sendable {
         SteamNotifier.requestAuthorization()
         restartTimer()
         restartBarCycle()
-        Task { await refreshPrices(notify: true) }
+        Task { @MainActor in await refreshPrices(notify: true) }
     }
 
     func stopMonitoring() {
@@ -325,7 +325,7 @@ final class SteamWatcherStore: ObservableObject, @unchecked Sendable {
         settings.currency = cur.rawValue
         settings.currencySymbol = cur.symbol
         save()
-        Task { await refreshPrices(notify: false) }
+        Task { @MainActor in await refreshPrices(notify: false) }
     }
 
     /// Merge watchlist from Noctalia settings, if any.
@@ -368,7 +368,7 @@ final class SteamWatcherStore: ObservableObject, @unchecked Sendable {
         if added > 0 {
             save()
             restartTimer()
-            Task { await refreshPrices(notify: false) }
+            Task { @MainActor in await refreshPrices(notify: false) }
         }
         return added
     }
@@ -425,7 +425,7 @@ final class SteamWatcherStore: ObservableObject, @unchecked Sendable {
         guard barCycleGames.count > 1 else { return }
         let seconds = Double(max(2, settings.barCycleSeconds))
         let t = Timer(timeInterval: seconds, repeats: true) { [weak self] _ in
-            self?.advanceBarCycle()
+            Task { @MainActor in self?.advanceBarCycle() }
         }
         RunLoop.main.add(t, forMode: .common)
         barCycleTimer = t
@@ -452,6 +452,7 @@ final class SteamWatcherStore: ObservableObject, @unchecked Sendable {
         return lines.joined(separator: "\n")
     }
 
+    @MainActor
     func refreshPrices(notify: Bool) async {
         guard !isChecking else { return }
         guard !settings.watchlist.isEmpty else {
@@ -501,7 +502,7 @@ final class SteamWatcherStore: ObservableObject, @unchecked Sendable {
         let minutes = Double(max(15, settings.checkIntervalMinutes))
         let t = Timer(timeInterval: minutes * 60, repeats: true) { [weak self] _ in
             guard let self else { return }
-            Task {
+            Task { @MainActor in
                 await self.refreshPrices(notify: true)
             }
         }

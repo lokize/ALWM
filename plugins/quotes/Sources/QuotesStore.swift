@@ -374,7 +374,7 @@ final class QuotesStore: ObservableObject, @unchecked Sendable {
         QuotesNotifier.requestAuthorization()
         restartTimer()
         restartBarCycle()
-        Task { await refresh(notify: true) }
+        Task { @MainActor in await refresh(notify: true) }
     }
 
     func stopMonitoring() {
@@ -428,7 +428,7 @@ final class QuotesStore: ObservableObject, @unchecked Sendable {
         guard !settings.watchlist.contains(where: { $0.id == item.id }) else { return }
         settings.watchlist.append(item)
         save()
-        Task { await refresh(notify: false) }
+        Task { @MainActor in await refresh(notify: false) }
     }
 
     func addCrypto(preset: CryptoPreset, vs: String? = nil) {
@@ -437,7 +437,7 @@ final class QuotesStore: ObservableObject, @unchecked Sendable {
         guard !settings.watchlist.contains(where: { $0.id == item.id }) else { return }
         settings.watchlist.append(item)
         save()
-        Task { await refresh(notify: false) }
+        Task { @MainActor in await refresh(notify: false) }
     }
 
     func remove(id: String) {
@@ -490,7 +490,7 @@ final class QuotesStore: ObservableObject, @unchecked Sendable {
         guard settings.watchlist.count > 1 else { return }
         let seconds = Double(max(2, settings.barCycleSeconds))
         let t = Timer(timeInterval: seconds, repeats: true) { [weak self] _ in
-            self?.advanceBarCycle()
+            Task { @MainActor in self?.advanceBarCycle() }
         }
         RunLoop.main.add(t, forMode: .common)
         barCycleTimer = t
@@ -518,6 +518,7 @@ final class QuotesStore: ObservableObject, @unchecked Sendable {
         return lines.joined(separator: "\n")
     }
 
+    @MainActor
     func refresh(notify: Bool) async {
         guard !isChecking else { return }
         guard !settings.watchlist.isEmpty else {
@@ -595,7 +596,7 @@ final class QuotesStore: ObservableObject, @unchecked Sendable {
         let minutes = Double(max(5, settings.checkIntervalMinutes))
         let t = Timer(timeInterval: minutes * 60, repeats: true) { [weak self] _ in
             guard let self else { return }
-            Task { await self.refresh(notify: true) }
+            Task { @MainActor in await self.refresh(notify: true) }
         }
         RunLoop.main.add(t, forMode: .common)
         timer = t

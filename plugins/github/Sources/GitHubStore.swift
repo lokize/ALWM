@@ -185,7 +185,7 @@ final class GitHubWatcherStore: ObservableObject, @unchecked Sendable {
         guard highlightItems.count > 1 else { return }
         let seconds = Double(max(2, settings.barCycleSeconds))
         let t = Timer(timeInterval: seconds, repeats: true) { [weak self] _ in
-            self?.advanceBarCycle()
+            Task { @MainActor in self?.advanceBarCycle() }
         }
         RunLoop.main.add(t, forMode: .common)
         barCycleTimer = t

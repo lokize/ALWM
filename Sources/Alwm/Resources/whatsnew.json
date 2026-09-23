@@ -1,6 +1,15 @@
 {
   "releases": [
     {
+      "version": "1.2.4",
+      "items": [
+        "GitHub plugin: notifications, PRs, issues, and stars on the workspace bar",
+        "Nintendo Price Watcher plugin updates",
+        "Plugins: quotes/Sources/QuotesStore.swift",
+        "Steam Price Watcher plugin updates"
+      ]
+    },
+    {
       "version": "1.2.3",
       "items": [
         "Runtime support updates"
@@ -302,12 +311,6 @@
       "items": [
         "Runtime support updates",
         "UI updates"
-      ]
-    },
-    {
-      "version": "0.8.4",
-      "items": [
-        "Resume awake fix"
       ]
     }
   ]
