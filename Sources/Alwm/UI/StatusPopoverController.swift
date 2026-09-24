@@ -220,7 +220,11 @@ public final class StatusPopoverController {
             onCaptureRegion: { [weak self] in self?.close(); self?.onCaptureRegion?() },
             onCaptureDisplay: { [weak self] in self?.close(); self?.onCaptureDisplay?() },
             onCaptureRecordToggle: { [weak self] in self?.close(); self?.onCaptureRecordToggle?() },
-            onRelayout: { [weak self] in self?.close(); self?.onRelayout?() },
+            onRelayout: { [weak self] in
+                self?.close()
+                // After popover dismiss — sync close + soft relayout used to no-op on settled frames.
+                DispatchQueue.main.async { self?.onRelayout?() }
+            },
             onColorPalette: { [weak self] in self?.close(); self?.onColorPalette?() },
             onQuit: { [weak self] in self?.close(); self?.onQuit?() },
             onCloseMenu: { [weak self] in self?.close() }

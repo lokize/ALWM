@@ -724,6 +724,51 @@ extension WindowManager {
         applyFluidLayout(animated: animated, onlyMonitor: monitor)
     }
 
+    /// Menu / hotkey Relayout — soft `applyFluidLayout` skips AX-settled tiles and looks like a no-op.
+    /// Force-reveal every active workspace tile (and clear stuck column maximize).
+    func forceRelayoutActiveWorkspaces() {
+        if overlaysCaptureFocus {
+            visibilityDeferredWhileOverlay = true
+            refreshChrome()
+            return
+        }
+        beginLayoutPass()
+        animator.stop(finish: true)
+        syncColumnTilesNotFloat()
+        retileAccidentalFloats(forceClearOverrides: false)
+        if Date() >= suppressIngestReassignUntil {
+            healStaleColumnEntries()
+            reinsertOrphanTiles()
+        }
+
+        let activeIDs = Set(workspaces.activeWorkspaceByMonitor.values)
+        for wsID in activeIDs {
+            if var ws = workspaces.workspaces[wsID] {
+                var clearedMaximize = false
+                for i in ws.columns.indices where ws.columns[i].isMaximized {
+                    ws.columns[i].isMaximized = false
+                    clearedMaximize = true
+                }
+                if clearedMaximize {
+                    workspaces.setWorkspace(ws)
+                }
+                for id in ws.columns.flatMap(\.windows) {
+                    lastFrames.removeValue(forKey: id)
+                }
+            }
+            let mon = monitors.monitors.first(where: {
+                workspaces.activeWorkspaceByMonitor[$0.id] == wsID
+            }) ?? workspaces.preferredMonitor(forWorkspace: wsID, monitors: monitors.monitors)
+                ?? primaryMonitor()
+            guard let mon else { continue }
+            applyWorkspaceTileLayout(wsID, on: mon, forceReveal: true)
+        }
+        applyAllActiveStackColumns()
+        scheduleTileFrameEnforcement()
+        refreshBorder()
+        logMove("force relayout active=\(activeIDs.sorted().joined(separator: ","))")
+    }
+
     func relayoutWithFrameRetry(stackAnchor: WindowID? = nil, on monitor: MonitorInfo? = nil) {
         suppressGeometryEnforce(for: 0.45)
         let scope = monitor ?? layoutScopeMonitor(for: stackAnchor)

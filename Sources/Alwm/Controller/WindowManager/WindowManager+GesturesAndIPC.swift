@@ -612,7 +612,7 @@ extension WindowManager {
             dumpRuntimeState()
             return
         case "relayout":
-            relayout(animated: true)
+            forceRelayoutActiveWorkspaces()
             refreshChrome()
             return
         default:

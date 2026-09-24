@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "1.2.6",
+      "items": [
+        "Window manager improvements",
+        "UI updates"
+      ]
+    },
+    {
       "version": "1.2.5",
       "items": [
         "Window manager improvements"
@@ -302,12 +309,6 @@
     },
     {
       "version": "0.8.7",
-      "items": [
-        "Window manager improvements"
-      ]
-    },
-    {
-      "version": "0.8.6",
       "items": [
         "Window manager improvements"
       ]
