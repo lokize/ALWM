@@ -740,6 +740,9 @@ extension WindowManager {
         for wsID in activeIDs {
             guard let ws = workspaces.workspaces[wsID] else { continue }
             for col in ws.columns {
+                // Maximized column: focused tile fills height; siblings stay parked.
+                // Re-tessellating here undoes ⌥⇧F and leaves isMaximized stuck on.
+                if col.isMaximized { continue }
                 let tiled = col.windows.filter { id in
                     guard let w = windowsByID[id] else { return false }
                     return !w.isIgnored
@@ -765,6 +768,11 @@ extension WindowManager {
         if f.y < usable.y { f.y = usable.y }
         if f.maxY > usable.maxY { f.height = max(48, usable.maxY - f.y) }
         return f
+    }
+
+    /// True when `frame` is an intentional off-screen park (maximized sibling, inactive WS).
+    func isIntentionallyParkedFrame(_ frame: Rect, usable: Rect) -> Bool {
+        frame.maxY < usable.y - 80 || frame.y > usable.maxY + 80
     }
 
     func tessellateColumnStack(
@@ -824,13 +832,23 @@ extension WindowManager {
         suppressGeometryEnforce(for: 0.35)
         ax.withMutation {
             for colIndex in indices {
+                let columnMaximized = ws.columns.indices.contains(colIndex)
+                    && ws.columns[colIndex].isMaximized
+                let focusedRow = ws.focusedWindowInColumn[colIndex] ?? 0
                 var stackFrames: [(WindowID, Rect)] = []
-                for wid in ws.columns[colIndex].windows {
+                for (row, wid) in ws.columns[colIndex].windows.enumerated() {
                     guard var win = windowsByID[wid], !win.isIgnored else { continue }
                     guard authoritativeHome(for: wid) == workspaceID else { continue }
                     // Soft-missing: keep the slot, don't tessellate half-height against ghosts.
                     if missingScanCounts[wid] != nil { continue }
                     guard let a = assignmentByID[wid], a.visible else { continue }
+                    // Parked (maximized sibling) — never clamp back into the usable strip.
+                    if isIntentionallyParkedFrame(a.frame, usable: usable) {
+                        continue
+                    }
+                    if columnMaximized, row != focusedRow {
+                        continue
+                    }
                     if win.isFloating || win.isScratchpad {
                         floatingOverrides.remove(wid)
                         win.isFloating = false
@@ -850,7 +868,7 @@ extension WindowManager {
                 stackFrames.sort { $0.1.y < $1.1.y }
                 guard !stackFrames.isEmpty else { continue }
 
-                if stackFrames.count >= 2 {
+                if !columnMaximized, stackFrames.count >= 2 {
                     let colX = stackFrames[0].1.x
                     let colW = stackFrames[0].1.width
                     // Only retessellate when a tile overflows usable — otherwise keep
@@ -906,19 +924,27 @@ extension WindowManager {
         guard let ws = workspaces.workspaces[workspaceID] else { return }
         let usable = engine.usableArea(monitor: monitor.layoutFrame)
         ax.withMutation {
-            for wid in ws.columns.flatMap(\.windows) {
-                guard let win = windowsByID[wid], win.isTiled, !win.isIgnored else { continue }
-                guard authoritativeHome(for: wid) == workspaceID else { continue }
-                guard let live = ax.currentFrame(of: wid) else { continue }
-                guard live.maxY > usable.maxY + 8 || live.y < usable.y - 8 else { continue }
-                let target: Rect = {
-                    if let expected = lastFrames[wid], expected.maxY <= usable.maxY + 1 {
-                        return clampStackTileFrame(expected, usable: usable)
+            for (colIndex, col) in ws.columns.enumerated() {
+                let focusedRow = ws.focusedWindowInColumn[colIndex] ?? 0
+                for (row, wid) in col.windows.enumerated() {
+                    guard let win = windowsByID[wid], win.isTiled, !win.isIgnored else { continue }
+                    guard authoritativeHome(for: wid) == workspaceID else { continue }
+                    // Maximized siblings stay parked below the display — don't yank them back.
+                    if col.isMaximized, row != focusedRow { continue }
+                    if let expected = lastFrames[wid], isIntentionallyParkedFrame(expected, usable: usable) {
+                        continue
                     }
-                    return clampStackTileFrame(live, usable: usable)
-                }()
-                ax.forceFrame(target, id: wid)
-                lastFrames[wid] = target
+                    guard let live = ax.currentFrame(of: wid) else { continue }
+                    guard live.maxY > usable.maxY + 8 || live.y < usable.y - 8 else { continue }
+                    let target: Rect = {
+                        if let expected = lastFrames[wid], expected.maxY <= usable.maxY + 1 {
+                            return clampStackTileFrame(expected, usable: usable)
+                        }
+                        return clampStackTileFrame(live, usable: usable)
+                    }()
+                    ax.forceFrame(target, id: wid)
+                    lastFrames[wid] = target
+                }
             }
         }
     }
@@ -996,6 +1022,10 @@ extension WindowManager {
         guard let home = authoritativeHome(for: id),
               var ws = workspaces.workspaces[home],
               let loc = engine.locate(id, in: ws) else { return }
+        // Don't retessellate a maximized column — that undoes ⌥⇧F.
+        if ws.columns.indices.contains(loc.col), ws.columns[loc.col].isMaximized {
+            return
+        }
         let mon = monitors.monitors.first(where: {
             workspaces.activeWorkspaceByMonitor[$0.id] == home
         }) ?? workspaces.preferredMonitor(forWorkspace: home, monitors: monitors.monitors)
@@ -1395,6 +1425,28 @@ extension WindowManager {
                 let inColumn = workspaces.workspaceID(containing: id) != nil
                 if homeActive || onScreenIDs.contains(id) {
                     if (win.isTiled || inColumn), homeActive {
+                        // Maximized / tabbed siblings sit below the display. Never run
+                        // clampHorizontalTileFrame on those — it pulls them back on-screen
+                        // and leaves ⌥⇧F stuck (isMaximized true, stack still tessellated).
+                        let homeUsable: Rect = {
+                            if let home = authoritativeHome(for: id) {
+                                let mon = displayMonitor(
+                                    forHome: home,
+                                    fallback: primaryMonitor() ?? monitors.monitors[0]
+                                )
+                                return engine.usableArea(monitor: mon.layoutFrame)
+                            }
+                            return engine.usableArea(
+                                monitor: (primaryMonitor() ?? monitors.monitors.first)?.layoutFrame
+                                    ?? frame
+                            )
+                        }()
+                        if isIntentionallyParkedFrame(frame, usable: homeUsable) {
+                            ax.parkOffscreen(frame: frame, id: id, monitors: allMonitorFrames)
+                            lastFrames[id] = ax.currentFrame(of: id)
+                                ?? ax.currentParkedFrame(of: id, sizeFrom: frame, monitors: allMonitorFrames)
+                            continue
+                        }
                         if ax.isMinimized(id) {
                             ax.setMinimized(false, id: id)
                         }
@@ -1452,6 +1504,7 @@ extension WindowManager {
         }
         if let scopedWSID, let ws = workspaces.workspaces[scopedWSID] {
             for col in ws.columns {
+                if col.isMaximized { continue }
                 let tiled = col.windows.filter { id in
                     guard let w = windowsByID[id] else { return false }
                     return !w.isIgnored

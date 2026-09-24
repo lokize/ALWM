@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.2.5",
+      "items": [
+        "Window manager improvements"
+      ]
+    },
+    {
       "version": "1.2.4",
       "items": [
         "GitHub plugin: notifications, PRs, issues, and stars on the workspace bar",
@@ -304,13 +310,6 @@
       "version": "0.8.6",
       "items": [
         "Window manager improvements"
-      ]
-    },
-    {
-      "version": "0.8.5",
-      "items": [
-        "Runtime support updates",
-        "UI updates"
       ]
     }
   ]
