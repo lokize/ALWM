@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "1.2.7",
+      "items": [
+        "Localization updates",
+        "Plugins: calculator/Sources/CalculatorPanel.swift"
+      ]
+    },
+    {
       "version": "1.2.6",
       "items": [
         "Window manager improvements",
@@ -305,12 +312,6 @@
       "items": [
         "Window manager improvements",
         "UI updates"
-      ]
-    },
-    {
-      "version": "0.8.7",
-      "items": [
-        "Window manager improvements"
       ]
     }
   ]

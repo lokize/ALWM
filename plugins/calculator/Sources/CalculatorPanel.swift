@@ -67,9 +67,23 @@ enum CalculatorPanelController {
         PluginPanelAnchor.attachBeforePresenting(win, size: NSSize(width: width, height: height), to: geo)
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        // Keep keyboard on the calculator — search/note fields must not steal focus on open.
+        win.makeFirstResponder(win.contentView)
         PluginPanelAnchor.attachAfterPresenting(win, size: NSSize(width: width, height: height), to: geo)
         PluginPanelOutsideClick.watch(win)
         installKeyMonitor()
+        DispatchQueue.main.async {
+            guard let win = self.window, win.isVisible else { return }
+            win.makeKeyAndOrderFront(nil)
+            win.makeFirstResponder(win.contentView)
+        }
+    }
+
+    /// Put key events back on the calculator (not history search / notes).
+    static func claimKeyboardFocus() {
+        guard let window, window.isVisible else { return }
+        window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(window.contentView)
     }
 
     /// Resize the open panel when scientific mode toggles.
@@ -84,9 +98,11 @@ enum CalculatorPanelController {
     private static func installKeyMonitor() {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             guard let window, window.isVisible, event.window === window else { return event }
-            if window.firstResponder is NSTextView || window.firstResponder is NSTextField {
+            let editingText = window.firstResponder is NSTextView || window.firstResponder is NSTextField
+            if editingText {
+                // Esc leaves the field and returns keys to the calculator (don't close).
                 if event.keyCode == 53 {
-                    close()
+                    window.makeFirstResponder(window.contentView)
                     return nil
                 }
                 return event
@@ -126,6 +142,12 @@ struct CalculatorPanelView: View {
         }
         .frame(width: 420, height: showScientific ? 720 : 640)
         .pluginPanelChrome(cornerRadius: 14)
+        .onAppear {
+            // Reclaim key focus if SwiftUI focused a text field during first layout.
+            DispatchQueue.main.async {
+                CalculatorPanelController.claimKeyboardFocus()
+            }
+        }
     }
 
     private var header: some View {
@@ -202,6 +224,10 @@ struct CalculatorPanelView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            CalculatorPanelController.claimKeyboardFocus()
+        }
     }
 
     private var keypad: some View {
@@ -287,7 +313,8 @@ struct CalculatorPanelView: View {
             }
             PluginPasteableTextField(
                 placeholder: t("plugin.calculator.history.search"),
-                text: $store.searchQuery
+                text: $store.searchQuery,
+                acceptsInitialFocus: false
             )
             .frame(minHeight: 22)
 
@@ -362,7 +389,8 @@ struct CalculatorPanelView: View {
                     text: noteBinding,
                     onSubmit: {
                         store.updateNote(id: entry.id, note: noteDrafts[entry.id] ?? entry.note)
-                    }
+                    },
+                    acceptsInitialFocus: false
                 )
                 .frame(minHeight: 22)
                 Button(t("plugin.calculator.history.save_note")) {
@@ -399,7 +427,10 @@ struct CalculatorPanelView: View {
         font: Font = .body.weight(.semibold),
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
+        Button {
+            CalculatorPanelController.claimKeyboardFocus()
+            action()
+        } label: {
             Text(label)
                 .font(font)
                 .frame(maxWidth: .infinity, minHeight: 34)

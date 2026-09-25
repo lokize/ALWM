@@ -7,11 +7,20 @@ public struct PluginPasteableTextField: NSViewRepresentable {
     public var placeholder: String
     @Binding public var text: String
     public var onSubmit: (() -> Void)?
+    /// When false, the field only becomes first responder after a click (keeps panel
+    /// keyboard shortcuts / calculator keys from being stolen on open).
+    public var acceptsInitialFocus: Bool
 
-    public init(placeholder: String, text: Binding<String>, onSubmit: (() -> Void)? = nil) {
+    public init(
+        placeholder: String,
+        text: Binding<String>,
+        onSubmit: (() -> Void)? = nil,
+        acceptsInitialFocus: Bool = true
+    ) {
         self.placeholder = placeholder
         self._text = text
         self.onSubmit = onSubmit
+        self.acceptsInitialFocus = acceptsInitialFocus
     }
 
     public func makeCoordinator() -> Coordinator {
@@ -19,7 +28,12 @@ public struct PluginPasteableTextField: NSViewRepresentable {
     }
 
     public func makeNSView(context: Context) -> NSTextField {
-        let field = NSTextField(string: text)
+        let field: NSTextField
+        if acceptsInitialFocus {
+            field = NSTextField(string: text)
+        } else {
+            field = ClickToFocusTextField(string: text)
+        }
         field.placeholderString = placeholder
         field.isBordered = true
         field.isBezeled = true
@@ -74,5 +88,20 @@ public struct PluginPasteableTextField: NSViewRepresentable {
             }
             return false
         }
+    }
+}
+
+/// Text field that ignores automatic first-responder claims until the user clicks it.
+private final class ClickToFocusTextField: NSTextField {
+    private var userActivated = false
+
+    override var acceptsFirstResponder: Bool {
+        userActivated || currentEditor() != nil
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        userActivated = true
+        window?.makeFirstResponder(self)
+        super.mouseDown(with: event)
     }
 }
