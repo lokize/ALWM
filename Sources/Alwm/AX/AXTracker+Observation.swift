@@ -144,9 +144,9 @@ extension AXTracker {
     }
 
 
-    /// On-screen CG window numbers by PID (fallback when AXWindowNumber is missing).
-    func cgWindowNumbersByPID() -> [pid_t: [Int]] {
-        var result: [pid_t: [Int]] = [:]
+    /// On-screen layer-0 windows by PID, including bounds for safe AX identity matching.
+    func cgWindowsByPID() -> [pid_t: [CGWindowSnapshot]] {
+        var result: [pid_t: [CGWindowSnapshot]] = [:]
         guard let infos = CGWindowListCopyWindowInfo(
             [.optionOnScreenOnly, .excludeDesktopElements],
             kCGNullWindowID
@@ -159,9 +159,18 @@ extension AXTracker {
                     ?? (info[kCGWindowNumber as String] as? NSNumber)?.intValue,
                   let layer = info[kCGWindowLayer as String] as? Int
                     ?? (info[kCGWindowLayer as String] as? NSNumber)?.intValue,
-                  layer == 0
+                  layer == 0,
+                  let bounds = info[kCGWindowBounds as String] as? [String: Any],
+                  let x = (bounds["X"] as? NSNumber)?.doubleValue,
+                  let y = (bounds["Y"] as? NSNumber)?.doubleValue,
+                  let width = (bounds["Width"] as? NSNumber)?.doubleValue,
+                  let height = (bounds["Height"] as? NSNumber)?.doubleValue
             else { continue }
-            result[pid, default: []].append(num)
+            result[pid, default: []].append(CGWindowSnapshot(
+                windowNumber: num,
+                frame: Rect(x: x, y: y, width: width, height: height),
+                layer: layer
+            ))
         }
         return result
     }
@@ -174,7 +183,7 @@ extension AXTracker {
             NSLog("ALWM AX: Accessibility NOT trusted — window management disabled until granted")
         }
 
-        let cgByPid = cgWindowNumbersByPID()
+        let cgByPid = cgWindowsByPID()
         var nextAX: [WindowID: AXWindow] = [:]
         var nextManaged: [WindowID: ManagedWindow] = [:]
         var appsSeen = 0
@@ -203,7 +212,8 @@ extension AXTracker {
 
             guard let windows = windowsValue as? [AXUIElement] else { continue }
 
-            var cgPool = cgByPid[pid] ?? []
+            let cgWindows = cgByPid[pid] ?? []
+            var usedCGWindowNumbers = Set<Int>()
             for winEl in windows {
                 rawWindows += 1
                 let axProbe = AXWindow(
@@ -219,15 +229,24 @@ extension AXTracker {
                 let num: Int
                 if let n = readWindowNumber(winEl) {
                     num = n
+                    usedCGWindowNumbers.insert(n)
                 } else if let existing = axWindows.first(where: { CFEqual($0.value.element, winEl) })?.key {
                     // Keep prior id for this AX element (stable across rescans).
                     num = existing.windowNumber
-                } else if !cgPool.isEmpty {
-                    num = cgPool.removeFirst()
+                    usedCGWindowNumbers.insert(num)
                 } else {
-                    // Stable for the life of the AXUIElement — never use list index.
-                    num = Int(CFHash(winEl) & 0x7FFF_FFFF)
-                    skippedNoNumber += 1
+                    // AX and CGWindow lists have independent ordering. Never give a
+                    // popup a sibling window's ID just because it appeared first.
+                    guard let matched = AXWindowIdentityResolver.matchingWindowNumber(
+                        for: axProbe.frame,
+                        candidates: cgWindows,
+                        excluding: usedCGWindowNumbers
+                    ) else {
+                        skippedNoNumber += 1
+                        continue
+                    }
+                    num = matched
+                    usedCGWindowNumbers.insert(matched)
                 }
 
                 let id = WindowID(pid: pid, windowNumber: num)
