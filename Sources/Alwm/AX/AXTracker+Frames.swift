@@ -270,8 +270,8 @@ extension AXTracker {
         let appEl = AXUIElementCreateApplication(pid)
         var focused: AnyObject?
         guard AXUIElementCopyAttributeValue(appEl, kAXFocusedWindowAttribute as CFString, &focused) == .success,
-              let el = focused else { return nil }
-        return windowID(for: el as! AXUIElement)
+              let element = AXBridge.element(focused) else { return nil }
+        return windowID(for: element)
     }
 
     public var currentWindows: [ManagedWindow] { Array(managed.values) }

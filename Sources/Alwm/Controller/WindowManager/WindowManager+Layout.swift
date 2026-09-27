@@ -2432,7 +2432,8 @@ extension WindowManager {
 
 extension WindowManager {
     public nonisolated func axTrackerDidUpdateWindows(_ windows: [ManagedWindow], axWindows: [WindowID: AXWindow]) {
-        Task { @MainActor in
+        Task { @MainActor [weak self] in
+            guard let self else { return }
             self.pendingIngestWindows = windows
             self.ingestDebounceWorkItem?.cancel()
             let work = DispatchWorkItem { [weak self] in

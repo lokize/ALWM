@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "version": "1.2.8",
+      "items": [
+        "Workspace bar restores its position after display or window geometry changes",
+        "Reject malformed Accessibility values safely",
+        "Run Quake AppleScript on one queue with synchronized error reporting"
+      ]
+    },
+    {
       "version": "1.2.7",
       "items": [
         "Localization updates",
@@ -305,13 +313,6 @@
       "version": "0.8.9",
       "items": [
         "Package"
-      ]
-    },
-    {
-      "version": "0.8.8",
-      "items": [
-        "Window manager improvements",
-        "UI updates"
       ]
     }
   ]

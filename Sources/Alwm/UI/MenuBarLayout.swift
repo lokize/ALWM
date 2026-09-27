@@ -86,10 +86,10 @@ enum MenuBarLayout {
         var appObject: AnyObject?
         guard AXUIElementCopyAttributeValue(system, kAXFocusedApplicationAttribute as CFString, &appObject) == .success
         else { return nil }
-        let app = appObject as! AXUIElement
+        guard let app = AXBridge.element(appObject) else { return nil }
         var barObject: AnyObject?
         guard AXUIElementCopyAttributeValue(app, kAXMenuBarAttribute as CFString, &barObject) == .success else { return nil }
-        return (barObject as! AXUIElement)
+        return AXBridge.element(barObject)
     }
 
     private static func menuBarApp(_ menuBar: AXUIElement) -> AXUIElement? {
@@ -101,9 +101,9 @@ enum MenuBarLayout {
     private static func focusedWindowTitle(app: AXUIElement) -> String {
         var windowObject: AnyObject?
         guard AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &windowObject) == .success,
-              let window = windowObject
+              let window = AXBridge.element(windowObject)
         else { return "" }
-        return elementLabel(window as! AXUIElement)
+        return elementLabel(window)
     }
 
     private static func appMenusTrailingX(in menuBar: AXUIElement) -> CGFloat? {
@@ -153,13 +153,15 @@ enum MenuBarLayout {
         var sizeObject: AnyObject?
         guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &posObject) == .success,
               AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeObject) == .success,
-              CFGetTypeID(posObject) == AXValueGetTypeID(),
-              CFGetTypeID(sizeObject) == AXValueGetTypeID()
+              let position = AXBridge.axValue(posObject),
+              let dimensions = AXBridge.axValue(sizeObject),
+              AXValueGetType(position) == .cgPoint,
+              AXValueGetType(dimensions) == .cgSize
         else { return nil }
         var point = CGPoint.zero
         var size = CGSize.zero
-        guard AXValueGetValue(posObject as! AXValue, .cgPoint, &point),
-              AXValueGetValue(sizeObject as! AXValue, .cgSize, &size)
+        guard AXValueGetValue(position, .cgPoint, &point),
+              AXValueGetValue(dimensions, .cgSize, &size)
         else { return nil }
         return CGRect(origin: point, size: size)
     }

@@ -55,9 +55,10 @@ public final class AXWindow: @unchecked Sendable {
 
     func titleUIElement() -> AXUIElement? {
         var value: AnyObject?
-        guard AXUIElementCopyAttributeValue(element, kAXTitleUIElementAttribute as CFString, &value) == .success
+        guard AXUIElementCopyAttributeValue(element, kAXTitleUIElementAttribute as CFString, &value) == .success,
+              let titleElement = AXBridge.element(value)
         else { return nil }
-        return (value as! AXUIElement)
+        return titleElement
     }
 
     static func cgWindowName(windowNumber: Int) -> String? {
@@ -109,12 +110,8 @@ public final class AXWindow: @unchecked Sendable {
             else {
                 return Rect(x: 0, y: 0, width: 0, height: 0)
             }
-            var point = CGPoint.zero
-            var size = CGSize.zero
-            // AXValue is a CFType — Swift `as?` always succeeds; trust the AX attribute types.
-            AXValueGetValue(posValue as! AXValue, .cgPoint, &point)
-            AXValueGetValue(sizeValue as! AXValue, .cgSize, &size)
-            return Rect(x: point.x, y: point.y, width: size.width, height: size.height)
+            return Self.decodeFrame(positionValue: posValue, sizeValue: sizeValue)
+                ?? Rect(x: 0, y: 0, width: 0, height: 0)
         }
         set {
             // Electron apps often clamp if position is set before size; size→pos→size is reliable.
@@ -132,6 +129,21 @@ public final class AXWindow: @unchecked Sendable {
         }
     }
 
+    static func decodeFrame(positionValue: AnyObject?, sizeValue: AnyObject?) -> Rect? {
+        guard let position = AXBridge.axValue(positionValue),
+              let size = AXBridge.axValue(sizeValue),
+              AXValueGetType(position) == .cgPoint,
+              AXValueGetType(size) == .cgSize
+        else { return nil }
+
+        var point = CGPoint.zero
+        var dimensions = CGSize.zero
+        guard AXValueGetValue(position, .cgPoint, &point),
+              AXValueGetValue(size, .cgSize, &dimensions)
+        else { return nil }
+        return Rect(x: point.x, y: point.y, width: dimensions.width, height: dimensions.height)
+    }
+
     public func focus() {
         // Prefer deminiaturize only after the caller placed geometry (reveal). When we
         // deminiaturize here at park/dock size, macOS clamps a tiny edge strip on-screen.
@@ -144,7 +156,7 @@ public final class AXWindow: @unchecked Sendable {
         AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
         AXUIElementPerformAction(element, kAXRaiseAction as CFString)
         if let app = NSRunningApplication(processIdentifier: pid) {
-            app.activate(options: [.activateIgnoringOtherApps])
+            app.activate(options: [])
         }
         // Last resort: still raise even from a tiny frame (caller should have revealed).
         if isMinimized { isMinimized = false }
@@ -155,9 +167,9 @@ public final class AXWindow: @unchecked Sendable {
     public func close() -> Bool {
         var buttonObj: AnyObject?
         guard AXUIElementCopyAttributeValue(element, kAXCloseButtonAttribute as CFString, &buttonObj) == .success,
-              let button = buttonObj
+              let button = AXBridge.element(buttonObj)
         else { return false }
-        return AXUIElementPerformAction(button as! AXUIElement, kAXPressAction as CFString) == .success
+        return AXUIElementPerformAction(button, kAXPressAction as CFString) == .success
     }
 
     /// Accept real app windows; skip system dialogs and tiny junk.

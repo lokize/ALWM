@@ -53,7 +53,7 @@ extension WindowManager {
             windowsByID[id] = applied
         }
 
-        enforceAppRuleFloats()
+        _ = enforceAppRuleFloats()
 
         for id in windowsByID.keys {
             applyAppRulePlacement(to: id)

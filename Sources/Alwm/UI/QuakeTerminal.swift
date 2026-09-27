@@ -2,6 +2,24 @@ import AppKit
 import CoreGraphics
 import Foundation
 
+private final class AppleScriptResultBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var failure: String?
+
+    func record(_ error: NSDictionary?) {
+        guard let error else { return }
+        lock.lock()
+        failure = error.description
+        lock.unlock()
+    }
+
+    func failureDescription() -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return failure
+    }
+}
+
 @MainActor
 public final class QuakeTerminalController {
     public private(set) var windowID: WindowID?
@@ -379,7 +397,7 @@ public final class QuakeTerminalController {
         case "com.mitchellh.ghostty":
             // Avoid AppleScript/System Events — they can hang forever and freeze ALWM.
             if let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == bundleID }) {
-                app.activate(options: [.activateIgnoringOtherApps])
+                app.activate(options: [])
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
                     Self.postCommandN()
                     completion()
@@ -405,19 +423,19 @@ public final class QuakeTerminalController {
 
     private func runAppleScript(_ source: String, completion: @escaping @Sendable () -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {
-            let script = NSAppleScript(source: source)
-            let box = NSMutableDictionary()
+            let result = AppleScriptResultBox()
             let group = DispatchGroup()
             group.enter()
             DispatchQueue.global(qos: .utility).async {
+                let script = NSAppleScript(source: source)
                 var localError: NSDictionary?
                 script?.executeAndReturnError(&localError)
-                if let localError { box["error"] = localError }
+                result.record(localError)
                 group.leave()
             }
             if group.wait(timeout: .now() + 2.5) == .timedOut {
                 NSLog("ALWM Quake: AppleScript timed out")
-            } else if let error = box["error"] as? NSDictionary {
+            } else if let error = result.failureDescription() {
                 NSLog("ALWM Quake AppleScript error: %@", error)
             }
             DispatchQueue.main.async(execute: completion)

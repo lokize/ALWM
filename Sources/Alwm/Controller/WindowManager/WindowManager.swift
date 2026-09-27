@@ -267,7 +267,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         restoreWorkspaceLayoutsFromDisk()
         healStaleColumnEntries()
         retileAccidentalFloats(forceClearOverrides: true)
-        enforceAppRuleFloats()
+        _ = enforceAppRuleFloats()
         enforceQuakeFloat()
         adoptOrphanWindows(blockingReassign: false)
         isBootstrapping = false

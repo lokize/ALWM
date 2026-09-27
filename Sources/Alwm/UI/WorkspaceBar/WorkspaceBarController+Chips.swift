@@ -753,6 +753,20 @@ extension WorkspaceBarController {
         if let avoidRect {
             parts.append("av=\(Int(avoidRect.minX)),\(Int(avoidRect.width))")
         }
+        // Screen changes can move/resize the bar without changing its content. Include
+        // both monitor bounds so refreshChrome does not keep a stale window frame.
+        for monitor in monitors {
+            parts.append(
+                "geo\(monitor.id)=\(monitor.frame.x),\(monitor.frame.y),\(monitor.frame.width),\(monitor.frame.height):"
+                    + "\(monitor.visibleFrame.x),\(monitor.visibleFrame.y),\(monitor.visibleFrame.width),\(monitor.visibleFrame.height)"
+            )
+        }
+        // AppKit or the system may reposition a status-level window across Spaces or
+        // display changes. A later chrome refresh must detect that drift and restore it.
+        for (id, window) in windows.sorted(by: { $0.key < $1.key }) {
+            let frame = window.frame
+            parts.append("wf\(id)=\(frame.origin.x),\(frame.origin.y),\(frame.width),\(frame.height)")
+        }
         for mon in monitors {
             if settings.position == .overlayMenuBar {
                 parts.append(MenuBarLayout.cachedTitleToken())

@@ -54,7 +54,8 @@ let package = Package(
             exclude: [
                 "plugin.json",
                 "README.md",
-                "previews"
+                "previews",
+                "l10n"
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6)
@@ -71,7 +72,8 @@ let package = Package(
                 "plugin.json",
                 "README.md",
                 "previews",
-                "Resources"
+                "Resources",
+                "l10n"
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6)
@@ -108,7 +110,8 @@ let package = Package(
             path: "plugins/github",
             exclude: [
                 "plugin.json",
-                "README.md"
+                "README.md",
+                "l10n"
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6)
@@ -325,7 +328,6 @@ let package = Package(
             exclude: [
                 "plugin.json",
                 "README.md",
-                "previews",
                 "l10n"
             ],
             swiftSettings: [
