@@ -21,7 +21,7 @@ extension WorkspaceBarController {
         avoidRect: NSRect?
     ) {
         // Height slider controls pill size inside the system menu bar strip.
-        let pillHeight = min(max(14, CGFloat(settings.height) - 4), menuHeight - 2)
+        let pillHeight = min(max(16, CGFloat(settings.height) - 4), menuHeight - 2)
         let pillAlpha = CGFloat(min(1, max(0, settings.backgroundOpacity)))
         let pill = makeWorkspaceCluster(
             definitions: definitions,
@@ -175,7 +175,7 @@ extension WorkspaceBarController {
         let bgAlpha = max(0, min(1, settings.backgroundOpacity))
         root.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(bgAlpha).cgColor
 
-        let pillHeight: CGFloat = max(14, min(26, height - 6))
+        let pillHeight: CGFloat = max(16, min(26, height - 6))
         let pillAlpha = CGFloat(min(1, max(0, settings.backgroundOpacity)))
         let pill = makeWorkspaceCluster(
             definitions: definitions,

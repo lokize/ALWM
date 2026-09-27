@@ -150,7 +150,10 @@ public enum PluginBarChipLayout {
     public static let cycleInterval: TimeInterval = 7.0
 
     public static func chipWidth(scale: CGFloat) -> CGFloat {
-        max(132, 146 * scale)
+        // Steam/Nintendo's active chip can contain a badge, cover, name, and price.
+        // Include those fields plus their gaps and horizontal padding so AppKit never
+        // has to break child width constraints (which made centered bars shift).
+        max(140, 156 * scale)
     }
 
     public static func iconSide(scale: CGFloat) -> CGFloat {

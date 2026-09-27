@@ -459,7 +459,11 @@ extension WindowManager {
                 ?? monitors.monitors.first
             guard let monitor else { continue }
 
-            if let preferred = AppRules.preferredWorkspace(rules: rules, window: win),
+            if let preferred = AppRules.preferredWorkspaceForOpening(
+                rules: rules,
+                window: win,
+                isOpening: false
+            ),
                workspaces.workspaces[preferred] != nil {
                 if windowWorkspace[id] != preferred || workspaces.workspaceID(containing: id) != preferred {
                     assignWindow(id, to: preferred, on: monitor)

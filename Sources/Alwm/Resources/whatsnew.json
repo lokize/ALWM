@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "version": "1.2.9",
+      "items": [
+        "Ignore transient menu windows during tracking",
+        "Keep manually moved windows in their chosen workspace",
+        "Clamp plugin chip scale to workspace bar height"
+      ]
+    },
+    {
       "version": "1.2.8",
       "items": [
         "Workspace bar restores its position after display or window geometry changes",
@@ -307,12 +315,6 @@
       "items": [
         "Config updates",
         "Window manager improvements"
-      ]
-    },
-    {
-      "version": "0.8.9",
-      "items": [
-        "Package"
       ]
     }
   ]

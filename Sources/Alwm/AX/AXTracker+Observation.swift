@@ -232,6 +232,12 @@ extension AXTracker {
 
                 let id = WindowID(pid: pid, windowNumber: num)
                 let ax = AXWindow(id: id, element: winEl, pid: pid)
+                // The early probe has no WindowServer ID yet. Re-check now so AX
+                // menu windows with a real AXWindowNumber cannot be tiled.
+                guard ax.isStandardWindow else {
+                    skippedFilter += 1
+                    continue
+                }
                 nextAX[id] = ax
                 nextManaged[id] = ManagedWindow(
                     id: id,

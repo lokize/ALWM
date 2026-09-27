@@ -176,6 +176,12 @@ public final class AXWindow: @unchecked Sendable {
     public var isStandardWindow: Bool {
         let r = role
         guard r == (kAXWindowRole as String) || r == "AXWindow" else { return false }
+        if Self.shouldIgnoreWindowLayer(
+            cgWindowLayer(),
+            menuBarLevel: Int(CGWindowLevelForKey(.mainMenuWindow))
+        ) {
+            return false
+        }
         let s = subrole
         if s == (kAXSystemDialogSubrole as String) || s == "AXSystemDialog" { return false }
         // Standard app windows stay tracked even when miniaturized — AX often reports
@@ -187,6 +193,13 @@ public final class AXWindow: @unchecked Sendable {
         let f = frame
         if f.width > 0, f.height > 0, (f.width < 40 || f.height < 40) { return false }
         return true
+    }
+
+    /// Menus and other system chrome can expose AXWindow roles, but must not enter
+    /// workspace layout as if they were independent app windows.
+    static func shouldIgnoreWindowLayer(_ layer: Int?, menuBarLevel: Int) -> Bool {
+        guard let layer else { return false }
+        return layer >= menuBarLevel
     }
 
     /// Open/save panels, sheets, and utility floats should not enter tiling columns.

@@ -78,7 +78,7 @@ extension WorkspaceBarController {
         pillHeight: CGFloat,
         pillAlpha: CGFloat
     ) -> NSView {
-        let scale = CGFloat(min(1.8, max(0.8, settings.widthScale)))
+        let scale = pluginBarScale(settings: settings, pillHeight: pillHeight)
         let leftPill = makePill(height: pillHeight, alpha: pillAlpha)
         let pillStack = NSStackView()
         pillStack.orientation = .horizontal
@@ -199,6 +199,15 @@ extension WorkspaceBarController {
             pillStack.bottomAnchor.constraint(equalTo: leftPill.bottomAnchor, constant: -1)
         ])
         return leftPill
+    }
+
+    func pluginBarScale(settings: WorkspaceBarSettings, pillHeight: CGFloat) -> CGFloat {
+        let requested = CGFloat(min(1.8, max(0.8, settings.widthScale)))
+        // The pill stack is inset by 1 pt on each side. Plugin chips use 16 × scale
+        // for their height, and Docker wraps its chip in a fixed 19 pt host. Honor
+        // both limits so larger bar-height settings cannot create constraint conflicts.
+        let availableHeight = min(pillHeight - 2, 19)
+        return min(requested, max(0.8, availableHeight / 16))
     }
 
 

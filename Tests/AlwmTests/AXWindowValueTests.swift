@@ -30,4 +30,11 @@ struct AXWindowValueTests {
         #expect(frame?.width == 560)
         #expect(frame?.height == 420)
     }
+
+    @Test("menu-level AX windows are excluded from managed app windows")
+    func excludesMenuLayerWindows() {
+        #expect(AXWindow.shouldIgnoreWindowLayer(101, menuBarLevel: 24))
+        #expect(!AXWindow.shouldIgnoreWindowLayer(0, menuBarLevel: 24))
+        #expect(!AXWindow.shouldIgnoreWindowLayer(3, menuBarLevel: 24))
+    }
 }

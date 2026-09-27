@@ -40,6 +40,17 @@ public enum AppRules {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    /// Workspace preferences seed a window's home when it opens. Existing windows
+    /// keep the workspace the user moved them to during later layout reconciliation.
+    public static func preferredWorkspaceForOpening(
+        rules: [AppRule],
+        window: ManagedWindow,
+        isOpening: Bool = true
+    ) -> String? {
+        guard isOpening else { return nil }
+        return preferredWorkspace(rules: rules, window: window)
+    }
+
     public static func preferredMonitorIndex(rules: [AppRule], window: ManagedWindow) -> Int? {
         matching(rules: rules, window: window)?.monitorIndex
     }

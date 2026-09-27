@@ -695,6 +695,22 @@ struct WorkspaceMonitorVisibilityTests {
 
 @Suite("AppRules")
 struct AppRulesTests {
+    @Test("preferred workspace is applied on window open, not on later reconciliation")
+    func preferredWorkspaceOnlyOnOpen() {
+        let rules = [AppRule(bundleID: "com.example.float", mode: .float, workspace: "2")]
+        let win = ManagedWindow(
+            id: WindowID(pid: 1, windowNumber: 1),
+            title: "X",
+            bundleID: "com.example.float",
+            appName: "Float",
+            frame: Rect(x: 0, y: 0, width: 400, height: 300),
+            isFloating: true
+        )
+
+        #expect(AppRules.preferredWorkspaceForOpening(rules: rules, window: win) == "2")
+        #expect(AppRules.preferredWorkspaceForOpening(rules: rules, window: win, isOpening: false) == nil)
+    }
+
     @Test("float rule marks window floating")
     func floatRule() {
         let rules = [AppRule(bundleID: "com.example.float", mode: .float)]
