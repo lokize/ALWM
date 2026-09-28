@@ -4,6 +4,40 @@ import Testing
 
 @Suite("Resume workspace selection")
 struct ResumeWorkspaceSelectionTests {
+    @Test("new windows fall back to the saved app workspace after window-specific homes")
+    func selectsSavedBundleWorkspaceAsFallback() {
+        let existing: Set<String> = ["1", "2", "3"]
+
+        #expect(InitialWorkspaceSelection.resolve(
+            rule: nil,
+            sticky: nil,
+            savedLayout: nil,
+            bundle: "2",
+            existing: existing
+        ) == "2")
+        #expect(InitialWorkspaceSelection.resolve(
+            rule: "3",
+            sticky: "1",
+            savedLayout: "1",
+            bundle: "2",
+            existing: existing
+        ) == "3")
+        #expect(InitialWorkspaceSelection.resolve(
+            rule: nil,
+            sticky: "1",
+            savedLayout: "3",
+            bundle: "2",
+            existing: existing
+        ) == "1")
+        #expect(InitialWorkspaceSelection.resolve(
+            rule: nil,
+            sticky: nil,
+            savedLayout: nil,
+            bundle: "missing",
+            existing: existing
+        ) == nil)
+    }
+
     @Test("resume is not considered complete when a monitor shows the wrong workspace")
     func rejectsWorkspaceSelectionDrift() {
         let active: [CGDirectDisplayID: String] = [2: "1", 7: "5"]

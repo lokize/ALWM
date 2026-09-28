@@ -5,23 +5,40 @@ import SwiftUI
 import AlwmIPC
 import AlwmPluginAPI
 
+enum InitialWorkspaceSelection {
+    static func resolve(
+        rule: String?,
+        sticky: String?,
+        savedLayout: String?,
+        bundle: String?,
+        existing: Set<String>
+    ) -> String? {
+        [rule, sticky, savedLayout, bundle]
+            .compactMap { $0 }
+            .first(where: existing.contains)
+    }
+}
+
 // MARK: - Window assignment — ingest homes, float/tile placement
 
 extension WindowManager {
     func resolveTargetWorkspace(for win: ManagedWindow, on monitor: MonitorInfo) -> String? {
         let rules = configStore.config.rules
-        if let preferred = AppRules.preferredWorkspace(rules: rules, window: win),
-           workspaces.workspaces[preferred] != nil {
-            return preferred
-        }
-        if let sticky = windowWorkspace[win.id] ?? runtimeState.assignment(for: win.id),
-           workspaces.workspaces[sticky] != nil {
-            return sticky
-        }
+        let sticky = windowWorkspace[win.id] ?? runtimeState.assignment(for: win.id)
         // Disk-tiled slots only — old float homes must not yank Finder onto WS1 while Cursor is on WS2.
-        if diskLayoutClaimsWindow(win.id, allowFuzzy: true),
-           let home = savedHome(for: win, id: win.id) {
-            return home
+        let savedLayout = diskLayoutClaimsWindow(win.id, allowFuzzy: true)
+            ? savedHome(for: win, id: win.id)
+            : nil
+        // The app-level home is a fallback for genuinely new/reappearing windows whose AX
+        // token was unavailable during startup. Existing window/rule homes always take priority.
+        if let selected = InitialWorkspaceSelection.resolve(
+            rule: AppRules.preferredWorkspace(rules: rules, window: win),
+            sticky: sticky,
+            savedLayout: savedLayout,
+            bundle: runtimeState.bundleAssignment(for: win.bundleID),
+            existing: Set(workspaces.workspaces.keys)
+        ) {
+            return selected
         }
         let idx = workspaces.monitorIndex(of: monitor.id, in: monitors.monitors) ?? 0
         let pool = workspaces.definitionsVisible(onMonitorIndex: idx).map(\.id)

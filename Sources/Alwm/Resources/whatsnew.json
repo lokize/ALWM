@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.3.3",
+      "items": [
+        "Restore app windows to their saved workspaces when they reappear"
+      ]
+    },
+    {
       "version": "1.3.2",
       "items": [
         "Restore app windows to saved workspaces after sleep"
@@ -299,12 +305,6 @@
         "Plugins: stats-disk/Sources/DiskPanel.swift",
         "Plugins: stats-memory/Sources/MemoryPanel.swift",
         "Build and release scripts"
-      ]
-    },
-    {
-      "version": "0.9.3",
-      "items": [
-        "Window manager improvements"
       ]
     }
   ]
