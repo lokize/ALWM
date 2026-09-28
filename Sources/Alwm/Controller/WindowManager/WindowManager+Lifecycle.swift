@@ -296,11 +296,12 @@ extension WindowManager {
         for mon in monitors.monitors {
             let idx = workspaces.monitorIndex(of: mon.id, in: monitors.monitors) ?? 0
             let pool = workspaces.definitionsVisible(onMonitorIndex: idx).map(\.id)
-            let lastByDisplay = runtimeState.lastWorkspace(for: mon.id)
-            let lastGlobal = runtimeState.snapshot.lastWorkspace
-            let pick = (lastByDisplay.flatMap { pool.contains($0) ? $0 : nil })
-                ?? (lastGlobal.flatMap { pool.contains($0) ? $0 : nil })
-                ?? pool.first(where: { workspaces.workspaces[$0] != nil })
+            let pick = ResumeWorkspaceSelection.expectedWorkspace(
+                allowed: pool,
+                savedForMonitor: runtimeState.snapshot.lastWorkspaceByMonitor[String(mon.id)],
+                savedGlobally: runtimeState.snapshot.lastWorkspace,
+                existing: Set(workspaces.workspaces.keys)
+            )
             if let pick {
                 workspaces.switchWorkspace(id: pick, on: mon.id, monitors: monitors.monitors, syncAllMonitors: false)
             }

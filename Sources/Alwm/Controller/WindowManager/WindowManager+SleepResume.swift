@@ -5,6 +5,30 @@ import SwiftUI
 import AlwmIPC
 import AlwmPluginAPI
 
+enum ResumeWorkspaceSelection {
+    static func matches(
+        active: [CGDirectDisplayID: String],
+        expected: [CGDirectDisplayID: String]
+    ) -> Bool {
+        expected.allSatisfy { active[$0.key] == $0.value }
+    }
+
+    static func expectedWorkspace(
+        allowed: [String],
+        savedForMonitor: String?,
+        savedGlobally: String?,
+        existing: Set<String>
+    ) -> String? {
+        if let savedForMonitor, allowed.contains(savedForMonitor), existing.contains(savedForMonitor) {
+            return savedForMonitor
+        }
+        if let savedGlobally, allowed.contains(savedGlobally), existing.contains(savedGlobally) {
+            return savedGlobally
+        }
+        return allowed.first(where: existing.contains)
+    }
+}
+
 // MARK: - System sleep / wake layout recovery
 
 extension WindowManager {
@@ -32,6 +56,7 @@ extension WindowManager {
         let saved = savedTiledWindowCount()
         let live = liveTiledWindowCount()
         if saved > 0, live < saved { return true }
+        if !persistedWorkspaceSelectionMatchesCurrent() { return true }
         for (wsID, snap) in runtimeState.snapshot.workspaceLayouts {
             guard workspaces.workspaces[wsID] != nil else { continue }
             let savedCols = snap.columns.filter { !$0.windows.isEmpty }.count
@@ -53,7 +78,9 @@ extension WindowManager {
 
     func runLayoutRecovery(force: Bool) {
         guard AXTracker.isTrusted else { return }
-        guard needsLayoutRecovery(force: force) || (isResumeRecovering && !framesLookRestoredOnActiveWorkspaces()) else {
+        guard needsLayoutRecovery(force: force)
+                || (isResumeRecovering
+                    && (!persistedWorkspaceSelectionMatchesCurrent() || !framesLookRestoredOnActiveWorkspaces())) else {
             return
         }
         layoutRecoveryAttempts += 1
@@ -61,6 +88,9 @@ extension WindowManager {
         suppressIngestReassignUntil = Date().addingTimeInterval(4.0)
         lastVisibilitySignature = nil
         monitors.refresh()
+        syncWorkspacesToMonitors()
+        runtimeState.load()
+        restorePersistedWorkspaces()
         ax.scanAll()
         isBootstrapping = true
         ingest(windows: ax.currentWindows)
@@ -83,6 +113,7 @@ extension WindowManager {
         let saved = savedTiledWindowCount()
         let live = liveTiledWindowCount()
         let recovered = layoutLooksRecovered()
+            && persistedWorkspaceSelectionMatchesCurrent()
             && framesLookRestoredOnActiveWorkspaces()
             && layoutContentMatchesDiskSnapshot()
         if recovered {
@@ -301,12 +332,17 @@ extension WindowManager {
         // Staggered retries must not re-enter after a successful pass this wake.
         guard isResumeRecovering || Date() < resumeRecoveryEligibleUntil else { return }
         // If live already matches disk, finish instead of rematching again (spam wrecked widths).
-        if layoutLooksRecovered(),
+        let workspaceSelectionMatches = persistedWorkspaceSelectionMatchesCurrent()
+        if workspaceSelectionMatches,
+           layoutLooksRecovered(),
            framesLookRestoredOnActiveWorkspaces(),
            layoutContentMatchesDiskSnapshot() {
             finishResumeRecoverySuccessfully()
             NSLog("ALWM: resume recovery — already matched, skipping rematch")
             return
+        }
+        if !workspaceSelectionMatches {
+            logMove("resume recovery fast-path skipped — active workspace differs from saved selection")
         }
         isResumeRecovering = true
         suppressIngestReassignUntil = Date().addingTimeInterval(5.0)
@@ -347,6 +383,7 @@ extension WindowManager {
         refreshChrome()
 
         let recovered = layoutLooksRecovered()
+            && persistedWorkspaceSelectionMatchesCurrent()
             && framesLookRestoredOnActiveWorkspaces()
             && layoutContentMatchesDiskSnapshot()
         if recovered {
@@ -362,6 +399,27 @@ extension WindowManager {
             liveTiledWindowCount(),
             recovered ? "yes" : "no",
             layoutContentMatchesDiskSnapshot() ? "yes" : "no"
+        )
+    }
+
+    func persistedWorkspaceSelectionMatchesCurrent() -> Bool {
+        let existing = Set(workspaces.workspaces.keys)
+        var expected: [CGDirectDisplayID: String] = [:]
+        for (index, monitor) in monitors.monitors.enumerated() {
+            let allowed = workspaces.definitionsVisible(onMonitorIndex: index).map(\.id)
+            let savedForMonitor = runtimeState.snapshot.lastWorkspaceByMonitor[String(monitor.id)]
+            if let workspaceID = ResumeWorkspaceSelection.expectedWorkspace(
+                allowed: allowed,
+                savedForMonitor: savedForMonitor,
+                savedGlobally: runtimeState.snapshot.lastWorkspace,
+                existing: existing
+            ) {
+                expected[monitor.id] = workspaceID
+            }
+        }
+        return ResumeWorkspaceSelection.matches(
+            active: workspaces.activeWorkspaceByMonitor,
+            expected: expected
         )
     }
 
