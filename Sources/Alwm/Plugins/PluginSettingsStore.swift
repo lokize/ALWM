@@ -4,11 +4,13 @@ import AlwmPluginAPI
 
 /// Which monitors show a plugin chip.
 public enum PluginBarDisplay: Equatable, Sendable, Hashable {
+    case `default`
     case all
     case display(CGDirectDisplayID)
 
     public var rawString: String {
         switch self {
+        case .default: return "default"
         case .all: return "all"
         case .display(let id): return "\(id)"
         }
@@ -16,21 +18,29 @@ public enum PluginBarDisplay: Equatable, Sendable, Hashable {
 
     public init(rawString: String?) {
         guard let raw = rawString?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !raw.isEmpty,
-              raw != "all"
+              !raw.isEmpty
         else {
-            self = .all
+            self = .default
             return
         }
-        if let id = UInt32(raw) {
+        if raw == "default" {
+            self = .default
+        } else if raw == "all" {
+            self = .all
+        } else if let id = UInt32(raw) {
             self = .display(id)
         } else {
-            self = .all
+            self = .default
         }
     }
 
     public func matches(_ monitorID: CGDirectDisplayID) -> Bool {
+        matches(monitorID, defaultMonitorID: CGMainDisplayID())
+    }
+
+    public func matches(_ monitorID: CGDirectDisplayID, defaultMonitorID: CGDirectDisplayID) -> Bool {
         switch self {
+        case .default: return monitorID == defaultMonitorID
         case .all: return true
         case .display(let id): return id == monitorID
         }
@@ -54,7 +64,7 @@ public struct PluginUserState: Equatable, Sendable, Identifiable {
         installed: Bool = false,
         installedVersion: String? = nil,
         placement: AlwmBarPlacement = .afterWorkspaces,
-        display: PluginBarDisplay = .all,
+        display: PluginBarDisplay = .default,
         order: Int = 0
     ) {
         self.id = id
@@ -69,6 +79,7 @@ public struct PluginUserState: Equatable, Sendable, Identifiable {
 
 public final class PluginSettingsStore: @unchecked Sendable {
     public private(set) var states: [String: PluginUserState] = [:]
+    public private(set) var defaultDisplayMonitorID: CGDirectDisplayID = CGMainDisplayID()
     private let url: URL
 
     public init(url: URL = ConfigPaths.root.appendingPathComponent("plugins.toml")) {
@@ -90,7 +101,7 @@ public final class PluginSettingsStore: @unchecked Sendable {
             enabled: false,
             installed: false,
             placement: Self.normalized(defaultPlacement),
-            display: .all,
+            display: .default,
             order: nextOrder()
         )
     }
@@ -140,6 +151,12 @@ public final class PluginSettingsStore: @unchecked Sendable {
         }
         s.display = display
         states[id] = s
+        save()
+    }
+
+    public func setDefaultDisplayMonitorID(_ id: CGDirectDisplayID) {
+        guard defaultDisplayMonitorID != id else { return }
+        defaultDisplayMonitorID = id
         save()
     }
 
@@ -200,6 +217,7 @@ public final class PluginSettingsStore: @unchecked Sendable {
     public func load() {
         guard let text = try? String(contentsOf: url, encoding: .utf8) else {
             states = [:]
+            defaultDisplayMonitorID = CGMainDisplayID()
             return
         }
         var next: [String: PluginUserState] = [:]
@@ -208,9 +226,11 @@ public final class PluginSettingsStore: @unchecked Sendable {
         var installed: Bool?
         var installedVersion: String?
         var placement = AlwmBarPlacement.afterWorkspaces
-        var display = PluginBarDisplay.all
+        var display = PluginBarDisplay.default
         var order: Int?
         var fileIndex = 0
+        var migrationCompleted = false
+        var loadedDefaultMonitorID = CGMainDisplayID()
 
         func flush() {
             guard let id = currentID else { return }
@@ -230,13 +250,21 @@ public final class PluginSettingsStore: @unchecked Sendable {
             installed = nil
             installedVersion = nil
             placement = .afterWorkspaces
-            display = .all
+            display = .default
             order = nil
         }
 
         for rawLine in text.split(whereSeparator: \.isNewline) {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
             if line.isEmpty || line.hasPrefix("#") { continue }
+            if line.hasPrefix("default_display_monitor_id"), let raw = Self.stringValue(line), let id = UInt32(raw) {
+                loadedDefaultMonitorID = id
+                continue
+            }
+            if line.hasPrefix("plugin_display_migration") {
+                migrationCompleted = Self.stringValue(line) == "1"
+                continue
+            }
             if line == "[[plugins]]" {
                 flush()
                 continue
@@ -262,11 +290,24 @@ public final class PluginSettingsStore: @unchecked Sendable {
             }
         }
         flush()
+        let needsDisplayMigration = !migrationCompleted
+        if !migrationCompleted {
+            for (id, var state) in next where state.display == .all {
+                state.display = .default
+                next[id] = state
+            }
+        }
         states = next
+        defaultDisplayMonitorID = loadedDefaultMonitorID
+        if needsDisplayMigration { save() }
     }
 
     public func save() {
-        var lines: [String] = []
+        var lines: [String] = [
+            "default_display_monitor_id = \(defaultDisplayMonitorID)",
+            "plugin_display_migration = 1",
+            ""
+        ]
         let ordered = states.values.sorted { a, b in
             if a.order != b.order { return a.order < b.order }
             return a.id < b.id

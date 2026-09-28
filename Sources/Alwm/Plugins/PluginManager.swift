@@ -13,7 +13,7 @@ public struct PluginBarItem: Equatable {
     public init(
         id: String,
         placement: AlwmBarPlacement,
-        display: PluginBarDisplay = .all,
+        display: PluginBarDisplay = .default,
         signature: String
     ) {
         self.id = id

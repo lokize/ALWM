@@ -84,6 +84,7 @@ struct PluginDetailSheet: View {
                                 get: { display.rawString },
                                 set: { onDisplay(PluginBarDisplay(rawString: $0)) }
                             )) {
+                                Text(L10n.t("plugins.display.default")).tag(PluginBarDisplay.default.rawString)
                                 Text(L10n.t("plugins.display.all")).tag(PluginBarDisplay.all.rawString)
                                 ForEach(Array(monitors.enumerated()), id: \.element.id) { index, mon in
                                     Text(monitorLabel(mon, index: index)).tag(PluginBarDisplay.display(mon.id).rawString)

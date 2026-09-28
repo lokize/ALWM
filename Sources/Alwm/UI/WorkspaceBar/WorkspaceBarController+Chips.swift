@@ -79,6 +79,7 @@ extension WorkspaceBarController {
         pillAlpha: CGFloat
     ) -> NSView {
         let scale = pluginBarScale(settings: settings, pillHeight: pillHeight)
+        let defaultPluginMonitorID = PluginManager.shared.settings.defaultDisplayMonitorID
         let leftPill = makePill(height: pillHeight, alpha: pillAlpha)
         let pillStack = NSStackView()
         pillStack.orientation = .horizontal
@@ -90,7 +91,8 @@ extension WorkspaceBarController {
         leftPill.addSubview(pillStack)
 
         let before = pluginBarItems.filter {
-            $0.placement == .beforeWorkspaces && $0.display.matches(monitor.id)
+            $0.placement == .beforeWorkspaces
+                && $0.display.matches(monitor.id, defaultMonitorID: defaultPluginMonitorID)
         }
         appendPluginViews(before, to: pillStack, scale: scale, trailingSeparator: !before.isEmpty)
 
@@ -168,7 +170,7 @@ extension WorkspaceBarController {
 
         let afterWS = pluginBarItems.filter {
             ($0.placement == .afterWorkspaces || $0.placement == .afterCommand)
-                && $0.display.matches(monitor.id)
+                && $0.display.matches(monitor.id, defaultMonitorID: defaultPluginMonitorID)
         }
         appendPluginViews(afterWS, to: pillStack, scale: scale, leadingSeparator: true)
 

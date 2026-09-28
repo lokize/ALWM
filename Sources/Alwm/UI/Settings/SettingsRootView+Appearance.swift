@@ -96,6 +96,30 @@ extension SettingsRootView {
                 .padding(.horizontal, 20)
                 .padding(.top, 10)
 
+            HStack(spacing: 12) {
+                Text(L10n.t("wsbar.plugins_default_monitor"))
+                    .foregroundStyle(.secondary)
+                Picker(L10n.t("wsbar.plugins_default_monitor"), selection: Binding(
+                    get: { PluginManager.shared.settings.defaultDisplayMonitorID },
+                    set: { id in
+                        PluginManager.shared.settings.setDefaultDisplayMonitorID(id)
+                        PluginManager.shared.requestBarRefresh()
+                    }
+                )) {
+                    ForEach(Array(monitors.enumerated()), id: \.element.id) { index, monitor in
+                        let name = monitor.name.isEmpty
+                            ? String(format: L10n.t("plugins.display.unnamed"), index + 1)
+                            : monitor.name
+                        Text(name).tag(monitor.id)
+                    }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 260)
+                .disabled(monitors.isEmpty)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 20)
+
             if pluginOrderRows.isEmpty {
                 Text(L10n.t("wsbar.plugins_order.empty"))
                     .font(.caption)

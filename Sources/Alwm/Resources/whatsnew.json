@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "1.3.1",
+      "items": [
+        "Use a default monitor for plugins",
+        "Keep settings scroll position when reordering plugins"
+      ]
+    },
+    {
       "version": "1.3.0",
       "items": [
         "Prevent transient popups from inheriting unrelated app window identities"
@@ -305,14 +312,6 @@
         "Plugins: stats-sensors/Sources/StatsSensorsPlugin.swift",
         "Plugins: stats-sensors/l10n/en.md",
         "Plugins: stats-sensors/l10n/pt-BR.md",
-        "Build and release scripts"
-      ]
-    },
-    {
-      "version": "0.9.1",
-      "items": [
-        "Nintendo Price Watcher plugin updates",
-        "Steam Price Watcher plugin updates",
         "Build and release scripts"
       ]
     }

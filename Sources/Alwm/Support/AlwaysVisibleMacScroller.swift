@@ -48,19 +48,29 @@ private final class ScrollerProbeView: NSView {
 @MainActor
 enum FormScrollPin {
     struct Snapshot {
-        weak var scrollView: NSScrollView?
         var origin: NSPoint
+        weak var window: NSWindow?
+
+        init(origin: NSPoint, window: NSWindow? = nil) {
+            self.origin = origin
+            self.window = window
+        }
     }
 
     static func capture(from view: NSView? = nil) -> Snapshot? {
         guard let scroll = findScrollView(startingAt: view) ?? findScrollViewInKeyWindow() else {
             return nil
         }
-        return Snapshot(scrollView: scroll, origin: scroll.contentView.bounds.origin)
+        return Snapshot(origin: scroll.contentView.bounds.origin, window: view?.window ?? scroll.window)
     }
 
     static func restore(_ snapshot: Snapshot?) {
-        guard let snapshot, let scroll = snapshot.scrollView else { return }
+        guard let snapshot,
+              let scroll = findScrollView(in: snapshot.window) ?? findScrollViewInKeyWindow() else { return }
+        restore(snapshot, using: scroll)
+    }
+
+    static func restore(_ snapshot: Snapshot, using scroll: NSScrollView) {
         let docHeight = scroll.documentView?.frame.height ?? scroll.contentView.bounds.height
         let maxY = max(0, docHeight - scroll.contentView.bounds.height)
         let y = min(max(0, snapshot.origin.y), maxY)
@@ -91,7 +101,11 @@ enum FormScrollPin {
     }
 
     private static func findScrollViewInKeyWindow() -> NSScrollView? {
-        guard let root = NSApp.keyWindow?.contentView else { return nil }
+        findScrollView(in: NSApp.keyWindow)
+    }
+
+    private static func findScrollView(in window: NSWindow?) -> NSScrollView? {
+        guard let root = window?.contentView else { return nil }
         var best: NSScrollView?
         var bestArea: CGFloat = 0
         func walk(_ view: NSView) {
