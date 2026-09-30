@@ -4,6 +4,56 @@ import Testing
 
 @Suite("Resume workspace selection")
 struct ResumeWorkspaceSelectionTests {
+    @Test("resume rejects a visible tile with the wrong position and size")
+    func rejectsDisplacedTileFrame() {
+        let expected = Rect(x: 0, y: 30, width: 1_000, height: 700)
+        let actual = Rect(x: 80, y: 70, width: 700, height: 560)
+        let monitor = Rect(x: 0, y: 0, width: 1_200, height: 800)
+
+        #expect(!ResumeFrameSelection.matches(
+            actual: actual,
+            expected: expected,
+            usable: monitor,
+            monitorFrames: [monitor],
+            minSize: Size(width: 200, height: 120)
+        ))
+        #expect(ResumeFrameSelection.matches(
+            actual: expected,
+            expected: expected,
+            usable: monitor,
+            monitorFrames: [monitor],
+            minSize: Size(width: 200, height: 120)
+        ))
+    }
+
+    @Test("a partly visible scrolling column can finish recovery at its expected frame")
+    func acceptsPartlyVisibleScrollingColumn() {
+        let monitor = Rect(x: 0, y: 0, width: 1_200, height: 800)
+        let expected = Rect(x: 1_100, y: 30, width: 400, height: 700)
+
+        #expect(ResumeFrameSelection.matches(
+            actual: expected,
+            expected: expected,
+            usable: monitor,
+            monitorFrames: [monitor],
+            minSize: Size(width: 200, height: 120)
+        ))
+    }
+
+    @Test("an AX mass drop rearms recovery after previous attempts were exhausted")
+    @MainActor
+    func massDropRearmsRecovery() {
+        let manager = WindowManager()
+        manager.isBootstrapping = false
+        manager.layoutRecoveryAttempts = manager.maxLayoutRecoveryAttempts
+        manager.noteAXMassDropForRecovery()
+        defer { manager.cancelPendingResumeRecovery() }
+
+        #expect(manager.isResumeRecovering)
+        #expect(manager.softPersistProtectMissingTokens)
+        #expect(manager.layoutRecoveryAttempts == 0)
+    }
+
     @Test("new windows fall back to the saved app workspace after window-specific homes")
     func selectsSavedBundleWorkspaceAsFallback() {
         let existing: Set<String> = ["1", "2", "3"]
@@ -36,6 +86,36 @@ struct ResumeWorkspaceSelectionTests {
             bundle: "missing",
             existing: existing
         ) == nil)
+    }
+
+    @Test("a new app window uses its saved workspace even when another workspace is active")
+    func savedBundleBeatsActiveWorkspace() {
+        let existing: Set<String> = ["1", "2", "3"]
+
+        #expect(InitialWorkspaceSelection.resolve(
+            rule: nil,
+            sticky: nil,
+            savedLayout: nil,
+            bundle: "2",
+            active: "1",
+            existing: existing
+        ) == "2")
+        #expect(InitialWorkspaceSelection.resolve(
+            rule: "3",
+            sticky: nil,
+            savedLayout: nil,
+            bundle: "2",
+            active: "1",
+            existing: existing
+        ) == "3")
+        #expect(InitialWorkspaceSelection.resolve(
+            rule: nil,
+            sticky: nil,
+            savedLayout: nil,
+            bundle: "missing",
+            active: "1",
+            existing: existing
+        ) == "1")
     }
 
     @Test("resume is not considered complete when a monitor shows the wrong workspace")

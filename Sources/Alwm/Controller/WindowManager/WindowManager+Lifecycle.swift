@@ -53,7 +53,14 @@ extension WindowManager {
     }
 
     func syncWorkspacesToMonitors() {
-        workspaces.configure(definitions: configStore.config.workspaces, monitors: monitors.monitors)
+        let saved = Dictionary(uniqueKeysWithValues: monitors.monitors.compactMap { mon in
+            runtimeState.snapshot.lastWorkspaceByMonitor[String(mon.id)].map { (mon.id, $0) }
+        })
+        workspaces.configure(
+            definitions: configStore.config.workspaces,
+            monitors: monitors.monitors,
+            savedWorkspaceByMonitor: saved
+        )
         primaryMonitorID = monitors.monitors.first?.id ?? 0
     }
 

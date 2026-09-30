@@ -82,9 +82,12 @@ public final class MonitorStore: @unchecked Sendable {
 public final class WorkspaceStore: @unchecked Sendable {
     /// monitorID -> active workspace id
     public private(set) var activeWorkspaceByMonitor: [CGDirectDisplayID: String] = [:]
+    /// Keep a temporary display's selection while macOS removes it during sleep or hotplug.
+    private var detachedWorkspaceByMonitor: [CGDirectDisplayID: String] = [:]
     /// workspace id -> state (shared across monitors for simplicity; each monitor tracks its own active id)
     public private(set) var workspaces: [String: WorkspaceState] = [:]
     public private(set) var definitions: [WorkspaceDefinition] = []
+    private var connectedMonitorCount = 0
 
     public init() {}
 
@@ -107,8 +110,13 @@ public final class WorkspaceStore: @unchecked Sendable {
         }
     }
 
-    public func configure(definitions: [WorkspaceDefinition], monitors: [MonitorInfo]) {
+    public func configure(
+        definitions: [WorkspaceDefinition],
+        monitors: [MonitorInfo],
+        savedWorkspaceByMonitor: [CGDirectDisplayID: String] = [:]
+    ) {
         self.definitions = definitions
+        connectedMonitorCount = monitors.count
         var next: [String: WorkspaceState] = [:]
         for def in definitions {
             if let existing = workspaces[def.id] {
@@ -127,18 +135,25 @@ public final class WorkspaceStore: @unchecked Sendable {
         workspaces = next
 
         let live = Set(monitors.map(\.id))
+        for (monitorID, workspaceID) in activeWorkspaceByMonitor where !live.contains(monitorID) {
+            detachedWorkspaceByMonitor[monitorID] = workspaceID
+        }
         activeWorkspaceByMonitor = activeWorkspaceByMonitor.filter { live.contains($0.key) }
 
         // Each monitor keeps (or picks) an active workspace from its own pool only.
         for mon in monitors {
             let idx = monitors.firstIndex(where: { $0.id == mon.id }) ?? 0
             let pool = definitionsVisible(onMonitorIndex: idx).map(\.id)
+            let remembered = detachedWorkspaceByMonitor.removeValue(forKey: mon.id)
             if let current = activeWorkspaceByMonitor[mon.id],
                pool.contains(current),
                workspaces[current] != nil {
                 continue
             }
-            let pick = pool.first(where: { workspaces[$0] != nil })
+            let saved = savedWorkspaceByMonitor[mon.id]
+            let pick = [remembered, saved].compactMap { $0 }
+                .first(where: { pool.contains($0) && workspaces[$0] != nil })
+                ?? pool.first(where: { workspaces[$0] != nil })
             if let pick {
                 activeWorkspaceByMonitor[mon.id] = pick
             } else {
@@ -152,8 +167,10 @@ public final class WorkspaceStore: @unchecked Sendable {
         forWorkspace workspaceID: String,
         monitors: [MonitorInfo]
     ) -> MonitorInfo? {
-        guard let def = definitions.first(where: { $0.id == workspaceID }),
-              let idx = def.monitorIndex,
+        guard let def = definitions.first(where: { $0.id == workspaceID }) else { return nil }
+        // In clamshell mode every workspace is available on the sole display.
+        if monitors.count == 1 { return monitors[0] }
+        guard let idx = def.monitorIndex,
               monitors.indices.contains(idx) else { return nil }
         return monitors[idx]
     }
@@ -162,15 +179,22 @@ public final class WorkspaceStore: @unchecked Sendable {
     /// - Pinned (`monitorIndex == idx`): only that monitor.
     /// - Auto (`nil`): treated as primary monitor (index 0) only.
     ///   Secondary displays never inherit Auto workspaces — pin them explicitly.
+    /// - With one connected display, all workspaces remain reachable there.
     public func definitionsVisible(onMonitorIndex idx: Int) -> [WorkspaceDefinition] {
-        Self.definitions(definitions, visibleOnMonitorIndex: idx)
+        Self.definitions(
+            definitions,
+            visibleOnMonitorIndex: idx,
+            connectedMonitorCount: connectedMonitorCount
+        )
     }
 
     public static func definitions(
         _ definitions: [WorkspaceDefinition],
-        visibleOnMonitorIndex idx: Int
+        visibleOnMonitorIndex idx: Int,
+        connectedMonitorCount: Int? = nil
     ) -> [WorkspaceDefinition] {
-        definitions.filter { def in
+        if connectedMonitorCount == 1, idx == 0 { return definitions }
+        return definitions.filter { def in
             let pin = def.monitorIndex ?? 0
             return pin == idx
         }

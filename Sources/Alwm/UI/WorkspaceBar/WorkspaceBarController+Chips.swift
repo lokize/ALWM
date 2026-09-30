@@ -787,7 +787,11 @@ extension WorkspaceBarController {
                 }
             }
             let monIdx = monitors.firstIndex(where: { $0.id == mon.id }) ?? 0
-            let localDefs = WorkspaceStore.definitions(definitions, visibleOnMonitorIndex: monIdx)
+            let localDefs = WorkspaceStore.definitions(
+                definitions,
+                visibleOnMonitorIndex: monIdx,
+                connectedMonitorCount: monitors.count
+            )
             let active = activeByMonitor[mon.id] ?? "-"
             parts.append("m\(mon.id):a\(active)")
             let globalCounts = globalAppWindowCounts(windowsByID: windowsByID)

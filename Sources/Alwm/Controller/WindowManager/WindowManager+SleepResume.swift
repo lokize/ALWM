@@ -29,6 +29,42 @@ enum ResumeWorkspaceSelection {
     }
 }
 
+enum ResumeFrameSelection {
+    static func matches(
+        actual: Rect,
+        expected: Rect,
+        usable: Rect,
+        monitorFrames: [Rect],
+        minSize: Size
+    ) -> Bool {
+        // Scrolled columns and maximized siblings are intentionally parked. Their
+        // exact off-screen origin can change when displays reconnect after sleep.
+        if !OffscreenParking.intersectsAnyMonitor(expected, monitors: monitorFrames) {
+            return !OffscreenParking.intersectsAnyMonitor(actual, monitors: monitorFrames)
+        }
+        // A horizontally scrolled column can be partly visible with its midpoint
+        // outside the monitor. Compare its geometry instead of calling it parked.
+        guard OffscreenParking.intersectsAnyMonitor(actual, monitors: monitorFrames) else {
+            return false
+        }
+        if OffscreenParking.isUsableOnscreenFrame(expected, monitors: monitorFrames),
+           !OffscreenParking.isUsableOnscreenFrame(actual, monitors: monitorFrames) {
+            return false
+        }
+        let targetWidth = max(expected.width, minSize.width)
+        let targetHeight = max(expected.height, minSize.height)
+        let xTolerance = max(12, expected.width * 0.025)
+        let yTolerance = max(20, expected.height * 0.04)
+        let widthTolerance = max(20, targetWidth * 0.05)
+        let heightTolerance = max(24, targetHeight * 0.08)
+        return abs(actual.x - expected.x) <= xTolerance
+            && abs(actual.y - expected.y) <= yTolerance
+            && abs(actual.width - targetWidth) <= widthTolerance
+            && abs(actual.height - targetHeight) <= heightTolerance
+            && actual.width >= usable.width * 0.12
+    }
+}
+
 // MARK: - System sleep / wake layout recovery
 
 extension WindowManager {
@@ -250,6 +286,16 @@ extension WindowManager {
         lastVisibilitySignature = nil
         lastSnapSignature.removeAll()
         forceTileExpandUntil.removeAll()
+    }
+
+    /// Accessibility can drop several windows without delivering a macOS wake event.
+    /// A previous successful recovery sets attempts to the maximum, so that event
+    /// otherwise leaves the stripped in-memory columns unrecoverable until relaunch.
+    func noteAXMassDropForRecovery() {
+        guard !isBootstrapping, !isResumeRecovering else { return }
+        noteSystemWakeForResumeRecovery()
+        scheduleStaggeredResumeRecovery()
+        logMove("resume recovery armed after AX mass-drop")
     }
 
     func cancelPendingResumeRecovery() {
@@ -518,21 +564,36 @@ extension WindowManager {
                   let ws = workspaces.workspaces[wsID]
             else { continue }
             let usable = engine.usableArea(monitor: mon.layoutFrame)
+            let assignments = engine.computeFrames(
+                workspace: ws,
+                windows: windowsByID,
+                monitor: mon.layoutFrame,
+                active: true,
+                stackExcluded: stackExcludedFromLayout(),
+                layoutExcluded: layoutExcludedWindowIDs(for: wsID)
+            )
+            let expectedByID = Dictionary(
+                assignments.map { ($0.windowID, $0.frame) },
+                uniquingKeysWith: { _, last in last }
+            )
             for col in ws.columns {
                 for id in col.windows {
-                    guard windowsByID[id]?.isTiled == true else { continue }
-                    let frame = ax.currentFrame(of: id) ?? lastFrames[id]
-                    guard let frame else { return false }
-                    guard OffscreenParking.isUsableOnscreenFrame(frame, monitors: monitorFrames) else {
+                    guard let win = windowsByID[id], win.isTiled else { continue }
+                    guard let expected = expectedByID[id],
+                          let actual = ax.currentFrame(of: id),
+                          ResumeFrameSelection.matches(
+                            actual: actual,
+                            expected: expected,
+                            usable: usable,
+                            monitorFrames: monitorFrames,
+                            minSize: win.minSize
+                          ) else {
                         return false
                     }
-                    // Midpoint must land on the home monitor (not the display below).
-                    if let host = monitors.monitorContaining(pointX: frame.midX, pointY: frame.midY),
+                    // Midpoint must land on the home monitor for visible tiles.
+                    if OffscreenParking.isUsableOnscreenFrame(expected, monitors: monitorFrames),
+                       let host = monitors.monitorContaining(pointX: actual.midX, pointY: actual.midY),
                        host.id != mon.id {
-                        return false
-                    }
-                    // Rough size sanity — tiny/collapsed frames mean AX hasn't accepted layout yet.
-                    if frame.width < usable.width * 0.12, ws.columns.count <= 3 {
                         return false
                     }
                 }

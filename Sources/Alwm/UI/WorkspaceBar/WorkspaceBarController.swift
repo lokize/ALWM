@@ -98,7 +98,11 @@ public final class WorkspaceBarController {
             let overlay = settings.position == .overlayMenuBar
             let activeID = activeByMonitor[mon.id]
             let monIdx = monitors.firstIndex(where: { $0.id == mon.id }) ?? 0
-            let localDefs = WorkspaceStore.definitions(definitions, visibleOnMonitorIndex: monIdx)
+            let localDefs = WorkspaceStore.definitions(
+                definitions,
+                visibleOnMonitorIndex: monIdx,
+                connectedMonitorCount: monitors.count
+            )
 
             if overlay {
                 renderOverlay(

@@ -11,9 +11,10 @@ enum InitialWorkspaceSelection {
         sticky: String?,
         savedLayout: String?,
         bundle: String?,
+        active: String? = nil,
         existing: Set<String>
     ) -> String? {
-        [rule, sticky, savedLayout, bundle]
+        [rule, sticky, savedLayout, bundle, active]
             .compactMap { $0 }
             .first(where: existing.contains)
     }
@@ -29,6 +30,9 @@ extension WindowManager {
         let savedLayout = diskLayoutClaimsWindow(win.id, allowFuzzy: true)
             ? savedHome(for: win, id: win.id)
             : nil
+        let idx = workspaces.monitorIndex(of: monitor.id, in: monitors.monitors) ?? 0
+        let pool = workspaces.definitionsVisible(onMonitorIndex: idx).map(\.id)
+        let active = workspaces.activeWorkspaceByMonitor[monitor.id]
         // The app-level home is a fallback for genuinely new/reappearing windows whose AX
         // token was unavailable during startup. Existing window/rule homes always take priority.
         if let selected = InitialWorkspaceSelection.resolve(
@@ -36,15 +40,10 @@ extension WindowManager {
             sticky: sticky,
             savedLayout: savedLayout,
             bundle: runtimeState.bundleAssignment(for: win.bundleID),
+            active: active.flatMap { pool.contains($0) ? $0 : nil },
             existing: Set(workspaces.workspaces.keys)
         ) {
             return selected
-        }
-        let idx = workspaces.monitorIndex(of: monitor.id, in: monitors.monitors) ?? 0
-        let pool = workspaces.definitionsVisible(onMonitorIndex: idx).map(\.id)
-        if let active = workspaces.activeWorkspaceByMonitor[monitor.id],
-           pool.contains(active) {
-            return active
         }
         return pool.first(where: { workspaces.workspaces[$0] != nil }) ?? firstWorkspaceID()
     }

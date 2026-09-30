@@ -425,10 +425,8 @@ extension WindowManager {
                 continue
             }
 
-            let active = workspaces.activeWorkspaceByMonitor[monitor.id]
-                ?? resolveTargetWorkspace(for: win, on: monitor)
-            if let active {
-                assignWindow(id, to: active, on: monitor)
+            if let home = resolveTargetWorkspace(for: win, on: monitor) {
+                assignWindow(id, to: home, on: monitor)
             }
         }
 
@@ -444,9 +442,7 @@ extension WindowManager {
                 let monitor = monitors.monitorContaining(pointX: win.frame.midX, pointY: win.frame.midY)
                     ?? monitors.monitors.first
                 guard let monitor else { continue }
-                let home = windowWorkspace[id]
-                    ?? runtimeState.assignment(for: id)
-                    ?? workspaces.activeWorkspaceByMonitor[monitor.id]
+                let home = resolveTargetWorkspace(for: win, on: monitor)
                 guard let home, workspaces.workspaces[home] != nil else { continue }
                 assignWindow(id, to: home, on: monitor)
             }
@@ -546,6 +542,13 @@ extension WindowManager {
             runStructuralHealIfNeeded()
         }
 
+        // An AX mass-drop can happen without a macOS wake notification. Rearm recovery
+        // before its exhausted-attempt guard and before stripped columns are rebalanced.
+        let massDisappear = forgotten.count >= 2 || (columnsStripped && strippedLayouts.count >= 2)
+        if massDisappear {
+            noteAXMassDropForRecovery()
+        }
+
         if !isBootstrapping,
            layoutRecoveryAttempts < maxLayoutRecoveryAttempts,
            needsLayoutRecovery(force: false) {
@@ -556,7 +559,6 @@ extension WindowManager {
             scheduleRebalanceWorkspace(wsID, force: columnsStripped)
         }
         // Mass AX drop (sleep) or frozen layout: never persist shrunk columns over a good snapshot.
-        let massDisappear = forgotten.count >= 2 || (columnsStripped && strippedLayouts.count >= 2)
         if !isLayoutMutationFrozen, !massDisappear,
            columnsStripped || !strippedLayouts.isEmpty || !forgotten.isEmpty {
             persistRuntimeState(forceWorkspaceLayouts: strippedLayouts)

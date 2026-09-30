@@ -54,6 +54,8 @@ extension AXTracker {
 
 
     func handle(notification: String, element: AXUIElement) {
+        let structural = notification == kAXWindowCreatedNotification as String
+            || notification == kAXWindowDeminiaturizedNotification as String
         // Self-caused layout noise — ignore until settle (except destroy: red-X must not wait).
         if isMutating {
             if notification == kAXFocusedWindowChangedNotification as String,
@@ -64,6 +66,11 @@ extension AXTracker {
                let id = windowID(for: element) {
                 delegate?.axTrackerWindowDidClose(id)
                 scheduleScanAll(delay: 0.12)
+            }
+            // A new window can arrive during a layout write. Defer discovery until
+            // suppression ends instead of losing its only creation notification.
+            if structural {
+                scheduleScanAll(delay: 0.28)
             }
             return
         }
@@ -105,8 +112,6 @@ extension AXTracker {
         }
 
         // Create/deminiaturize — full rescan.
-        let structural = notification == kAXWindowCreatedNotification as String
-            || notification == kAXWindowDeminiaturizedNotification as String
         guard structural else { return }
 
         scheduleScanAll(delay: 0.28)
@@ -116,7 +121,15 @@ extension AXTracker {
     func scheduleScanAll(delay: TimeInterval) {
         scanWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            guard let self, !self.isMutating else { return }
+            guard let self else { return }
+            if self.isMutating {
+                // Layout suppression commonly lasts 0.35s while creation scans run
+                // after 0.28s. Retry after the deadline, including nested mutations.
+                let retryDelay = max(0.05, self.suppressUntil.timeIntervalSinceNow + 0.01)
+                self.scheduleScanAll(delay: retryDelay)
+                return
+            }
+            self.scanWorkItem = nil
             self.scanAll()
         }
         scanWorkItem = work
