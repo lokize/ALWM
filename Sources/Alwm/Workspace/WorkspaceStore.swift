@@ -88,6 +88,8 @@ public final class WorkspaceStore: @unchecked Sendable {
     public private(set) var workspaces: [String: WorkspaceState] = [:]
     public private(set) var definitions: [WorkspaceDefinition] = []
     private var connectedMonitorCount = 0
+    /// Logical slots stay attached to display IDs when NSScreen reorders its array.
+    private var logicalMonitorIndexByID: [CGDirectDisplayID: Int] = [:]
 
     public init() {}
 
@@ -113,10 +115,15 @@ public final class WorkspaceStore: @unchecked Sendable {
     public func configure(
         definitions: [WorkspaceDefinition],
         monitors: [MonitorInfo],
-        savedWorkspaceByMonitor: [CGDirectDisplayID: String] = [:]
+        savedWorkspaceByMonitor: [CGDirectDisplayID: String] = [:],
+        savedMonitorIndexByID: [CGDirectDisplayID: Int] = [:]
     ) {
         self.definitions = definitions
         connectedMonitorCount = monitors.count
+        for (id, index) in savedMonitorIndexByID where logicalMonitorIndexByID[id] == nil {
+            logicalMonitorIndexByID[id] = index
+        }
+        assignLogicalMonitorIndices(for: monitors)
         var next: [String: WorkspaceState] = [:]
         for def in definitions {
             if let existing = workspaces[def.id] {
@@ -142,7 +149,7 @@ public final class WorkspaceStore: @unchecked Sendable {
 
         // Each monitor keeps (or picks) an active workspace from its own pool only.
         for mon in monitors {
-            let idx = monitors.firstIndex(where: { $0.id == mon.id }) ?? 0
+            let idx = monitorIndex(of: mon.id, in: monitors) ?? 0
             let pool = definitionsVisible(onMonitorIndex: idx).map(\.id)
             let remembered = detachedWorkspaceByMonitor.removeValue(forKey: mon.id)
             if let current = activeWorkspaceByMonitor[mon.id],
@@ -170,9 +177,8 @@ public final class WorkspaceStore: @unchecked Sendable {
         guard let def = definitions.first(where: { $0.id == workspaceID }) else { return nil }
         // In clamshell mode every workspace is available on the sole display.
         if monitors.count == 1 { return monitors[0] }
-        guard let idx = def.monitorIndex,
-              monitors.indices.contains(idx) else { return nil }
-        return monitors[idx]
+        guard let idx = def.monitorIndex else { return nil }
+        return monitors.first { monitorIndex(of: $0.id, in: monitors) == idx }
     }
 
     /// Workspaces that belong on this monitor index.
@@ -206,7 +212,35 @@ public final class WorkspaceStore: @unchecked Sendable {
 
     /// Index of `monitor` in `monitors`, or nil if missing.
     public func monitorIndex(of monitorID: CGDirectDisplayID, in monitors: [MonitorInfo]) -> Int? {
-        monitors.firstIndex(where: { $0.id == monitorID })
+        guard monitors.contains(where: { $0.id == monitorID }) else { return nil }
+        // In clamshell mode the sole display is the only logical slot, even if it
+        // was previously the secondary display while another monitor was connected.
+        if monitors.count == 1 { return 0 }
+        return logicalMonitorIndexByID[monitorID]
+            ?? monitors.firstIndex(where: { $0.id == monitorID })
+    }
+
+    /// Stable logical slots used by switching, assignment, and the workspace bar.
+    public func logicalMonitorIndices(for monitors: [MonitorInfo]) -> [CGDirectDisplayID: Int] {
+        Dictionary(uniqueKeysWithValues: monitors.compactMap { monitor in
+            monitorIndex(of: monitor.id, in: monitors).map { (monitor.id, $0) }
+        })
+    }
+
+    private func assignLogicalMonitorIndices(for monitors: [MonitorInfo]) {
+        var used = Set(logicalMonitorIndexByID.values)
+        for (currentIndex, monitor) in monitors.enumerated() {
+            if logicalMonitorIndexByID[monitor.id] != nil { continue }
+            let slot: Int
+            if !used.contains(currentIndex) {
+                slot = currentIndex
+            } else {
+                slot = (0...max(currentIndex, monitors.count)).first(where: { !used.contains($0) })
+                    ?? currentIndex
+            }
+            logicalMonitorIndexByID[monitor.id] = slot
+            used.insert(slot)
+        }
     }
 
     /// Switch the active workspace on one monitor.

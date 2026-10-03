@@ -261,6 +261,7 @@ public final class ConfigStore: @unchecked Sendable {
         if let v = table.quakeBlur { s.quake.blur = v }
         if let v = table.quakeBlurIntensity { s.quake.blurIntensity = min(1, max(0, v)) }
         if let v = table.quakeOpacity { s.quake.opacity = min(1, max(0.2, v)) }
+        if let v = table.quakeDismissOnClickOutside { s.quake.dismissOnClickOutside = v }
 
         if let v = table.notepadEnabled { s.notepad.enabled = v }
         if let v = table.notepadSizeRatio { s.notepad.sizeRatio = v }
@@ -272,6 +273,7 @@ public final class ConfigStore: @unchecked Sendable {
         if let v = table.notepadBlurIntensity { s.notepad.blurIntensity = min(1, max(0, v)) }
         if let v = table.notepadOpacity { s.notepad.opacity = min(1, max(0.2, v)) }
         if let v = table.notepadDefaultCategoryID { s.notepad.defaultCategoryID = v }
+        if let v = table.notepadDismissOnClickOutside { s.notepad.dismissOnClickOutside = v }
 
         if let v = table.gesturesEnabled { s.gestures.enabled = v }
         if let v = table.scrollSnap { s.gestures.scrollSnap = v }
@@ -457,6 +459,7 @@ public final class ConfigStore: @unchecked Sendable {
         var quakeBlur: Bool?
         var quakeBlurIntensity: Double?
         var quakeOpacity: Double?
+        var quakeDismissOnClickOutside: Bool?
         var notepadEnabled: Bool?
         var notepadSizeRatio: Double?
         var notepadLengthRatio: Double?
@@ -467,6 +470,7 @@ public final class ConfigStore: @unchecked Sendable {
         var notepadBlurIntensity: Double?
         var notepadOpacity: Double?
         var notepadDefaultCategoryID: String?
+        var notepadDismissOnClickOutside: Bool?
         var gesturesEnabled: Bool?
         var scrollSnap: Bool?
         var swipeScrollFactor: Double?
@@ -561,6 +565,7 @@ public final class ConfigStore: @unchecked Sendable {
     quakeBlur = false
     quakeBlurIntensity = 0.7
     quakeOpacity = 0.92
+    quakeDismissOnClickOutside = true
     notepadEnabled = true
     notepadSizeRatio = 0.55
     notepadLengthRatio = 1.0
@@ -570,6 +575,7 @@ public final class ConfigStore: @unchecked Sendable {
     notepadBlur = true
     notepadBlurIntensity = 0.7
     notepadOpacity = 0.96
+    notepadDismissOnClickOutside = true
     gesturesEnabled = true
     scrollSnap = true
     swipeScrollFactor = 2.2

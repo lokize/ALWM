@@ -31,6 +31,8 @@ public struct QuakeSettings: Equatable, Sendable {
     public var blurIntensity: Double
     /// Terminal window opacity (0.2…1). Blur is only visible when this is below 1.
     public var opacity: Double
+    /// Automatically hide the Quake terminal when the user clicks elsewhere.
+    public var dismissOnClickOutside: Bool
 
     /// Legacy alias used by older config keys.
     public var heightRatio: Double {
@@ -53,7 +55,8 @@ public struct QuakeSettings: Equatable, Sendable {
         edge: .top,
         blur: false,
         blurIntensity: 0.7,
-        opacity: 0.92
+        opacity: 0.92,
+        dismissOnClickOutside: true
     )
 
     public init(
@@ -66,7 +69,8 @@ public struct QuakeSettings: Equatable, Sendable {
         edge: QuakeEdge,
         blur: Bool,
         blurIntensity: Double = 0.7,
-        opacity: Double = 0.92
+        opacity: Double = 0.92,
+        dismissOnClickOutside: Bool = true
     ) {
         self.enabled = enabled
         self.bundleID = bundleID
@@ -78,6 +82,7 @@ public struct QuakeSettings: Equatable, Sendable {
         self.blur = blur
         self.blurIntensity = min(1, max(0, blurIntensity))
         self.opacity = min(1, max(0.2, opacity))
+        self.dismissOnClickOutside = dismissOnClickOutside
     }
 
     /// Opacity actually applied to the terminal window.

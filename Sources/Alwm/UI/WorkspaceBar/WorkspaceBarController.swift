@@ -48,6 +48,7 @@ public final class WorkspaceBarController {
 
     public func render(
         monitors: [MonitorInfo],
+        monitorIndexByID: [CGDirectDisplayID: Int] = [:],
         definitions: [WorkspaceDefinition],
         activeByMonitor: [CGDirectDisplayID: String],
         workspaces: [String: WorkspaceState],
@@ -61,6 +62,7 @@ public final class WorkspaceBarController {
     ) {
         let signature = renderSignature(
             monitors: monitors,
+            monitorIndexByID: monitorIndexByID,
             definitions: definitions,
             activeByMonitor: activeByMonitor,
             workspaces: workspaces,
@@ -97,7 +99,9 @@ public final class WorkspaceBarController {
             let systemMenuHeight = max(22, frame.maxY - visible.maxY)
             let overlay = settings.position == .overlayMenuBar
             let activeID = activeByMonitor[mon.id]
-            let monIdx = monitors.firstIndex(where: { $0.id == mon.id }) ?? 0
+            let monIdx = monitorIndexByID[mon.id]
+                ?? monitors.firstIndex(where: { $0.id == mon.id })
+                ?? 0
             let localDefs = WorkspaceStore.definitions(
                 definitions,
                 visibleOnMonitorIndex: monIdx,

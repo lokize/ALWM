@@ -31,10 +31,17 @@ struct AXWindowValueTests {
         #expect(frame?.height == 420)
     }
 
-    @Test("menu-level AX windows are excluded from managed app windows")
-    func excludesMenuLayerWindows() {
+    @Test("non-normal popup layers are excluded from managed app windows")
+    func excludesPopupLayerWindows() {
         #expect(AXWindow.shouldIgnoreWindowLayer(101, menuBarLevel: 24))
         #expect(!AXWindow.shouldIgnoreWindowLayer(0, menuBarLevel: 24))
-        #expect(!AXWindow.shouldIgnoreWindowLayer(3, menuBarLevel: 24))
+        #expect(AXWindow.shouldIgnoreWindowLayer(3, menuBarLevel: 24))
+    }
+
+    @Test("modal and preferences windows stay out of tile columns regardless of size")
+    func keepsDialogClassificationIndependentOfGeometry() {
+        #expect(AXWindow.prefersFloatingWindow(isModal: true, subrole: "AXStandardWindow"))
+        #expect(AXWindow.prefersFloatingWindow(isModal: false, subrole: "AXDialog"))
+        #expect(!AXWindow.prefersFloatingWindow(isModal: false, subrole: "AXStandardWindow"))
     }
 }

@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "version": "1.3.6",
+      "items": [
+        "Preserve window order, sizes, and scroll position when returning to a workspace",
+        "Restore saved window layouts after sleep and accessibility recovery",
+        "Tile normal app windows and keep dialogs and popups out of workspace columns",
+        "Pause mouse focus changes while app popups are open",
+        "Let users keep Quake and Notepad open after clicking outside",
+        "Keep workspace monitor assignments stable when display order changes"
+      ]
+    },
+    {
+      "version": "1.3.5",
+      "items": [
+        "Keep workspace assignments when monitor order changes after wake",
+        "Protect multiple tiled windows from transient accessibility drops"
+      ]
+    },
+    {
       "version": "1.3.4",
       "items": [
         "Restore window positions and sizes after sleep or accessibility interruptions",
@@ -290,19 +308,6 @@
       "items": [
         "Settings UI updates",
         "UI updates"
-      ]
-    },
-    {
-      "version": "0.9.6",
-      "items": [
-        "Update DiskSampler",
-        "Build and release scripts"
-      ]
-    },
-    {
-      "version": "0.9.5",
-      "items": [
-        "Window manager improvements"
       ]
     }
   ]

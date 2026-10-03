@@ -608,7 +608,7 @@ extension WindowManager {
     func refreshWorkspaceLayoutFromSnapshot(for wsID: String) {
         guard let snap = runtimeState.snapshot.workspaceLayouts[wsID],
               !snap.columns.isEmpty,
-              workspaces.workspaces[wsID] != nil
+              let liveBefore = workspaces.workspaces[wsID]
         else { return }
 
         var used = Set<WindowID>()
@@ -659,6 +659,23 @@ extension WindowManager {
             used.insert(id)
         }
 
+        // Routine switches must not let an older persisted snapshot undo a healthy
+        // in-memory layout. This matters while wake recovery intentionally pauses disk
+        // writes, and also preserves the user's latest order and column sizes.
+        let liveIDs = Set(liveBefore.columns.flatMap(\.windows))
+        let restoredIDs = Set(columns.flatMap(\.windows))
+        if liveIDs.isSuperset(of: restoredIDs) {
+            let newTiles = leftovers
+                .filter { !liveIDs.contains($0) }
+                .sorted { $0.token < $1.token }
+            guard !newTiles.isEmpty else { return }
+
+            var ws = liveBefore
+            ws.columns.append(contentsOf: newTiles.map { Column(windows: [$0], width: 0) })
+            workspaces.setWorkspace(ws)
+            return
+        }
+
         guard !columns.isEmpty else { return }
 
         if !claimed.isEmpty {
@@ -668,7 +685,6 @@ extension WindowManager {
         }
 
         guard var ws = workspaces.workspaces[wsID] else { return }
-        let liveBefore = ws
         mergeLiveColumnGeometry(from: liveBefore, into: &columns)
         ws.columns = columns
         ws.focusedColumn = min(max(0, snap.focusedColumn), max(0, columns.count - 1))
@@ -678,7 +694,7 @@ extension WindowManager {
                 return (k, value)
             }
         )
-        ws.viewOffset = liveBefore.viewOffset
+        ws.viewOffset = liveBefore.columns.isEmpty ? snap.viewOffset : liveBefore.viewOffset
         let liveTokenSets = liveBefore.columns.map { Set($0.windows.map(\.token)) }
         let newTokenSets = columns.map { Set($0.windows.map(\.token)) }
         if liveTokenSets == newTokenSets, !liveBefore.leafWeights.isEmpty {

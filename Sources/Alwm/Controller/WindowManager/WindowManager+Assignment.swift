@@ -432,6 +432,9 @@ extension WindowManager {
             if isQuakeSessionWindow(win) || quake.windowID == id || isQuakeOwned(id) || win.isScratchpad {
                 continue
             }
+            // AX dialogs and utility windows are intentionally outside the tile layout,
+            // regardless of their size (for example, an app's full-size preferences window).
+            if ax.currentAX[id]?.prefersFloating == true { continue }
             if quake.pendingAdoptBundleID != nil, floatingOverrides.contains(id) { continue }
             if AppRules.forcesFloat(rules: rules, window: win) { continue }
             // Probation for Safari/Electron AX siblings — finishSameBundleSiblingSettle owns promotion.

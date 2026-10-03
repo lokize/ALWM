@@ -736,6 +736,7 @@ extension WorkspaceBarController {
 
     func renderSignature(
         monitors: [MonitorInfo],
+        monitorIndexByID: [CGDirectDisplayID: Int] = [:],
         definitions: [WorkspaceDefinition],
         activeByMonitor: [CGDirectDisplayID: String],
         workspaces: [String: WorkspaceState],
@@ -772,6 +773,9 @@ extension WorkspaceBarController {
                     + "\(monitor.visibleFrame.x),\(monitor.visibleFrame.y),\(monitor.visibleFrame.width),\(monitor.visibleFrame.height)"
             )
         }
+        for (id, index) in monitorIndexByID.sorted(by: { $0.key < $1.key }) {
+            parts.append("mi\(id)=\(index)")
+        }
         // AppKit or the system may reposition a status-level window across Spaces or
         // display changes. A later chrome refresh must detect that drift and restore it.
         for (id, window) in windows.sorted(by: { $0.key < $1.key }) {
@@ -786,7 +790,9 @@ extension WorkspaceBarController {
                     parts.append("sx\(mon.id)=\(sx.map { Int(($0 / 16).rounded(.down)) } ?? -1)")
                 }
             }
-            let monIdx = monitors.firstIndex(where: { $0.id == mon.id }) ?? 0
+            let monIdx = monitorIndexByID[mon.id]
+                ?? monitors.firstIndex(where: { $0.id == mon.id })
+                ?? 0
             let localDefs = WorkspaceStore.definitions(
                 definitions,
                 visibleOnMonitorIndex: monIdx,

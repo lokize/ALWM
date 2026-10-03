@@ -159,6 +159,8 @@ public struct NotepadSettings: Equatable, Sendable {
     public var blurIntensity: Double
     public var opacity: Double
     public var defaultCategoryID: String?
+    /// Automatically close the notepad when the user clicks elsewhere.
+    public var dismissOnClickOutside: Bool
 
     public static let `default` = NotepadSettings(
         enabled: true,
@@ -170,7 +172,8 @@ public struct NotepadSettings: Equatable, Sendable {
         blur: true,
         blurIntensity: 0.7,
         opacity: 0.96,
-        defaultCategoryID: nil
+        defaultCategoryID: nil,
+        dismissOnClickOutside: true
     )
 
     public init(
@@ -183,7 +186,8 @@ public struct NotepadSettings: Equatable, Sendable {
         blur: Bool,
         blurIntensity: Double,
         opacity: Double,
-        defaultCategoryID: String?
+        defaultCategoryID: String?,
+        dismissOnClickOutside: Bool = true
     ) {
         self.enabled = enabled
         self.sizeRatio = sizeRatio
@@ -195,6 +199,7 @@ public struct NotepadSettings: Equatable, Sendable {
         self.blurIntensity = min(1, max(0, blurIntensity))
         self.opacity = min(1, max(0.2, opacity))
         self.defaultCategoryID = defaultCategoryID
+        self.dismissOnClickOutside = dismissOnClickOutside
     }
 
     public var effectiveOpacity: Double {

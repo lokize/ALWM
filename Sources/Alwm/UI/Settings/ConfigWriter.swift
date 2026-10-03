@@ -14,7 +14,11 @@ enum ConfigWriter {
     }
 
     static func writeSettings(_ settings: LayoutSettings) {
-        let text = """
+        try? settingsTOML(settings).write(to: ConfigPaths.settings, atomically: true, encoding: .utf8)
+    }
+
+    static func settingsTOML(_ settings: LayoutSettings) -> String {
+        """
         gap = \(settings.gap)
         outerGap = \(settings.outerGap)
         defaultColumnWidthRatio = \(settings.defaultColumnWidthRatio)
@@ -56,6 +60,7 @@ enum ConfigWriter {
         quakeBlur = \(settings.quake.blur)
         quakeBlurIntensity = \(settings.quake.blurIntensity)
         quakeOpacity = \(settings.quake.opacity)
+        quakeDismissOnClickOutside = \(settings.quake.dismissOnClickOutside)
         notepadEnabled = \(settings.notepad.enabled)
         notepadSizeRatio = \(settings.notepad.sizeRatio)
         notepadLengthRatio = \(settings.notepad.lengthRatio)
@@ -65,12 +70,12 @@ enum ConfigWriter {
         notepadBlur = \(settings.notepad.blur)
         notepadBlurIntensity = \(settings.notepad.blurIntensity)
         notepadOpacity = \(settings.notepad.opacity)
+        notepadDismissOnClickOutside = \(settings.notepad.dismissOnClickOutside)
         gesturesEnabled = \(settings.gestures.enabled)
         scrollSnap = \(settings.gestures.scrollSnap)
         swipeScrollFactor = \(settings.gestures.swipeScrollFactor)
         invertScroll = \(settings.gestures.invertScroll)
         """
-        try? text.write(to: ConfigPaths.settings, atomically: true, encoding: .utf8)
     }
 
     static func writeHotkeys(_ hotkeys: [HotkeyBinding]) {
@@ -164,4 +169,3 @@ enum ConfigWriter {
         }
     }
 }
-

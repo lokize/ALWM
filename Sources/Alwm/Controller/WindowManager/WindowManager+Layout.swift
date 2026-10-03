@@ -5,6 +5,18 @@ import SwiftUI
 import AlwmIPC
 import AlwmPluginAPI
 
+enum AXDropClassification {
+    static func isMassDisappear(
+        removedTiledWindows: Int,
+        forgottenWindows: Int,
+        strippedWorkspaceCount: Int
+    ) -> Bool {
+        removedTiledWindows >= 2
+            || forgottenWindows >= 2
+            || strippedWorkspaceCount >= 2
+    }
+}
+
 // MARK: - Layout — relayout, frames, visibility, geometry
 
 extension WindowManager {
@@ -143,18 +155,12 @@ extension WindowManager {
             } else if let until = forcedTiledUntil[w.id], Date() < until {
                 applied.isFloating = false
             } else if !alreadyKnown.contains(w.id) {
-                // New windows: Electron often mis-labels *main* windows as dialogs — promote
-                // to tile when the frame looks real. AX-standard windows (Finder) always tile
-                // even when opening "small" on ultrawides; only AX dialogs/sheets that stay
-                // small (WhatsApp stickers) remain floating.
-                let usable = usableAreaNear(applied.frame)
-                if looksLikeMainTiledWindow(applied.frame, usable: usable) {
-                    applied.isFloating = false
-                } else if w.isFloating {
-                    applied.isFloating = true
+                // New normal app windows always join the workspace layout, including
+                // small windows. Honor AX's dialog/panel classification instead of
+                // using size as a proxy (large preferences windows are still dialogs).
+                applied.isFloating = w.isFloating
+                if w.isFloating {
                     floatingOverrides.insert(w.id)
-                } else {
-                    applied.isFloating = false
                 }
             } else if workspaces.workspaceID(containing: w.id) != nil
                 || windowWorkspace[w.id] != nil
@@ -170,6 +176,12 @@ extension WindowManager {
         let next = Set(mapped.keys)
         let added = next.subtracting(previous)
         let removed = previous.subtracting(next)
+        let removedTiledWindows = removed.reduce(into: 0) { count, id in
+            if windowsByID[id]?.isTiled == true,
+               workspaces.workspaceID(containing: id) != nil {
+                count += 1
+            }
+        }
 
         // Soft-delete: AX often drops windows briefly during park/minimize.
         // Only forget sticky after several consecutive missing scans.
@@ -544,7 +556,11 @@ extension WindowManager {
 
         // An AX mass-drop can happen without a macOS wake notification. Rearm recovery
         // before its exhausted-attempt guard and before stripped columns are rebalanced.
-        let massDisappear = forgotten.count >= 2 || (columnsStripped && strippedLayouts.count >= 2)
+        let massDisappear = AXDropClassification.isMassDisappear(
+            removedTiledWindows: removedTiledWindows,
+            forgottenWindows: forgotten.count,
+            strippedWorkspaceCount: strippedLayouts.count
+        )
         if massDisappear {
             noteAXMassDropForRecovery()
         }

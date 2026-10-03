@@ -199,11 +199,18 @@ public final class AXWindow: @unchecked Sendable {
     /// workspace layout as if they were independent app windows.
     static func shouldIgnoreWindowLayer(_ layer: Int?, menuBarLevel: Int) -> Bool {
         guard let layer else { return false }
-        return layer >= menuBarLevel
+        // Workspace windows use the normal layer (0). App popovers and menus can
+        // live below the menu-bar level, so checking only `>= menuBarLevel` admits
+        // those transient windows into tiling.
+        return layer != 0 || layer >= menuBarLevel
     }
 
     /// Open/save panels, sheets, and utility floats should not enter tiling columns.
     public var prefersFloating: Bool {
+        Self.prefersFloatingWindow(isModal: isModal, subrole: subrole)
+    }
+
+    static func prefersFloatingWindow(isModal: Bool, subrole: String) -> Bool {
         if isModal { return true }
         switch subrole {
         case String(kAXDialogSubrole), "AXDialog",

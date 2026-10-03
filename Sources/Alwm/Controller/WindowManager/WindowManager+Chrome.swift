@@ -102,6 +102,7 @@ extension WindowManager {
             }
             bar.render(
                 monitors: monitors.monitors,
+                monitorIndexByID: workspaces.logicalMonitorIndices(for: monitors.monitors),
                 definitions: configStore.config.workspaces,
                 activeByMonitor: workspaces.activeWorkspaceByMonitor,
                 workspaces: workspaces.workspaces,

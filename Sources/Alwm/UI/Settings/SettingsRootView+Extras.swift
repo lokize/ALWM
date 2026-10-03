@@ -12,6 +12,11 @@ extension SettingsRootView {
                 Toggle("Enabled", isOn: $config.settings.quake.enabled)
                     .toggleStyle(.switch)
                 TextField("Bundle ID (empty = Ghostty → Terminal)", text: $config.settings.quake.bundleID)
+                Toggle(
+                    L10n.t("quake.dismiss.outside"),
+                    isOn: $config.settings.quake.dismissOnClickOutside
+                )
+                .toggleStyle(.switch)
             }
             Section("Placement") {
                 Picker("Edge", selection: $config.settings.quake.edge) {
@@ -123,6 +128,11 @@ extension SettingsRootView {
             Section {
                 Toggle(L10n.t("notepad.enabled"), isOn: $config.settings.notepad.enabled)
                     .toggleStyle(.switch)
+                Toggle(
+                    L10n.t("notepad.dismiss.outside"),
+                    isOn: $config.settings.notepad.dismissOnClickOutside
+                )
+                .toggleStyle(.switch)
                 Button(L10n.t("notepad.open_folder")) {
                     CaptureIO.revealFolder(NotesPaths.root)
                 }

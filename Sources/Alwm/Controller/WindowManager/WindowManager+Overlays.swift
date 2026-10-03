@@ -195,6 +195,7 @@ extension WindowManager {
 
     func dismissNotepadIfClickOutside() {
         guard configStore.config.settings.notepad.enabled else { return }
+        guard configStore.config.settings.notepad.dismissOnClickOutside else { return }
         guard notepad.isVisible else { return }
         guard Date() >= suppressNotepadDismissUntil else { return }
         guard let monitor = monitorForAction() ?? primaryMonitor() else { return }
@@ -270,6 +271,7 @@ extension WindowManager {
 
     func dismissQuakeIfClickOutside() {
         guard configStore.config.settings.quake.enabled else { return }
+        guard configStore.config.settings.quake.dismissOnClickOutside else { return }
         guard quake.isVisible, let qid = quake.windowID else { return }
         guard Date() >= suppressQuakeDismissUntil else { return }
 

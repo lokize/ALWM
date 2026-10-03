@@ -59,8 +59,13 @@ extension WindowManager {
         workspaces.configure(
             definitions: configStore.config.workspaces,
             monitors: monitors.monitors,
-            savedWorkspaceByMonitor: saved
+            savedWorkspaceByMonitor: saved,
+            savedMonitorIndexByID: runtimeState.monitorIndexAssignments()
         )
+        for (id, index) in workspaces.logicalMonitorIndices(for: monitors.monitors) {
+            runtimeState.setMonitorIndex(index, for: id)
+        }
+        runtimeState.save()
         primaryMonitorID = monitors.monitors.first?.id ?? 0
     }
 
