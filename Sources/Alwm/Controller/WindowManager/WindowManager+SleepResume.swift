@@ -35,8 +35,10 @@ enum ResumeFrameSelection {
         expected: Rect,
         usable: Rect,
         monitorFrames: [Rect],
-        minSize: Size
+        minSize: Size,
+        isMinimized: Bool = false
     ) -> Bool {
+        guard !isMinimized else { return false }
         // Scrolled columns and maximized siblings are intentionally parked. Their
         // exact off-screen origin can change when displays reconnect after sleep.
         if !OffscreenParking.intersectsAnyMonitor(expected, monitors: monitorFrames) {
@@ -135,7 +137,6 @@ extension WindowManager {
         restoreWorkspaceLayoutsFromDisk()
         _ = ejectWindowsListedOutsideStickyHome()
         retileAccidentalFloats(forceClearOverrides: true)
-        reapplyAppRulesToAllWindows()
         enforceQuakeFloat()
         isBootstrapping = false
         postLaunchLayoutGraceUntil = Date().addingTimeInterval(6)
@@ -414,7 +415,6 @@ extension WindowManager {
         // Soft heal only — full heal ejects soft-missing AX windows and wrecks restore.
         _ = ejectWindowsListedOutsideStickyHome()
         retileAccidentalFloats(forceClearOverrides: false)
-        reapplyAppRulesToAllWindows()
         enforceQuakeFloat()
         isBootstrapping = false
         postLaunchLayoutGraceUntil = Date().addingTimeInterval(6)
@@ -586,7 +586,8 @@ extension WindowManager {
                             expected: expected,
                             usable: usable,
                             monitorFrames: monitorFrames,
-                            minSize: win.minSize
+                            minSize: win.minSize,
+                            isMinimized: ax.isMinimized(id)
                           ) else {
                         return false
                     }

@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.3.7",
+      "items": [
+        "Restore saved window workspaces and sizes after sleep or relaunch"
+      ]
+    },
+    {
       "version": "1.3.6",
       "items": [
         "Preserve window order, sizes, and scroll position when returning to a workspace",
@@ -298,13 +304,6 @@
     },
     {
       "version": "0.9.8",
-      "items": [
-        "Settings UI updates",
-        "UI updates"
-      ]
-    },
-    {
-      "version": "0.9.7",
       "items": [
         "Settings UI updates",
         "UI updates"

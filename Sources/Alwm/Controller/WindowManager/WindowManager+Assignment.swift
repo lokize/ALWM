@@ -14,7 +14,9 @@ enum InitialWorkspaceSelection {
         active: String? = nil,
         existing: Set<String>
     ) -> String? {
-        [rule, sticky, savedLayout, bundle, active]
+        // Rules seed placement for windows without a recorded home. A user-moved
+        // window must keep its sticky or layout-snapshot home across wake/recovery.
+        [sticky, savedLayout, rule, bundle, active]
             .compactMap { $0 }
             .first(where: existing.contains)
     }

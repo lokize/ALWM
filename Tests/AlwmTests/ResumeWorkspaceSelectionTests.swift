@@ -11,6 +11,14 @@ struct ResumeWorkspaceSelectionTests {
         let monitor = Rect(x: 0, y: 0, width: 1_200, height: 800)
 
         #expect(!ResumeFrameSelection.matches(
+            actual: expected,
+            expected: expected,
+            usable: monitor,
+            monitorFrames: [monitor],
+            minSize: Size(width: 200, height: 120),
+            isMinimized: true
+        ))
+        #expect(!ResumeFrameSelection.matches(
             actual: actual,
             expected: expected,
             usable: monitor,
@@ -67,8 +75,8 @@ struct ResumeWorkspaceSelectionTests {
         ) == "2")
         #expect(InitialWorkspaceSelection.resolve(
             rule: "3",
-            sticky: "1",
-            savedLayout: "1",
+            sticky: nil,
+            savedLayout: nil,
             bundle: "2",
             existing: existing
         ) == "3")
@@ -86,6 +94,20 @@ struct ResumeWorkspaceSelectionTests {
             bundle: "missing",
             existing: existing
         ) == nil)
+    }
+
+    @Test("resume keeps the saved home ahead of an app rule for a reappearing window")
+    func savedWindowHomeBeatsAppRuleAfterResume() {
+        let existing: Set<String> = ["1", "2", "3"]
+
+        #expect(InitialWorkspaceSelection.resolve(
+            rule: "3",
+            sticky: "1",
+            savedLayout: "1",
+            bundle: "2",
+            active: "2",
+            existing: existing
+        ) == "1")
     }
 
     @Test("a new app window uses its saved workspace even when another workspace is active")

@@ -397,11 +397,27 @@ extension WindowManager {
                 ?? monitors.monitors.first
             guard let monitor else { continue }
 
-            if let preferred = AppRules.preferredWorkspace(rules: rules, window: win),
-               workspaces.workspaces[preferred] != nil {
-                let rule = AppRules.matching(rules: rules, window: win)
+            let existingWorkspaces = Set(workspaces.workspaces.keys)
+            let stickyHome = (windowWorkspace[id] ?? runtimeState.assignment(for: id))
+                .flatMap { existingWorkspaces.contains($0) ? $0 : nil }
+            let snapshotHome = diskLayoutClaimsWindow(id, allowFuzzy: true)
+                ? savedHome(for: win, id: id).flatMap { existingWorkspaces.contains($0) ? $0 : nil }
+                : nil
+            let openingRule = stickyHome == nil && snapshotHome == nil
+                ? AppRules.preferredWorkspaceForOpening(rules: rules, window: win)
+                : nil
+            if let selectedHome = InitialWorkspaceSelection.resolve(
+                rule: openingRule,
+                sticky: stickyHome,
+                savedLayout: snapshotHome,
+                bundle: nil,
+                existing: existingWorkspaces
+            ) {
+                let rule = selectedHome == openingRule
+                    ? AppRules.matching(rules: rules, window: win)
+                    : nil
                 let targetMon = rule.flatMap { monitorForAppRule($0, window: win) } ?? monitor
-                assignWindow(id, to: preferred, on: targetMon)
+                assignWindow(id, to: selectedHome, on: targetMon)
                 continue
             }
 
