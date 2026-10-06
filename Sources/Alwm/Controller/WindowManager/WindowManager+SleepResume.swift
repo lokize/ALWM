@@ -29,6 +29,40 @@ enum ResumeWorkspaceSelection {
     }
 }
 
+enum WorkspaceWindowRecoveryPolicy {
+    static func bundleIDs(workspaceID: String, snapshot: RuntimeStateStore.Snapshot) -> Set<String> {
+        var result = Set(snapshot.bundleWorkspace.compactMap { bundleID, savedWorkspace in
+            savedWorkspace == workspaceID ? bundleID : nil
+        })
+        guard let layout = snapshot.workspaceLayouts[workspaceID] else { return result }
+        for ref in layout.columns.flatMap(\.windows) + layout.floating {
+            if let bundleID = ref.bundleID {
+                result.insert(bundleID)
+            }
+        }
+        return result
+    }
+
+    static func shouldRescan(
+        workspaceID: String,
+        snapshot: RuntimeStateStore.Snapshot,
+        liveWindows: [ManagedWindow]
+    ) -> Bool {
+        let liveTokens = Set(liveWindows.map { $0.id.token })
+        if let layout = snapshot.workspaceLayouts[workspaceID] {
+            let refs = layout.columns.flatMap(\.windows) + layout.floating
+            if refs.contains(where: { !liveTokens.contains($0.token) }) {
+                return true
+            }
+        }
+        let liveBundles = Set(liveWindows.compactMap(\.bundleID))
+        return snapshot.bundleWorkspace.contains { bundleID, savedWorkspace in
+            savedWorkspace == workspaceID && !liveBundles.contains(bundleID)
+        }
+    }
+
+}
+
 enum ResumeFrameSelection {
     static func matches(
         actual: Rect,

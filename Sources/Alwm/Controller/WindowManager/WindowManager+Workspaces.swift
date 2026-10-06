@@ -55,6 +55,7 @@ extension WindowManager {
         persistRuntimeState()
         workspaces.switchWorkspace(id: id, on: targetMonitorID, monitors: monitors.monitors, syncAllMonitors: false)
         runtimeState.setLastWorkspace(id, on: targetMonitorID)
+        recoverSavedWindowsIfMissing(workspaceID: id)
         if restoreLayout {
             // Cold start / recovery only — routine switches keep in-memory columns.
             // Restoring from disk every switch was stealing windows into WS1 via fuzzy bundle match.
@@ -120,6 +121,39 @@ extension WindowManager {
         scheduleWorkspaceSwitchSettle(workspaceID: id, generation: switchGeneration)
         applyNamedSession(for: id)
         refreshChrome()
+    }
+
+    /// A wake can temporarily make AX forget an app's existing windows. When returning
+    /// to the workspace that owns them, unhide and rescan only apps claimed by its saved
+    /// layout before deriving the live columns and revealing the workspace.
+    func recoverSavedWindowsIfMissing(workspaceID: String) {
+        let snapshot = runtimeState.snapshot
+        let live = Array(windowsByID.values)
+        let expectedBundles = WorkspaceWindowRecoveryPolicy.bundleIDs(
+            workspaceID: workspaceID,
+            snapshot: snapshot
+        )
+        let hiddenApps = NSWorkspace.shared.runningApplications.filter {
+            guard !$0.isTerminated, $0.activationPolicy == .regular,
+                  $0.isHidden, let bundleID = $0.bundleIdentifier else { return false }
+            return expectedBundles.contains(bundleID)
+        }
+        let shouldScan = WorkspaceWindowRecoveryPolicy.shouldRescan(
+            workspaceID: workspaceID,
+            snapshot: snapshot,
+            liveWindows: live
+        )
+        guard shouldScan || !hiddenApps.isEmpty else { return }
+
+        let unhidden = hiddenApps.filter { $0.unhide() }
+        ax.scanAll()
+        ingest(windows: ax.currentWindows)
+        logMove(
+            "workspace recovery rescan ws=\(workspaceID) unhidden=\(unhidden.compactMap(\.bundleIdentifier).sorted().joined(separator: ","))"
+        )
+        if !unhidden.isEmpty {
+            ax.scheduleScanAll(delay: 0.35)
+        }
     }
 
     /// After a switch: one calm follow-up if AX hasn't accepted tiles yet; optional Electron nudge only when needed.

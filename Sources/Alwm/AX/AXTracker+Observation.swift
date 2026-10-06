@@ -5,6 +5,18 @@ import Foundation
 
 // MARK: - AX tracker — observe/scan/publish
 
+enum AXScanRetentionPolicy {
+    static func retainedWindowIDs(
+        previousWindowIDs: [WindowID],
+        unavailablePIDs: Set<pid_t>,
+        runningPIDs: Set<pid_t>
+    ) -> Set<WindowID> {
+        Set(previousWindowIDs.filter {
+            unavailablePIDs.contains($0.pid) && runningPIDs.contains($0.pid)
+        })
+    }
+}
+
 extension AXTracker {
 
     func observe(pid: pid_t) {
@@ -191,9 +203,16 @@ extension AXTracker {
 
     public func scanAll() {
         let previousManaged = managed
+        let apps = NSWorkspace.shared.runningApplications.filter {
+            $0.activationPolicy == .regular && !$0.isTerminated
+        }
+        let runningPIDs = Set(apps.map(\.processIdentifier))
         lastScanTrusted = Self.isTrusted
         if !lastScanTrusted {
             NSLog("ALWM AX: Accessibility NOT trusted — window management disabled until granted")
+            lastScanAppCount = apps.count
+            lastScanAcceptedCount = managed.count
+            return
         }
 
         let cgByPid = cgWindowsByPID()
@@ -203,10 +222,7 @@ extension AXTracker {
         var rawWindows = 0
         var skippedNoNumber = 0
         var skippedFilter = 0
-
-        let apps = NSWorkspace.shared.runningApplications.filter {
-            $0.activationPolicy == .regular && !$0.isTerminated
-        }
+        var unavailablePIDs = Set<pid_t>()
         appsSeen = apps.count
 
         for app in apps {
@@ -221,9 +237,15 @@ extension AXTracker {
                 kAXWindowsAttribute as CFString,
                 &windowsValue
             )
-            guard copyStatus == .success else { continue }
+            guard copyStatus == .success else {
+                unavailablePIDs.insert(pid)
+                continue
+            }
 
-            guard let windows = windowsValue as? [AXUIElement] else { continue }
+            guard let windows = windowsValue as? [AXUIElement] else {
+                unavailablePIDs.insert(pid)
+                continue
+            }
 
             let cgWindows = cgByPid[pid] ?? []
             var usedCGWindowNumbers = Set<Int>()
@@ -280,6 +302,22 @@ extension AXTracker {
                     isFloating: ax.prefersFloating
                 )
                 observeTitle(on: winEl, pid: pid, token: id.token)
+            }
+        }
+
+        // An AX application query can fail briefly while macOS wakes from sleep or
+        // an app is unresponsive. Treat that as unknown, not proof its windows closed.
+        let retainedIDs = AXScanRetentionPolicy.retainedWindowIDs(
+            previousWindowIDs: Array(managed.keys),
+            unavailablePIDs: unavailablePIDs,
+            runningPIDs: runningPIDs
+        )
+        for id in retainedIDs {
+            if nextAX[id] == nil, let oldAX = axWindows[id] {
+                nextAX[id] = oldAX
+            }
+            if nextManaged[id] == nil, let oldManaged = managed[id] {
+                nextManaged[id] = oldManaged
             }
         }
 

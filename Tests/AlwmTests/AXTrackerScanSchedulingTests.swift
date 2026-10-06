@@ -5,6 +5,28 @@ import Testing
 
 @Suite("Accessibility structural scan scheduling")
 struct AXTrackerScanSchedulingTests {
+    @Test("a transient AX query failure preserves that running app's previous window")
+    func keepsWindowsForRunningAppsWithFailedQueries() {
+        let chatGPT = WindowID(pid: 32701, windowNumber: 29930)
+        let safari = WindowID(pid: 69155, windowNumber: 31602)
+
+        #expect(AXScanRetentionPolicy.retainedWindowIDs(
+            previousWindowIDs: [chatGPT, safari],
+            unavailablePIDs: [32701],
+            runningPIDs: [32701, 69155]
+        ) == [chatGPT])
+        #expect(AXScanRetentionPolicy.retainedWindowIDs(
+            previousWindowIDs: [chatGPT],
+            unavailablePIDs: [],
+            runningPIDs: [32701]
+        ).isEmpty)
+        #expect(AXScanRetentionPolicy.retainedWindowIDs(
+            previousWindowIDs: [chatGPT],
+            unavailablePIDs: [32701],
+            runningPIDs: []
+        ).isEmpty)
+    }
+
     @Test("window creation during layout mutation still schedules discovery")
     func createdWindowDuringMutationSchedulesScan() {
         let tracker = AXTracker()

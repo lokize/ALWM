@@ -172,4 +172,76 @@ struct ResumeWorkspaceSelectionTests {
             existing: existing
         ) == "2")
     }
+
+    @Test("workspace recovery finds saved apps missing from the live AX window set")
+    func findsMissingSavedWorkspaceWindows() {
+        let chatGPT = RuntimeStateStore.WindowRef(
+            token: "32701:29930",
+            bundleID: "com.openai.codex",
+            appName: "ChatGPT",
+            title: "ChatGPT"
+        )
+        let snapshot = RuntimeStateStore.Snapshot(
+            bundleWorkspace: ["com.openai.codex": "2"],
+            workspaceLayouts: [
+                "2": RuntimeStateStore.WorkspaceLayoutSnapshot(
+                    columns: [RuntimeStateStore.ColumnSnapshot(windows: [chatGPT])]
+                )
+            ]
+        )
+
+        #expect(WorkspaceWindowRecoveryPolicy.bundleIDs(
+            workspaceID: "2",
+            snapshot: snapshot
+        ) == ["com.openai.codex"])
+        #expect(WorkspaceWindowRecoveryPolicy.shouldRescan(
+            workspaceID: "2",
+            snapshot: snapshot,
+            liveWindows: []
+        ))
+        #expect(WorkspaceWindowRecoveryPolicy.bundleIDs(
+            workspaceID: "1",
+            snapshot: snapshot
+        ).isEmpty)
+        let liveChatGPT = ManagedWindow(
+            id: WindowID(pid: 32701, windowNumber: 29930),
+            title: "ChatGPT",
+            bundleID: "com.openai.codex",
+            appName: "ChatGPT",
+            frame: Rect(x: 0, y: 0, width: 800, height: 600)
+        )
+        #expect(!WorkspaceWindowRecoveryPolicy.shouldRescan(
+            workspaceID: "2",
+            snapshot: snapshot,
+            liveWindows: [liveChatGPT]
+        ))
+    }
+
+    @Test("workspace recovery rescans when a saved window token is missing despite another app window")
+    func findsMissingSavedWindowWhenSiblingIsLive() {
+        let saved = RuntimeStateStore.WindowRef(
+            token: "32701:29930",
+            bundleID: "com.openai.codex",
+            appName: "ChatGPT",
+            title: "ChatGPT"
+        )
+        let snapshot = RuntimeStateStore.Snapshot(workspaceLayouts: [
+            "2": RuntimeStateStore.WorkspaceLayoutSnapshot(
+                columns: [RuntimeStateStore.ColumnSnapshot(windows: [saved])]
+            )
+        ])
+        let liveSibling = ManagedWindow(
+            id: WindowID(pid: 32701, windowNumber: 444),
+            title: "Other ChatGPT Window",
+            bundleID: "com.openai.codex",
+            appName: "ChatGPT",
+            frame: Rect(x: 0, y: 0, width: 800, height: 600)
+        )
+
+        #expect(WorkspaceWindowRecoveryPolicy.shouldRescan(
+            workspaceID: "2",
+            snapshot: snapshot,
+            liveWindows: [liveSibling]
+        ))
+    }
 }
