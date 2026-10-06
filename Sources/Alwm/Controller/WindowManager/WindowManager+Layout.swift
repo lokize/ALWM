@@ -17,6 +17,12 @@ enum AXDropClassification {
     }
 }
 
+enum OverlayWorkspaceVisibilityPolicy {
+    static func shouldDefer(overlaysCaptureFocus: Bool, isWorkspaceSwitch: Bool) -> Bool {
+        overlaysCaptureFocus && !isWorkspaceSwitch
+    }
+}
+
 // MARK: - Layout — relayout, frames, visibility, geometry
 
 extension WindowManager {
@@ -2013,8 +2019,11 @@ extension WindowManager {
         }
     }
 
-    func applyWorkspaceVisibility(animated: Bool) {
-        if overlaysCaptureFocus {
+    func applyWorkspaceVisibility(animated: Bool, allowWhileOverlayVisible: Bool = false) {
+        if OverlayWorkspaceVisibilityPolicy.shouldDefer(
+            overlaysCaptureFocus: overlaysCaptureFocus,
+            isWorkspaceSwitch: allowWhileOverlayVisible
+        ) {
             visibilityDeferredWhileOverlay = true
             return
         }

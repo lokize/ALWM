@@ -19,10 +19,9 @@ enum OverlayClickCapturePolicy {
     static func shouldConsumeOutsideClick(
         pointX: Double,
         pointY: Double,
-        visibleFrames: [Rect],
-        dismissOnClickOutside: Bool
+        visibleFrames: [Rect]
     ) -> Bool {
-        guard dismissOnClickOutside, !visibleFrames.isEmpty else { return false }
+        guard !visibleFrames.isEmpty else { return false }
         return !visibleFrames.contains { $0.contains(pointX: pointX, pointY: pointY) }
     }
 }

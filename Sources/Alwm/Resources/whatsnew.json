@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.4.2",
+      "items": [
+        "Allow workspace switching with Notepad or Quake open"
+      ]
+    },
+    {
       "version": "1.4.1",
       "items": [
         "Keep overlay focus and prevent outside clicks activating covered windows",

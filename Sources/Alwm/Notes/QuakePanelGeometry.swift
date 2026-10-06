@@ -1,4 +1,35 @@
+import AppKit
 import Foundation
+
+enum OverlayChromeGeometry {
+    static func controlPanelFrame(
+        overlayFrame: Rect,
+        mainScreenHeight: Double,
+        width: Double = 60,
+        height: Double = 28,
+        topSafeInset: Double,
+        gapBelowMenuBar: Double = 4
+    ) -> Rect {
+        let topInCocoa = mainScreenHeight - overlayFrame.y
+        let y = topInCocoa - max(0, topSafeInset) - gapBelowMenuBar - height
+        return Rect(
+            x: overlayFrame.maxX - width - 8,
+            y: y,
+            width: width,
+            height: height
+        )
+    }
+
+    static func topSafeInset(for screen: NSScreen?) -> Double {
+        guard let screen else { return 24 }
+        return max(0, Double(screen.frame.maxY - screen.visibleFrame.maxY))
+    }
+
+    static func notepadTopChromeInset(isFullscreen: Bool, topSafeInset: Double) -> Double {
+        guard isFullscreen else { return 0 }
+        return max(28, max(0, topSafeInset) + 4)
+    }
+}
 
 /// Shared Quake-style panel frames for terminal + notepad overlays.
 enum QuakePanelGeometry {

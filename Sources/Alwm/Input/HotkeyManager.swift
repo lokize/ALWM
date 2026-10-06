@@ -10,8 +10,15 @@ public final class HotkeyManager: @unchecked Sendable {
     public var onAction: ((String) -> Void)?
     /// When true, swallow layout hotkeys but still allow overlay toggle actions.
     public var shouldDeferHotkeys: (() -> Bool)?
-    /// Actions that remain active while `shouldDeferHotkeys` is true (overlay toggles).
+    /// Overlay toggles remain configurable; workspace switches are additionally allowed while capture is active.
     public var overlayToggleActions: Set<String> = ["quake.toggle", "notepad.toggle", "notepad.new"]
+
+    private func isAllowedWhileOverlayActive(_ action: String) -> Bool {
+        overlayToggleActions.contains(action)
+            || action == "workspace.prev"
+            || action == "workspace.next"
+            || action.hasPrefix("workspace.")
+    }
 
     private struct TapBinding {
         let keyCode: Int64
@@ -96,7 +103,7 @@ public final class HotkeyManager: @unchecked Sendable {
 
     var keyboardCaptureBindings: [HotkeyBinding] {
         overlayKeyboardCaptureActive
-            ? registeredBindings.filter { overlayToggleActions.contains($0.action) }
+            ? registeredBindings.filter { isAllowedWhileOverlayActive($0.action) }
             : registeredBindings
     }
 
@@ -157,7 +164,7 @@ public final class HotkeyManager: @unchecked Sendable {
         if let last = lastActionAt[action], now - last < 0.15 {
             return
         }
-        if shouldDeferHotkeys?() == true, !overlayToggleActions.contains(action) {
+        if shouldDeferHotkeys?() == true, !isAllowedWhileOverlayActive(action) {
             return
         }
         lastActionAt[action] = now
@@ -243,7 +250,7 @@ public final class HotkeyManager: @unchecked Sendable {
     @discardableResult
     func handleNSEvent(_ event: NSEvent) -> Bool {
         if overlayKeyboardCaptureActive || shouldDeferHotkeys?() == true {
-            return handleOverlayToggleNSEvent(event)
+            return handleOverlayAllowedNSEvent(event)
         }
         if Self.isEditingTextField() { return false }
         let deferOverlay = shouldDeferHotkeys?() == true
@@ -257,7 +264,7 @@ public final class HotkeyManager: @unchecked Sendable {
                 characters: event.characters,
                 ignoring: event.charactersIgnoringModifiers
                ) {
-                if deferOverlay, !overlayToggleActions.contains(binding.action) {
+                if deferOverlay, !isAllowedWhileOverlayActive(binding.action) {
                     return false
                 }
                 emit(binding.action)
@@ -269,10 +276,10 @@ public final class HotkeyManager: @unchecked Sendable {
 
     /// While an overlay owns the keyboard, only swallow explicit overlay-toggle chords.
     @discardableResult
-    private func handleOverlayToggleNSEvent(_ event: NSEvent) -> Bool {
+    private func handleOverlayAllowedNSEvent(_ event: NSEvent) -> Bool {
         let keyCode = Int64(event.keyCode)
         let flags = Self.cgFlags(from: event.modifierFlags)
-        for binding in tapBindings where overlayToggleActions.contains(binding.action) {
+        for binding in tapBindings where isAllowedWhileOverlayActive(binding.action) {
             guard Self.flagsMatch(binding.flags, event: flags, isGrave: binding.isGrave) else { continue }
             guard Self.keyMatches(
                 binding: binding,
@@ -317,7 +324,7 @@ public final class HotkeyManager: @unchecked Sendable {
             return Unmanaged.passUnretained(event)
         }
         if shouldDeferHotkeys?() == true {
-            return handleOverlayToggleTap(event: event, flags: flags)
+            return handleOverlayAllowedTap(event: event, flags: flags)
         }
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
         var needsChars = false
@@ -327,7 +334,7 @@ public final class HotkeyManager: @unchecked Sendable {
                 anyFlagMatch = true
                 if binding.isGrave { needsChars = true }
                 if binding.keyCode == keyCode, !binding.isGrave {
-                    if shouldDeferHotkeys?() == true, !overlayToggleActions.contains(binding.action) {
+                    if shouldDeferHotkeys?() == true, !isAllowedWhileOverlayActive(binding.action) {
                         return Unmanaged.passUnretained(event)
                     }
                     if Self.isEditingTextField() {
@@ -356,7 +363,7 @@ public final class HotkeyManager: @unchecked Sendable {
                 characters: chars,
                 ignoring: ignoring
             ) {
-                if shouldDeferHotkeys?() == true, !overlayToggleActions.contains(binding.action) {
+                if shouldDeferHotkeys?() == true, !isAllowedWhileOverlayActive(binding.action) {
                     return Unmanaged.passUnretained(event)
                 }
                 if Self.isEditingTextField() {
@@ -370,7 +377,7 @@ public final class HotkeyManager: @unchecked Sendable {
     }
 
     /// Overlay open: pass keys through immediately unless they match overlay toggles.
-    private func handleOverlayToggleTap(event: CGEvent, flags: CGEventFlags) -> Unmanaged<CGEvent>? {
+    private func handleOverlayAllowedTap(event: CGEvent, flags: CGEventFlags) -> Unmanaged<CGEvent>? {
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
         var chars: String?
         var ignoring: String?
@@ -378,7 +385,7 @@ public final class HotkeyManager: @unchecked Sendable {
             chars = ns.characters
             ignoring = ns.charactersIgnoringModifiers
         }
-        for binding in tapBindings where overlayToggleActions.contains(binding.action) {
+        for binding in tapBindings where isAllowedWhileOverlayActive(binding.action) {
             guard Self.flagsMatch(binding.flags, event: flags, isGrave: binding.isGrave) else { continue }
             if binding.isGrave {
                 if Self.keyMatches(

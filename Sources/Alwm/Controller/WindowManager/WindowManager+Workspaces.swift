@@ -84,7 +84,9 @@ extension WindowManager {
 
         visibilityForceReveal = true
         lastVisibilitySignature = nil
-        applyWorkspaceVisibility(animated: false)
+        // Workspace navigation remains available while an overlay owns keyboard
+        // focus. Apply the destination's visibility now, without activating its tiles.
+        applyWorkspaceVisibility(animated: false, allowWhileOverlayVisible: true)
         ensureQuakeFullyHidden()
 
         if let mon = monitors.monitors.first(where: { $0.id == targetMonitorID }) {

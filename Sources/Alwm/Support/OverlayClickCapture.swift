@@ -51,7 +51,7 @@ final class OverlayClickCapture: @unchecked Sendable {
             value.onOutsideClick = onOutsideClick
         }
 
-        if dismissOnClickOutside, !visibleFrames.isEmpty {
+        if !visibleFrames.isEmpty {
             installTapIfNeeded()
         } else {
             removeTap()
@@ -135,12 +135,11 @@ final class OverlayClickCapture: @unchecked Sendable {
                 let outside = OverlayClickCapturePolicy.shouldConsumeOutsideClick(
                     pointX: point.x,
                     pointY: point.y,
-                    visibleFrames: value.visibleFrames,
-                    dismissOnClickOutside: value.dismissOnClickOutside
+                    visibleFrames: value.visibleFrames
                 )
                 guard outside else { return (false, nil, nil) }
                 value.swallowedButtons.insert(button.number)
-                return (true, value.onOutsideClick, point)
+                return (true, value.dismissOnClickOutside ? value.onOutsideClick : nil, point)
             }
 
             guard value.swallowedButtons.contains(button.number) else { return (false, nil, nil) }

@@ -36,4 +36,20 @@ struct QuakeDismissButtonTests {
         #expect(dismissed)
         #expect(!quake.hasVisibleDismissButton)
     }
+
+    @Test("top-edge overlay controls stay below the macOS menu bar")
+    func topEdgeControlsClearMenuBar() {
+        let frame = Rect(x: 0, y: 0, width: 1440, height: 900)
+        let controls = OverlayChromeGeometry.controlPanelFrame(
+            overlayFrame: frame,
+            mainScreenHeight: 900,
+            topSafeInset: 24
+        )
+
+        #expect(controls.maxY <= 900 - 24)
+        #expect(controls.width == 60)
+        #expect(controls.height == 28)
+        #expect(OverlayChromeGeometry.notepadTopChromeInset(isFullscreen: true, topSafeInset: 24) >= 28)
+        #expect(OverlayChromeGeometry.notepadTopChromeInset(isFullscreen: false, topSafeInset: 24) == 0)
+    }
 }

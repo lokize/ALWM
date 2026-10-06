@@ -13,6 +13,14 @@ struct OverlayToggleHotkeyTests {
         #expect(OverlayKeyboardFocus.quakeOwnsKeyboard(bound: quake, focused: quake, frontmostPID: 42))
         #expect(!OverlayKeyboardFocus.quakeOwnsKeyboard(bound: quake, focused: quake, frontmostPID: 43))
     }
+
+    @Test("workspace switches update tile visibility without releasing overlay focus")
+    func workspaceSwitchCanApplyVisibilityDuringOverlayCapture() {
+        #expect(OverlayWorkspaceVisibilityPolicy.shouldDefer(overlaysCaptureFocus: true, isWorkspaceSwitch: false))
+        #expect(!OverlayWorkspaceVisibilityPolicy.shouldDefer(overlaysCaptureFocus: true, isWorkspaceSwitch: true))
+        #expect(!OverlayWorkspaceVisibilityPolicy.shouldDefer(overlaysCaptureFocus: false, isWorkspaceSwitch: false))
+    }
+
     @Test("Option T and Option N emit their toggles while an overlay owns the keyboard")
     @MainActor
     func togglesRemainActiveDuringCapture() async throws {
@@ -21,14 +29,15 @@ struct OverlayToggleHotkeyTests {
             HotkeyBinding(action: "quake.toggle", key: "t", modifiers: ["option"]),
             HotkeyBinding(action: "notepad.toggle", key: "n", modifiers: ["option"]),
             HotkeyBinding(action: "move.to.workspace.2", key: "2", modifiers: ["option", "shift"]),
+            HotkeyBinding(action: "workspace.2", key: "2", modifiers: ["option"]),
         ]
         hotkeys.configureBindings(bindings)
         hotkeys.setOverlayKeyboardCapture(true)
         defer { hotkeys.unregisterAll() }
-        #expect(hotkeys.keyboardCaptureBindings.map(\.action) == ["quake.toggle", "notepad.toggle"])
+        #expect(hotkeys.keyboardCaptureBindings.map(\.action) == ["quake.toggle", "notepad.toggle", "workspace.2"])
         let events = AsyncStream<String>.makeStream()
         hotkeys.onAction = { events.continuation.yield($0) }
-        for key in ["t", "n"] {
+        for key in ["t", "n", "2"] {
             let keyCode = UInt16(try #require(HotkeyManager.keyCode(for: key)))
             let event = try #require(NSEvent.keyEvent(
                 with: .keyDown, location: .zero, modifierFlags: .option,
@@ -41,6 +50,14 @@ struct OverlayToggleHotkeyTests {
         var iterator = events.stream.makeAsyncIterator()
         #expect(await iterator.next() == "quake.toggle")
         #expect(await iterator.next() == "notepad.toggle")
+        #expect(await iterator.next() == "workspace.2")
+        let moveWindow = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [.option, .shift],
+            timestamp: 3, windowNumber: 0, context: nil,
+            characters: "2", charactersIgnoringModifiers: "2",
+            isARepeat: false, keyCode: 19
+        ))
+        #expect(!hotkeys.handleNSEvent(moveWindow))
         let typing = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 2, windowNumber: 0, context: nil, characters: "n", charactersIgnoringModifiers: "n", isARepeat: false, keyCode: 45))
         #expect(!hotkeys.handleNSEvent(typing))
         hotkeys.setOverlayKeyboardCapture(false)

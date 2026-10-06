@@ -391,9 +391,19 @@ public final class QuakeTerminalController {
                 accessibilityDescription: label
             )
         }
-        let mainHeight = NSScreen.screens.first.map { Double($0.frame.height) } ?? frame.maxY
-        let rect = NSRect(x: frame.maxX - 68, y: mainHeight - frame.y - 36, width: 60, height: 28)
-        dismissButtonPanel?.setFrame(rect, display: true)
+        let screen = NSScreen.screens.first
+        let mainHeight = screen.map { Double($0.frame.height) } ?? frame.maxY
+        let controlFrame = OverlayChromeGeometry.controlPanelFrame(
+            overlayFrame: frame,
+            mainScreenHeight: mainHeight,
+            topSafeInset: OverlayChromeGeometry.topSafeInset(for: screen)
+        )
+        dismissButtonPanel?.setFrame(NSRect(
+            x: controlFrame.x,
+            y: controlFrame.y,
+            width: controlFrame.width,
+            height: controlFrame.height
+        ), display: true)
         dismissButtonPanel?.orderFrontRegardless()
     }
 

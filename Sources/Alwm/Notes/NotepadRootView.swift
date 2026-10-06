@@ -36,10 +36,20 @@ struct NotepadRootView: View {
                 NotepadEditorView(store: store)
             }
         }
+        // The panel is intentionally not a native macOS fullscreen window. Its top
+        // strip is therefore covered by the menu/status bar at display bounds.
+        .padding(.top, fullscreenTopInset)
         .background(
             VisualEffectBackground(material: .underWindowBackground, blendingMode: .withinWindow)
                 .opacity(0.98)
         )
+    }
+
+    private var fullscreenTopInset: CGFloat {
+        CGFloat(OverlayChromeGeometry.notepadTopChromeInset(
+            isFullscreen: isFullscreen,
+            topSafeInset: OverlayChromeGeometry.topSafeInset(for: NSScreen.screens.first)
+        ))
     }
 
     private var topChrome: some View {

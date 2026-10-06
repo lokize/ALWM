@@ -60,13 +60,16 @@ struct ReliabilityRegressionTests {
     func outsideOverlayClickIsConsumed() {
         let overlay = Rect(x: 100, y: 100, width: 500, height: 300)
         #expect(OverlayClickCapturePolicy.shouldConsumeOutsideClick(
-            pointX: 700, pointY: 700, visibleFrames: [overlay], dismissOnClickOutside: true
+            pointX: 700, pointY: 700, visibleFrames: [overlay]
         ))
         #expect(!OverlayClickCapturePolicy.shouldConsumeOutsideClick(
-            pointX: 200, pointY: 200, visibleFrames: [overlay], dismissOnClickOutside: true
+            pointX: 200, pointY: 200, visibleFrames: [overlay]
+        ))
+        #expect(OverlayClickCapturePolicy.shouldConsumeOutsideClick(
+            pointX: 700, pointY: 700, visibleFrames: [overlay]
         ))
         #expect(!OverlayClickCapturePolicy.shouldConsumeOutsideClick(
-            pointX: 700, pointY: 700, visibleFrames: [overlay], dismissOnClickOutside: false
+            pointX: 700, pointY: 700, visibleFrames: []
         ))
     }
 
