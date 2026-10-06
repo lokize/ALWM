@@ -645,14 +645,7 @@ done
 
 if [[ "$RELAUNCH" == "1" ]]; then
   step "Relaunch"
-  # Quit gracefully first; force only if still alive.
-  pkill -x ALWM 2>/dev/null || true
-  for _ in 1 2 3 4 5; do
-    pgrep -x ALWM >/dev/null 2>&1 || break
-    sleep 0.1
-  done
-  pkill -9 -x ALWM 2>/dev/null || true
-  open "$INSTALLED"
+  bash "$ROOT/scripts/relaunch-app.sh" "$INSTALLED" ALWM
 fi
 
 echo "Pronto."

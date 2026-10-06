@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.3.8",
+      "items": [
+        "Retry Launch Services failures and confirm the app starts after packaging"
+      ]
+    },
+    {
       "version": "1.3.7",
       "items": [
         "Restore saved window workspaces and sizes after sleep or relaunch"
@@ -300,13 +306,6 @@
       "version": "0.9.9",
       "items": [
         "Build and release scripts"
-      ]
-    },
-    {
-      "version": "0.9.8",
-      "items": [
-        "Settings UI updates",
-        "UI updates"
       ]
     }
   ]
