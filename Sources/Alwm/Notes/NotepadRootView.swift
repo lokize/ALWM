@@ -32,6 +32,12 @@ struct NotepadRootView: View {
         HStack(spacing: 10) {
             tabBar
             Spacer(minLength: 8)
+            if let error = store.lastPersistenceError {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .help("\(L10n.t("notepad.storage.error")): \(error)")
+                    .accessibilityLabel(L10n.t("notepad.storage.error"))
+            }
             Button(action: onClose) {
                 Image(systemName: "xmark.circle.fill")
                     .symbolRenderingMode(.hierarchical)
@@ -39,6 +45,8 @@ struct NotepadRootView: View {
             }
             .buttonStyle(.plain)
             .help(L10n.t("notepad.close"))
+            .accessibilityLabel(L10n.t("notepad.close"))
+            .frame(width: 24, height: 24)
             .padding(.trailing, 10)
         }
         .padding(.leading, 8)

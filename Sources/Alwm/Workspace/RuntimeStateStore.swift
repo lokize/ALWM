@@ -164,7 +164,8 @@ public final class RuntimeStateStore: @unchecked Sendable {
     public func load() {
         guard let data = try? Data(contentsOf: url),
               let decoded = try? JSONDecoder().decode(Snapshot.self, from: data) else {
-            snapshot = Snapshot()
+            // A transient unreadable/missing file during wake must not discard
+            // the last valid in-memory snapshot. Explicit reset uses clear().
             return
         }
         snapshot = decoded
@@ -263,7 +264,8 @@ public final class RuntimeStateStore: @unchecked Sendable {
             }
             layout.columns.removeAll { $0.windows.isEmpty }
             layout.floating = layout.floating.filter { liveTokens.contains($0.token) || $0.bundleID != nil }
-            layout.leafWeights = layout.leafWeights.filter { liveTokens.contains($0.key) }
+            let recoverableTokens = Set(layout.columns.flatMap(\.windows).map(\.token))
+            layout.leafWeights = layout.leafWeights.filter { liveTokens.contains($0.key) || recoverableTokens.contains($0.key) }
             snapshot.workspaceLayouts[wsID] = layout
         }
     }

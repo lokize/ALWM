@@ -16,7 +16,7 @@ enum InitialWorkspaceSelection {
     ) -> String? {
         // Rules seed placement for windows without a recorded home. A user-moved
         // window must keep its sticky or layout-snapshot home across wake/recovery.
-        [sticky, savedLayout, rule, bundle, active]
+        [sticky, savedLayout, rule, active, bundle]
             .compactMap { $0 }
             .first(where: existing.contains)
     }
@@ -35,8 +35,8 @@ extension WindowManager {
         let idx = workspaces.monitorIndex(of: monitor.id, in: monitors.monitors) ?? 0
         let pool = workspaces.definitionsVisible(onMonitorIndex: idx).map(\.id)
         let active = workspaces.activeWorkspaceByMonitor[monitor.id]
-        // The app-level home is a fallback for genuinely new/reappearing windows whose AX
-        // token was unavailable during startup. Existing window/rule homes always take priority.
+        // History recovers old windows; it must not route genuinely new windows
+        // away from the user's active workspace when no explicit rule exists.
         if let selected = InitialWorkspaceSelection.resolve(
             rule: AppRules.preferredWorkspace(rules: rules, window: win),
             sticky: sticky,
@@ -735,29 +735,9 @@ extension WindowManager {
             refreshChrome()
             return
         }
-        let pid = id.pid
-        let bundleID = windowsByID[id]?.bundleID
-        let wasLayoutTile = windowsByID[id]?.isTiled == true
-            || workspaces.workspaceID(containing: id) != nil
-        _ = ax.closeWindow(id)
-        workspaces.removeWindowEverywhere(id)
-        windowsByID.removeValue(forKey: id)
-        windowWorkspace.removeValue(forKey: id)
-        floatingOverrides.remove(id)
-        savedFrames.removeValue(forKey: id)
-        lastFrames.removeValue(forKey: id)
-        runtimeState.setAssignment(nil, for: id)
-        windowFirstTrackedAt.removeValue(forKey: id)
-        forcedTiledUntil.removeValue(forKey: id)
-        missingScanCounts.removeValue(forKey: id)
-        if !isLayoutMutationFrozen {
-            persistRuntimeState()
-        }
-        relayout(animated: false, on: layoutScopeMonitor(for: id))
-        refreshChrome()
-        if wasLayoutTile {
-            scheduleQuitIfLastLayoutWindowClosed(pid: pid, bundleID: bundleID, homeWasActive: true)
-        }
+        guard ax.closeWindow(id) else { return }
+        // AXPress can succeed while the app presents a Save/Cancel dialog.
+        // Do not delete state or terminate the app until AX confirms destruction.
     }
 
     func scheduleQuitIfLastLayoutWindowClosed(pid: pid_t, bundleID: String?, homeWasActive: Bool) {

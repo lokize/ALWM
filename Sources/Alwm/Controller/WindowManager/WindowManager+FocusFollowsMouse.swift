@@ -35,18 +35,25 @@ extension WindowManager {
     }
 
     func focusedAppHasTransientPopupOpen() -> Bool {
-        if let cached = appPopupOpenCache, Date().timeIntervalSince(cached.at) < 0.15 {
+        guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? axFocusedWindowID?.pid else { return false }
+        return focusedAppHasTransientPopupOpen(pid: pid) {
+            computeFocusedAppHasTransientPopupOpen(pid: pid)
+        }
+    }
+
+    func focusedAppHasTransientPopupOpen(pid: pid_t, query: () -> Bool) -> Bool {
+        // Positive results can linger briefly after dismissal. Negative results
+        // only cover duplicate checks in this frame, never the next 80ms FFM tick.
+        if let cached = appPopupOpenCache, cached.pid == pid,
+           Date().timeIntervalSince(cached.at) < (cached.value ? 0.15 : 0.016) {
             return cached.value
         }
-        let value = computeFocusedAppHasTransientPopupOpen()
-        appPopupOpenCache = (Date(), value)
+        let value = query()
+        appPopupOpenCache = (Date(), pid, value)
         return value
     }
 
-    func computeFocusedAppHasTransientPopupOpen() -> Bool {
-        let pid = axFocusedWindowID?.pid
-            ?? NSWorkspace.shared.frontmostApplication?.processIdentifier
-        guard let pid else { return false }
+    func computeFocusedAppHasTransientPopupOpen(pid: pid_t) -> Bool {
 
         let monitorFrames = monitors.monitors.map(\.frame)
         for (id, win) in windowsByID {
@@ -62,12 +69,14 @@ extension WindowManager {
             }
         }
 
-        return AlwmChromeFocus.cgProcessHasPopupLayerWindow(pid: pid)
+        let knownWindows = Set(windowsByID.keys.filter { $0.pid == pid }.map(\.windowNumber))
+        return AlwmChromeFocus.cgProcessHasPopupLayerWindow(pid: pid, managedWindowNumbers: knownWindows)
+            || AlwmChromeFocus.axProcessHasTransientPopup(pid: pid)
     }
 
     func scheduleFocusWindowUnderMouse() {
         // Quake terminal / notepad / plugins / menus — never chase tiles under the cursor.
-        if chromeBlocksFocusFollowsMouse() {
+        if overlaysCaptureFocus {
             ffmWorkItem?.cancel()
             ffmWorkItem = nil
             return
@@ -75,15 +84,19 @@ extension WindowManager {
         let now = Date()
         let minInterval: TimeInterval = 0.08
         if now.timeIntervalSince(ffmLastRun) >= minInterval {
+            ffmWorkItem?.cancel()
+            ffmWorkItem = nil
             ffmLastRun = now
             focusWindowUnderMouse()
             return
         }
-        ffmWorkItem?.cancel()
+        // One trailing check per interval, not one cancelled allocation per
+        // mouse event. Expensive AX/CG popup queries happen in the throttled check.
+        guard ffmWorkItem == nil else { return }
         let delay = minInterval - now.timeIntervalSince(ffmLastRun)
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            if self.chromeBlocksFocusFollowsMouse() { return }
+            self.ffmWorkItem = nil
             self.ffmLastRun = Date()
             self.focusWindowUnderMouse()
         }

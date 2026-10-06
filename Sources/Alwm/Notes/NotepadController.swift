@@ -4,10 +4,11 @@ import SwiftUI
 @MainActor
 public final class NotepadController {
     public private(set) var isVisible = false
-    public let store = NotesStore()
+    public let store: NotesStore
 
     public var onClose: (() -> Void)?
     public var onVisibilityChanged: ((Bool) -> Void)?
+    public var onKeyboardFocusChanged: (() -> Void)?
 
     private var panel: NSPanel?
     private var blurPanel: NSWindow?
@@ -16,7 +17,7 @@ public final class NotepadController {
     private var presentationGeneration: UInt64 = 0
     private var currentMonitor: MonitorInfo?
 
-    public init() {}
+    public init(store: NotesStore = NotesStore()) { self.store = store }
 
     public func toggle(settings: NotepadSettings, monitor: MonitorInfo) {
         guard settings.enabled else { return }
@@ -136,6 +137,7 @@ public final class NotepadController {
         p.hidesOnDeactivate = false
         p.isReleasedWhenClosed = false
         p.becomesKeyOnlyIfNeeded = false
+        p.onKeyboardFocusChanged = { [weak self] in self?.onKeyboardFocusChanged?() }
 
         let root = NotepadRootView(store: store, onClose: { [weak self] in
             self?.onClose?()
@@ -239,8 +241,17 @@ public final class NotepadController {
 
 /// Borderless floating panel that still accepts keyboard focus (search + editor).
 private final class NotepadKeyPanel: NSPanel {
+    var onKeyboardFocusChanged: (() -> Void)?
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+    override func becomeKey() {
+        super.becomeKey()
+        onKeyboardFocusChanged?()
+    }
+    override func resignKey() {
+        super.resignKey()
+        onKeyboardFocusChanged?()
+    }
 }
 
 private extension Rect {

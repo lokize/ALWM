@@ -2,6 +2,12 @@ import AppKit
 import CoreGraphics
 import Foundation
 
+@MainActor
+private final class QuakeDismissButtonTarget: NSObject {
+    var onDismiss: (() -> Void)?
+    @objc func dismiss(_ sender: Any?) { onDismiss?() }
+}
+
 private final class AppleScriptResultBox: @unchecked Sendable {
     private let lock = NSLock()
     private var failure: String?
@@ -29,10 +35,14 @@ public final class QuakeTerminalController {
     public var onAdopted: ((WindowID) -> Void)?
     /// Fires whenever `isVisible` changes (show/hide).
     public var onVisibilityChanged: ((Bool) -> Void)?
+    public var onDismiss: (() -> Void)?
     /// Bundle ID waiting for the next new window to become the quake scratchpad.
     public private(set) var pendingAdoptBundleID: String?
 
     private var blurPanel: NSWindow?
+    private var dismissButtonPanel: NSPanel?
+    private var dismissButtonTarget: QuakeDismissButtonTarget?
+    var hasVisibleDismissButton: Bool { dismissButtonPanel?.isVisible == true }
     private weak var blurTintView: NSView?
     private var pendingLaunch = false
     private var pendingLaunchStartedAt: CFAbsoluteTime = 0
@@ -218,6 +228,7 @@ public final class QuakeTerminalController {
     private func setVisible(_ visible: Bool) {
         guard isVisible != visible else { return }
         isVisible = visible
+        if !visible { dismissButtonPanel?.orderOut(nil) }
         onVisibilityChanged?(visible)
     }
 
@@ -275,6 +286,7 @@ public final class QuakeTerminalController {
         monitor: MonitorInfo,
         visible: Bool
     ) {
+        updateDismissButton(settings: settings, frame: frame, visible: visible)
         guard settings.blur, visible, frame.width > 1, frame.height > 1 else {
             blurPanel?.orderOut(nil)
             return
@@ -304,6 +316,44 @@ public final class QuakeTerminalController {
         // CGWindowID — that AppKit API is only valid for NSWindows in this process.
         panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.normalWindow)) - 1)
         panel.orderFrontRegardless()
+    }
+
+    private func updateDismissButton(settings: QuakeSettings, frame: Rect, visible: Bool) {
+        guard visible, !settings.dismissOnClickOutside, frame.width > 1, frame.height > 1 else {
+            dismissButtonPanel?.orderOut(nil)
+            return
+        }
+        if dismissButtonPanel == nil {
+            let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+            panel.identifier = NSUserInterfaceItemIdentifier("alwm.quake.dismiss")
+            panel.level = .floating
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.hasShadow = false
+            panel.hidesOnDeactivate = false
+            panel.isReleasedWhenClosed = false
+            let target = QuakeDismissButtonTarget()
+            target.onDismiss = { [weak self] in self?.onDismiss?() }
+            let button = NSButton(frame: NSRect(x: 0, y: 0, width: 28, height: 28))
+            button.isBordered = false
+            button.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: L10n.t("quake.hide"))
+            button.contentTintColor = .labelColor
+            button.wantsLayer = true
+            button.layer?.cornerRadius = 14
+            button.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.92).cgColor
+            button.target = target
+            button.action = #selector(QuakeDismissButtonTarget.dismiss(_:))
+            button.setAccessibilityLabel(L10n.t("quake.hide"))
+            button.toolTip = L10n.t("quake.hide")
+            panel.contentView = button
+            dismissButtonTarget = target
+            dismissButtonPanel = panel
+        }
+        let mainHeight = NSScreen.screens.first.map { Double($0.frame.height) } ?? frame.maxY
+        let rect = NSRect(x: frame.maxX - 36, y: mainHeight - frame.y - 36, width: 28, height: 28)
+        dismissButtonPanel?.setFrame(rect, display: true)
+        dismissButtonPanel?.orderFrontRegardless()
     }
 
     /// Re-apply blur while Quake is already visible (Settings live update).
@@ -501,5 +551,6 @@ public final class QuakeTerminalController {
 
     public func hideBlur() {
         blurPanel?.orderOut(nil)
+        dismissButtonPanel?.orderOut(nil)
     }
 }

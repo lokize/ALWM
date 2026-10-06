@@ -110,8 +110,8 @@ struct ResumeWorkspaceSelectionTests {
         ) == "1")
     }
 
-    @Test("a new app window uses its saved workspace even when another workspace is active")
-    func savedBundleBeatsActiveWorkspace() {
+    @Test("a genuinely new app window opens in the active workspace without an app rule")
+    func activeWorkspaceBeatsBundleHistory() {
         let existing: Set<String> = ["1", "2", "3"]
 
         #expect(InitialWorkspaceSelection.resolve(
@@ -121,7 +121,7 @@ struct ResumeWorkspaceSelectionTests {
             bundle: "2",
             active: "1",
             existing: existing
-        ) == "2")
+        ) == "1")
         #expect(InitialWorkspaceSelection.resolve(
             rule: "3",
             sticky: nil,

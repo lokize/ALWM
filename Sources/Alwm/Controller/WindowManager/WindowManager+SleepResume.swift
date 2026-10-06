@@ -285,6 +285,7 @@ extension WindowManager {
     }
 
     func prepareForSystemSleep() {
+        notepad.store.flushPendingSaves()
         cancelPendingResumeRecovery()
         cancelPendingRebalances()
         isResumeRecovering = false
@@ -485,7 +486,8 @@ extension WindowManager {
     func persistedWorkspaceSelectionMatchesCurrent() -> Bool {
         let existing = Set(workspaces.workspaces.keys)
         var expected: [CGDirectDisplayID: String] = [:]
-        for (index, monitor) in monitors.monitors.enumerated() {
+        for monitor in monitors.monitors {
+            let index = workspaces.monitorIndex(of: monitor.id, in: monitors.monitors) ?? 0
             let allowed = workspaces.definitionsVisible(onMonitorIndex: index).map(\.id)
             let savedForMonitor = runtimeState.snapshot.lastWorkspaceByMonitor[String(monitor.id)]
             if let workspaceID = ResumeWorkspaceSelection.expectedWorkspace(
@@ -556,7 +558,7 @@ extension WindowManager {
     }
 
     /// Live columns match the on-disk snapshot (order + apps + widths), allowing loose title match.
-    /// Widths are compared by ratio when absolute px diverge (resume may renormalize overflow layouts).
+    /// Compare with the geometry restoration would produce on the current display.
     func layoutContentMatchesDiskSnapshot() -> Bool {
         let diskKeys = Set(runtimeState.snapshot.workspaceLayouts.keys)
         guard !diskKeys.isEmpty else { return true }
@@ -567,16 +569,30 @@ extension WindowManager {
             let snapCols = snap.columns.filter { !$0.windows.isEmpty }
             let liveCols = ws.columns.filter { !$0.windows.isEmpty }
             if snapCols.count != liveCols.count { return false }
-            let snapSum = snapCols.reduce(0.0) { $0 + max(1, $1.width) }
-            let liveSum = liveCols.reduce(0.0) { $0 + max(1, $1.width) }
-            for (snapCol, liveCol) in zip(snapCols, liveCols) {
+            var expectedGeometry = ws
+            expectedGeometry.columns = zip(snapCols, liveCols).map { saved, live in
+                Column(windows: live.windows, width: saved.width, isMaximized: saved.isMaximized, restoreWidth: saved.restoreWidth)
+            }
+            expectedGeometry.viewOffset = snap.viewOffset
+            syncColumnWidthsToUsable(workspace: &expectedGeometry, workspaceID: wsID, preserveScrollOverflow: true)
+            if abs(ws.viewOffset - expectedGeometry.viewOffset) > 1 { return false }
+            let lastColumn = max(0, snapCols.count - 1)
+            if min(max(0, ws.focusedColumn), lastColumn) != min(max(0, snap.focusedColumn), lastColumn) { return false }
+            for (columnIndex, pair) in zip(snapCols, liveCols).enumerated() {
+                let (snapCol, liveCol) = pair
                 if snapCol.windows.count != liveCol.windows.count { return false }
-                let absOK = abs(snapCol.width - liveCol.width) <= 24
-                let snapR = max(1, snapCol.width) / snapSum
-                let liveR = max(1, liveCol.width) / liveSum
-                let ratioOK = abs(snapR - liveR) <= 0.08
-                if !absOK && !ratioOK { return false }
+                if snapCol.isMaximized != liveCol.isMaximized { return false }
+                let lastRow = max(0, snapCol.windows.count - 1)
+                let savedRow = min(max(0, snap.focusedWindowInColumn[String(columnIndex)] ?? 0), lastRow)
+                let liveRow = min(max(0, ws.focusedWindowInColumn[columnIndex] ?? 0), lastRow)
+                if savedRow != liveRow { return false }
+                let savedWeightSum = snapCol.windows.reduce(0.0) { $0 + max(0.01, snap.leafWeights[$1.token] ?? 1) }
+                let liveWeightSum = liveCol.windows.reduce(0.0) { $0 + max(0.01, ws.leafWeights[$1.token] ?? 1) }
+                if abs(expectedGeometry.columns[columnIndex].width - liveCol.width) > 24 { return false }
                 for (ref, id) in zip(snapCol.windows, liveCol.windows) {
+                    let savedWeight = max(0.01, snap.leafWeights[ref.token] ?? 1) / savedWeightSum
+                    let liveWeight = max(0.01, ws.leafWeights[id.token] ?? 1) / liveWeightSum
+                    if abs(savedWeight - liveWeight) > 0.01 { return false }
                     guard let win = windowsByID[id] else { return false }
                     if let bid = ref.bundleID, !bid.isEmpty, win.bundleID != bid { return false }
                     let rt = Self.normalizedWindowTitle(ref.title)

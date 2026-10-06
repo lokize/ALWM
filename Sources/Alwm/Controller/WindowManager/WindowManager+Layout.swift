@@ -444,8 +444,8 @@ extension WindowManager {
                 if let home = savedHome(for: win, id: id) ?? windowWorkspace[id].flatMap({ workspaces.workspaces[$0] != nil ? $0 : nil })
                     ?? runtimeState.assignment(for: id).flatMap({ workspaces.workspaces[$0] != nil ? $0 : nil }) {
                     assignWindow(id, to: home, on: monitor)
+                    continue
                 }
-                continue
             }
 
             if let home = savedHome(for: win, id: id) {
@@ -1363,7 +1363,11 @@ extension WindowManager {
     func prepareWorkspaceLayoutForDisplay(_ wsID: String, monitor: MonitorInfo) {
         guard var ws = workspaces.workspaces[wsID] else { return }
         let before = ws
-        syncColumnWidthsToUsable(workspace: &ws, workspaceID: wsID)
+        syncColumnWidthsToUsable(
+            workspace: &ws,
+            workspaceID: wsID,
+            preserveScrollOverflow: isResumeRecovering || Date() < resumeRecoveryEligibleUntil
+        )
         if ws != before {
             workspaces.setWorkspace(ws)
         }
@@ -2497,6 +2501,9 @@ extension WindowManager {
 
     public nonisolated func axTrackerFocusedWindowDidChange(_ id: WindowID?) {
         Task { @MainActor in
+            self.axFocusedWindowID = id
+            self.appPopupOpenCache = nil
+            self.updateOverlayInputMode()
             // Quake / notepad own the interaction — ignore AX focus noise from tiles underneath
             // (same idea as plugin panels / menu bar).
             if self.overlaysCaptureFocus {
@@ -2511,7 +2518,6 @@ extension WindowManager {
                 return
             }
 
-            self.axFocusedWindowID = id
             guard let id else {
                 self.refreshChrome()
                 return

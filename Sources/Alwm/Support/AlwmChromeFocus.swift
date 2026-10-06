@@ -36,6 +36,8 @@ enum AlwmChromeFocus {
     }
 
     static func isInteractiveChrome(_ win: NSWindow) -> Bool {
+        // A persistent terminal's tiny dismissal accessory is not a dialog.
+        if win.identifier?.rawValue == "alwm.quake.dismiss" { return false }
         // Focus border / workspace bar / other HUD that ignore mouse must never block FFM.
         if win.ignoresMouseEvents { return false }
 
@@ -139,12 +141,20 @@ enum AlwmChromeFocus {
     }
 
     /// On-screen popup/menu layer windows for an app (Electron sticker pickers, Discord menus, …).
-    static func cgProcessHasPopupLayerWindow(pid: pid_t) -> Bool {
+    static func cgProcessHasPopupLayerWindow(pid: pid_t, managedWindowNumbers: Set<Int> = []) -> Bool {
         guard let infos = CGWindowListCopyWindowInfo(
             [.optionOnScreenOnly, .excludeDesktopElements],
             kCGNullWindowID
         ) as? [[String: Any]] else { return false }
 
+        return processHasPopupWindow(pid: pid, infos: infos, managedWindowNumbers: managedWindowNumbers)
+    }
+
+    static func processHasPopupWindow(
+        pid: pid_t,
+        infos: [[String: Any]],
+        managedWindowNumbers: Set<Int>
+    ) -> Bool {
         for info in infos {
             let owner = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value
                 ?? (info[kCGWindowOwnerPID as String] as? pid_t)
@@ -153,12 +163,52 @@ enum AlwmChromeFocus {
                 ?? (info[kCGWindowLayer as String] as? Int)
                 ?? 0
             // 0 = normal; ≥24 = menu bar / open menus (handled separately).
-            guard layer > 0, layer < 24 else { continue }
+            let number = (info[kCGWindowNumber as String] as? NSNumber)?.intValue
+            let untrackedNormalPanel = layer == 0 && !managedWindowNumbers.isEmpty
+                && number.map { !managedWindowNumbers.contains($0) } == true
+            guard (layer > 0 && layer < 24) || untrackedNormalPanel else { continue }
+            if let alpha = info[kCGWindowAlpha as String] as? NSNumber, alpha.doubleValue <= 0 { continue }
             guard let bounds = info[kCGWindowBounds as String] as? [String: Any] else { continue }
             let w = (bounds["Width"] as? NSNumber)?.doubleValue ?? (bounds["Width"] as? Double) ?? 0
             let h = (bounds["Height"] as? NSNumber)?.doubleValue ?? (bounds["Height"] as? Double) ?? 0
             // Ignore tiny tooltips / shadows.
             if w >= 48, h >= 48 { return true }
+        }
+        return false
+    }
+
+    /// Some Electron popups are drawn inside the document's CGWindow. Inspect
+    /// focus ancestry and sheets, not the entire (potentially huge) UI tree.
+    static func axProcessHasTransientPopup(pid: pid_t) -> Bool {
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, 0.015)
+        let deadline = ProcessInfo.processInfo.systemUptime + 0.04
+        func attribute(_ element: AXUIElement, _ name: CFString) -> AnyObject? {
+            guard ProcessInfo.processInfo.systemUptime < deadline else { return nil }
+            var value: AnyObject?
+            guard AXUIElementCopyAttributeValue(element, name, &value) == .success else { return nil }
+            return value
+        }
+        var node = AXBridge.element(attribute(app, kAXFocusedUIElementAttribute as CFString))
+        for _ in 0..<12 {
+            guard let element = node else { break }
+            let role = attribute(element, kAXRoleAttribute as CFString) as? String ?? ""
+            let subrole = attribute(element, kAXSubroleAttribute as CFString) as? String ?? ""
+            if ["AXMenu", "AXMenuItem", "AXPopover", "AXSheet", "AXDialog"].contains(role)
+                || ["AXDialog", "AXSystemDialog"].contains(subrole) {
+                return true
+            }
+            if ["AXPopUpButton", "AXComboBox"].contains(role),
+               AXBridge.bool(attribute(element, kAXExpandedAttribute as CFString)) == true { return true }
+            node = AXBridge.element(attribute(element, kAXParentAttribute as CFString))
+        }
+        if let window = AXBridge.element(attribute(app, kAXFocusedWindowAttribute as CFString)) {
+            if AXBridge.bool(attribute(window, kAXModalAttribute as CFString)) == true { return true }
+            if let children = attribute(window, kAXChildrenAttribute as CFString) as? [AXUIElement] {
+                for child in children.prefix(32) {
+                    if attribute(child, kAXRoleAttribute as CFString) as? String == "AXSheet" { return true }
+                }
+            }
         }
         return false
     }

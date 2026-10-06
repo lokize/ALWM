@@ -37,9 +37,32 @@ public final class HotkeyManager: @unchecked Sendable {
 
     public init() {}
 
+    var hasLocalMonitor: Bool { nsLocalMonitor != nil }
+
     public func register(bindings: [HotkeyBinding]) {
-        registeredBindings = bindings
+        let captureActive = overlayKeyboardCaptureActive
         unregisterAll()
+        overlayKeyboardCaptureActive = captureActive
+        configureBindings(bindings)
+        if Permissions.inputMonitoringGranted() {
+            if !overlayKeyboardCaptureActive { installEventTapIfNeeded() }
+        } else {
+            Permissions.requestInputMonitoring()
+        }
+        installNSMonitorIfNeeded()
+        registerCarbon(bindings: keyboardCaptureBindings)
+        NSLog(
+            "ALWM hotkeys: tap=%@ nsMonitor=%@ carbon=%d bindings=%d graveCodes=50,10",
+            eventTap != nil ? "yes" : "no",
+            nsMonitor != nil ? "yes" : "no",
+            hotKeys.count,
+            tapBindings.count
+        )
+    }
+
+    /// Binding construction is separate from permission prompts and OS registration.
+    func configureBindings(_ bindings: [HotkeyBinding]) {
+        registeredBindings = bindings
         // Deduplicate actions so Option+grave does not register twice from codes 50+10
         // and still fire once; keep one TapBinding per (action, flags, keyCode).
         var seen = Set<String>()
@@ -69,48 +92,29 @@ public final class HotkeyManager: @unchecked Sendable {
             }
         }
 
-        let monitoring = Permissions.inputMonitoringGranted()
-        if monitoring {
-            installEventTapIfNeeded()
-            installNSMonitorIfNeeded()
-        } else {
-            Permissions.requestInputMonitoring()
-        }
-
-        // Carbon always — covers cases where the tap is denied/disabled mid-session.
-        registerCarbon(bindings: bindings)
-        NSLog(
-            "ALWM hotkeys: tap=%@ nsMonitor=%@ carbon=%d bindings=%d graveCodes=50,10",
-            eventTap != nil ? "yes" : "no",
-            nsMonitor != nil ? "yes" : "no",
-            hotKeys.count,
-            tapBindings.count
-        )
     }
 
-    /// Suspend global hotkey capture while quake/notepad owns the keyboard.
-    /// Tears down HID tap, NSEvent monitors, and all Carbon registrations.
+    var keyboardCaptureBindings: [HotkeyBinding] {
+        overlayKeyboardCaptureActive
+            ? registeredBindings.filter { overlayToggleActions.contains($0.action) }
+            : registeredBindings
+    }
+
+    /// Pause layout chords while an overlay owns the keyboard, but keep its
+    /// toggle chords alive in both external terminals (Carbon) and Notepad (AppKit).
     public func setOverlayKeyboardCapture(_ active: Bool) {
         guard overlayKeyboardCaptureActive != active else { return }
         overlayKeyboardCaptureActive = active
+        unregisterAllCarbonHotkeys()
         if active {
             tearDownEventTap()
-            if let nsMonitor {
-                NSEvent.removeMonitor(nsMonitor)
-                self.nsMonitor = nil
-            }
-            if let nsLocalMonitor {
-                NSEvent.removeMonitor(nsLocalMonitor)
-                self.nsLocalMonitor = nil
-            }
-            unregisterAllCarbonHotkeys()
         } else {
             if Permissions.inputMonitoringGranted() {
                 installEventTapIfNeeded()
-                installNSMonitorIfNeeded()
             }
-            registerCarbon(bindings: registeredBindings)
         }
+        installNSMonitorIfNeeded()
+        registerCarbon(bindings: keyboardCaptureBindings)
     }
 
     private func unregisterAllCarbonHotkeys() {
@@ -209,6 +213,7 @@ public final class HotkeyManager: @unchecked Sendable {
     private func tearDownEventTap() {
         if let tap = eventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
+            CFMachPortInvalidate(tap)
         }
         if let source = runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
@@ -217,10 +222,11 @@ public final class HotkeyManager: @unchecked Sendable {
         eventTap = nil
     }
 
-    private func installNSMonitorIfNeeded() {
-        guard nsMonitor == nil else { return }
-        nsMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
-            self?.handleNSEvent(event)
+    func installNSMonitorIfNeeded() {
+        if nsMonitor == nil, Permissions.inputMonitoringGranted() {
+            nsMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+                self?.handleNSEvent(event)
+            }
         }
         if nsLocalMonitor == nil {
             nsLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
@@ -235,7 +241,7 @@ public final class HotkeyManager: @unchecked Sendable {
 
     /// Returns true when the event was handled (and should be swallowed locally).
     @discardableResult
-    private func handleNSEvent(_ event: NSEvent) -> Bool {
+    func handleNSEvent(_ event: NSEvent) -> Bool {
         if overlayKeyboardCaptureActive || shouldDeferHotkeys?() == true {
             return handleOverlayToggleNSEvent(event)
         }
@@ -402,6 +408,9 @@ public final class HotkeyManager: @unchecked Sendable {
     nonisolated private static func unsafeIsEditingTextFieldOnMainThread() -> Bool {
         // KVC avoids Swift MainActor isolation on NSApp.keyWindow (assumeIsolated crashes in taps).
         guard let app = NSApplication.shared as NSApplication? else { return false }
+        // AppKit can retain ALWM's field editor after another app becomes active.
+        // It must not suppress global Option chords in that other app.
+        guard (app as AnyObject).value(forKey: "active") as? Bool == true else { return false }
         let window = (app as AnyObject).value(forKey: "keyWindow") as? NSWindow
             ?? (app as AnyObject).value(forKey: "mainWindow") as? NSWindow
         guard let window else { return false }

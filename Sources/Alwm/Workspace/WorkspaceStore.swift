@@ -25,7 +25,7 @@ public final class MonitorStore: @unchecked Sendable {
     public var onChange: (() -> Void)?
     private var refreshWorkItem: DispatchWorkItem?
 
-    public init() {}
+    public init(monitors: [MonitorInfo] = []) { self.monitors = monitors }
 
     public func refresh() {
         var result: [MonitorInfo] = []

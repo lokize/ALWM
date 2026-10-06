@@ -370,6 +370,16 @@ extension WindowManager {
     func savedHome(for win: ManagedWindow, id: WindowID) -> String? {
         if let sticky = stickyHome(for: id) { return sticky }
 
+        for (wsID, layout) in runtimeState.snapshot.workspaceLayouts
+            where workspaces.workspaces[wsID] != nil {
+            if (layout.columns.flatMap(\.windows) + layout.floating).contains(where: { $0.token == id.token }) {
+                return wsID
+            }
+        }
+        // Repeated app titles are not identities for brand-new windows. Fuzzy
+        // recovery is only appropriate during startup / wake reconciliation.
+        guard isBootstrapping || isResumeRecovering || Date() < resumeRecoveryEligibleUntil else { return nil }
+
         // Multi-instance apps: only bind via a free disk slot. Never send every Safari to WS1
         // just because one Safari was saved there.
         var candidates: [String] = []

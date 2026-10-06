@@ -7,6 +7,14 @@ import AlwmPluginAPI
 
 // MARK: - Overlays — Quake terminal and Notepad
 
+enum OverlayKeyboardFocus {
+    static func quakeOwnsKeyboard(bound: WindowID, focused: WindowID?, frontmostPID: pid_t?) -> Bool {
+        if let frontmostPID, frontmostPID != bound.pid { return false }
+        if let focused { return focused == bound }
+        return frontmostPID == bound.pid
+    }
+}
+
 extension WindowManager {
     func isQuakeOwned(_ id: WindowID) -> Bool {
         if id == quake.windowID { return true }
@@ -182,15 +190,18 @@ extension WindowManager {
     func dismissOverlaysIfClickOutside() {
         dismissQuakeIfClickOutside()
         dismissNotepadIfClickOutside()
+        // Mouse-down precedes the OS focus transfer. Persistent panels stay
+        // visible, but must release layout hotkeys once that transfer completes.
+        DispatchQueue.main.async { [weak self] in self?.updateOverlayInputMode() }
     }
 
     func quakeHasKeyboardFocus() -> Bool {
         guard quake.isVisible, let qid = quake.windowID else { return false }
-        if axFocusedWindowID == qid || ax.frontmostFocusedWindowID() == qid { return true }
-        let configured = configStore.config.settings.quake.bundleID
-        let resolved = QuakeTerminalController.resolveBundleID(configured: configured)
-        if NSWorkspace.shared.frontmostApplication?.bundleIdentifier == resolved { return true }
-        return false
+        return OverlayKeyboardFocus.quakeOwnsKeyboard(
+            bound: qid,
+            focused: axFocusedWindowID,
+            frontmostPID: NSWorkspace.shared.frontmostApplication?.processIdentifier
+        )
     }
 
     func dismissNotepadIfClickOutside() {

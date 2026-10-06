@@ -11,7 +11,7 @@ import AlwmPluginAPI
 public final class WindowManager: NSObject, AXTrackerDelegate {
     public let configStore = ConfigStore()
 
-    public let monitors = MonitorStore()
+    public let monitors: MonitorStore
 
     public let workspaces = WorkspaceStore()
 
@@ -31,7 +31,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
 
     public let quake = QuakeTerminalController()
 
-    public let notepad = NotepadController()
+    public let notepad: NotepadController
 
     public let palette = CommandPaletteController()
 
@@ -61,7 +61,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
 
     var ffmLastRun = Date.distantPast
 
-    var appPopupOpenCache: (at: Date, value: Bool)?
+    var appPopupOpenCache: (at: Date, pid: pid_t, value: Bool)?
 
     var quakeClickMonitor: Any?
 
@@ -78,7 +78,11 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
     var preferredOverlayFocus: OverlayFocusTarget?
 
     var overlaysCaptureFocus: Bool {
-        quake.isVisible || notepad.isVisible
+        let notepadCaptures = notepad.isVisible && (notepad.isKeyWindow
+            || (preferredOverlayFocus == .notepad && Date() < suppressNotepadDismissUntil))
+        let quakeCaptures = quake.isVisible && (quakeHasKeyboardFocus()
+            || (preferredOverlayFocus == .quake && Date() < suppressQuakeDismissUntil))
+        return notepadCaptures || quakeCaptures
     }
 
     var statusItem: NSStatusItem?
@@ -151,7 +155,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
 
     var pendingVisibilityAnimated: Bool?
 
-    let runtimeState = RuntimeStateStore()
+    let runtimeState: RuntimeStateStore
 
     var isBootstrapping = true
 
@@ -214,7 +218,14 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
 
     var appRulesSignature = ""
 
-    public override init() {
+    public override convenience init() {
+        self.init(runtimeState: RuntimeStateStore(), notesStore: NotesStore())
+    }
+
+    init(runtimeState: RuntimeStateStore, notesStore: NotesStore, monitors: MonitorStore = MonitorStore()) {
+        self.runtimeState = runtimeState
+        self.notepad = NotepadController(store: notesStore)
+        self.monitors = monitors
         super.init()
     }
 
@@ -289,7 +300,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         }
         hotkeys.shouldDeferHotkeys = { [weak self] in
             guard let self else { return false }
-            return self.notepad.isVisible || self.quake.isVisible
+            return self.overlaysCaptureFocus
         }
         updateOverlayInputMode()
         // Register after onAction is wired (applyConfig may have registered too early).
@@ -489,6 +500,10 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         notepad.onVisibilityChanged = { [weak self] _ in
             self?.updateOverlayInputMode()
         }
+        notepad.onKeyboardFocusChanged = { [weak self] in
+            self?.updateOverlayInputMode()
+        }
+        quake.onDismiss = { [weak self] in self?.dismissQuake() }
         quake.onVisibilityChanged = { [weak self] _ in
             self?.updateOverlayInputMode()
         }
@@ -514,6 +529,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
     }
 
     public func stop() {
+        notepad.store.flushPendingSaves()
         persistRuntimeState()
         for obs in systemObservers {
             NSWorkspace.shared.notificationCenter.removeObserver(obs)

@@ -159,7 +159,7 @@ public struct NotepadSettings: Equatable, Sendable {
     public var blurIntensity: Double
     public var opacity: Double
     public var defaultCategoryID: String?
-    /// Automatically close the notepad when the user clicks elsewhere.
+    /// Automatically hide the notepad when the user clicks elsewhere (notes stay open).
     public var dismissOnClickOutside: Bool
 
     public static let `default` = NotepadSettings(

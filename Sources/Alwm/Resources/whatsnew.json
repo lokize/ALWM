@@ -1,6 +1,15 @@
 {
   "releases": [
     {
+      "version": "1.4.0",
+      "items": [
+        "Fix Quake and Notepad toggle hotkeys and persistent panel dismissal",
+        "Preserve workspace layout, scroll position, and stacked window sizes after sleep",
+        "Keep focus on open popups and place new windows in the active workspace",
+        "Protect note persistence and coalesce mouse focus checks"
+      ]
+    },
+    {
       "version": "1.3.9",
       "items": [
         "Restore saved workspace windows after sleep"
@@ -300,12 +309,6 @@
       "items": [
         "Update Package",
         "Build and release scripts"
-      ]
-    },
-    {
-      "version": "1.0.0",
-      "items": [
-        "Maintenance and fixes"
       ]
     }
   ]

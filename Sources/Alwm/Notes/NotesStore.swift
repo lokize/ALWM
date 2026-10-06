@@ -8,10 +8,22 @@ public final class NotesStore: ObservableObject {
     @Published var activePageID: UUID?
     @Published var selectedCategoryID: UUID?
     @Published var searchQuery = ""
+    @Published public private(set) var lastPersistenceError: String?
 
     public var onIndexChanged: (() -> Void)?
 
     private var saveWorkItem: DispatchWorkItem?
+    private var dirtyPageIDs: Set<UUID> = []
+    private var saveGeneration: UInt64 = 0
+    private let root: URL
+    private var indexURL: URL { root.appendingPathComponent("index.json") }
+    private var pagesDirectory: URL { root.appendingPathComponent("pages", isDirectory: true) }
+    private func pageURL(_ id: UUID) -> URL {
+        pagesDirectory.appendingPathComponent("\(id.uuidString).json")
+    }
+    private func ensureDirectories() throws {
+        try FileManager.default.createDirectory(at: pagesDirectory, withIntermediateDirectories: true)
+    }
     private let encoder: JSONEncoder = {
         let e = JSONEncoder()
         e.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -24,7 +36,8 @@ public final class NotesStore: ObservableObject {
         return d
     }()
 
-    public init() {
+    public init(root: URL = NotesPaths.root) {
+        self.root = root
         loadOrCreate()
     }
 
@@ -34,13 +47,43 @@ public final class NotesStore: ObservableObject {
     }
 
     public func loadOrCreate() {
-        try? NotesPaths.ensureDirectories()
-        if let data = try? Data(contentsOf: NotesPaths.index),
-           let decoded = try? decoder.decode(NotesIndexFile.self, from: data) {
-            index = decoded
-            openTabIDs = decoded.openTabIDs
-            selectedCategoryID = decoded.categories.sorted(by: { $0.sortOrder < $1.sortOrder }).first?.id
-            activePageID = openTabIDs.first
+        do {
+            try ensureDirectories()
+            if FileManager.default.fileExists(atPath: indexURL.path) {
+                let data = try Data(contentsOf: indexURL)
+                do {
+                    let decoded = try decoder.decode(NotesIndexFile.self, from: data)
+                    index = decoded
+                    openTabIDs = decoded.openTabIDs.filter { id in decoded.pages.contains { $0.id == id } }
+                    selectedCategoryID = decoded.categories.sorted(by: { $0.sortOrder < $1.sortOrder }).first?.id
+                    activePageID = openTabIDs.first
+                    return
+                } catch {
+                    // Keep the damaged metadata for recovery; never replace it
+                    // with an empty index and orphan all otherwise valid pages.
+                    let backup = root.appendingPathComponent("index.corrupt-\(UUID().uuidString).json")
+                    try FileManager.default.copyItem(at: indexURL, to: backup)
+                    let urls = try FileManager.default.contentsOfDirectory(at: pagesDirectory, includingPropertiesForKeys: nil)
+                    let pages = urls.sorted { $0.lastPathComponent < $1.lastPathComponent }.compactMap { url -> NotePage? in
+                        guard url.pathExtension == "json", let bytes = try? Data(contentsOf: url) else { return nil }
+                        return try? decoder.decode(NotePage.self, from: bytes)
+                    }
+                    let categoryIDs = Set(pages.map(\.categoryID))
+                    index = NotesIndexFile(
+                        categories: categoryIDs.sorted { $0.uuidString < $1.uuidString }.enumerated().map { offset, id in
+                            NoteCategory(id: id, name: L10n.t("notepad.category.default"), sortOrder: offset)
+                        },
+                        pages: pages.map { NotePageSummary(id: $0.id, title: $0.title, categoryID: $0.categoryID, updatedAt: $0.updatedAt) },
+                        recentPageIDs: pages.sorted { $0.updatedAt > $1.updatedAt }.map(\.id)
+                    )
+                    selectedCategoryID = index.categories.first?.id
+                    recordPersistenceError(error)
+                    persistIndex()
+                    return
+                }
+            }
+        } catch {
+            recordPersistenceError(error)
             return
         }
         let cat = NoteCategory(name: L10n.t("notepad.category.default"))
@@ -59,7 +102,7 @@ public final class NotesStore: ObservableObject {
 
     public func page(_ id: UUID) -> NotePage? {
         if let cached = loadedPages[id] { return cached }
-        guard let data = try? Data(contentsOf: NotesPaths.pageURL(id)),
+        guard let data = try? Data(contentsOf: pageURL(id)),
               let page = try? decoder.decode(NotePage.self, from: data) else { return nil }
         loadedPages[id] = page
         return page
@@ -81,8 +124,9 @@ public final class NotesStore: ObservableObject {
             updatedAt: page.updatedAt
         ))
         touchRecent(page.id)
-        openTab(page.id)
-        persistPage(page)
+        if !openTabIDs.contains(page.id) { openTabIDs.append(page.id) }
+        activePageID = page.id
+        if !persistPage(page) { dirtyPageIDs.insert(page.id) }
         persistIndex()
         onIndexChanged?()
         return page
@@ -122,12 +166,14 @@ public final class NotesStore: ObservableObject {
     }
 
     public func deletePage(_ id: UUID) {
+        // Cancelled callbacks read the dirty set, never a captured stale page.
+        dirtyPageIDs.remove(id)
         loadedPages.removeValue(forKey: id)
         index.pages.removeAll { $0.id == id }
         index.recentPageIDs.removeAll { $0 == id }
         openTabIDs.removeAll { $0 == id }
         if activePageID == id { activePageID = openTabIDs.last }
-        try? FileManager.default.removeItem(at: NotesPaths.pageURL(id))
+        try? FileManager.default.removeItem(at: pageURL(id))
         persistIndex()
         onIndexChanged?()
     }
@@ -203,22 +249,30 @@ public final class NotesStore: ObservableObject {
     }
 
     public func flushPendingSaves() {
+        saveGeneration &+= 1
         saveWorkItem?.cancel()
         saveWorkItem = nil
-        for (_, page) in loadedPages {
-            persistPage(page)
+        lastPersistenceError = nil
+        for id in dirtyPageIDs.sorted(by: { $0.uuidString < $1.uuidString }) {
+            guard let page = loadedPages[id] else {
+                dirtyPageIDs.remove(id)
+                continue
+            }
+            if persistPage(page) { dirtyPageIDs.remove(id) }
         }
-        persistIndex()
+        if dirtyPageIDs.isEmpty { persistIndex() }
     }
 
     private func scheduleSave(_ page: NotePage) {
         loadedPages[page.id] = page
+        dirtyPageIDs.insert(page.id)
+        saveGeneration &+= 1
+        let generation = saveGeneration
         saveWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
             Task { @MainActor in
-                guard let self else { return }
-                self.persistPage(page)
-                self.persistIndex()
+                guard let self, self.saveGeneration == generation else { return }
+                self.flushPendingSaves()
                 self.onIndexChanged?()
             }
         }
@@ -234,18 +288,33 @@ public final class NotesStore: ObservableObject {
         }
     }
 
-    private func persistPage(_ page: NotePage) {
-        try? NotesPaths.ensureDirectories()
-        if let data = try? encoder.encode(page) {
-            try? data.write(to: NotesPaths.pageURL(page.id), options: .atomic)
+    @discardableResult
+    private func persistPage(_ page: NotePage) -> Bool {
+        do {
+            try ensureDirectories()
+            let data = try encoder.encode(page)
+            try data.write(to: pageURL(page.id), options: .atomic)
+            return true
+        } catch {
+            recordPersistenceError(error)
+            return false
         }
     }
 
     private func persistIndex() {
         var file = index
         file.openTabIDs = openTabIDs
-        if let data = try? encoder.encode(file) {
-            try? data.write(to: NotesPaths.index, options: .atomic)
+        do {
+            try ensureDirectories()
+            let data = try encoder.encode(file)
+            try data.write(to: indexURL, options: .atomic)
+        } catch {
+            recordPersistenceError(error)
         }
+    }
+
+    private func recordPersistenceError(_ error: Error) {
+        lastPersistenceError = error.localizedDescription
+        NSLog("ALWM: notes persistence failed: %@", error.localizedDescription)
     }
 }
