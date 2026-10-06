@@ -15,6 +15,18 @@ enum OverlayKeyboardFocus {
     }
 }
 
+enum OverlayClickCapturePolicy {
+    static func shouldConsumeOutsideClick(
+        pointX: Double,
+        pointY: Double,
+        visibleFrames: [Rect],
+        dismissOnClickOutside: Bool
+    ) -> Bool {
+        guard dismissOnClickOutside, !visibleFrames.isEmpty else { return false }
+        return !visibleFrames.contains { $0.contains(pointX: pointX, pointY: pointY) }
+    }
+}
+
 extension WindowManager {
     func isQuakeOwned(_ id: WindowID) -> Bool {
         if id == quake.windowID { return true }
@@ -188,8 +200,12 @@ extension WindowManager {
     }
 
     func dismissOverlaysIfClickOutside() {
-        dismissQuakeIfClickOutside()
-        dismissNotepadIfClickOutside()
+        dismissOverlaysIfClickOutside(at: NSEvent.mouseLocation)
+    }
+
+    func dismissOverlaysIfClickOutside(at point: CGPoint) {
+        dismissQuakeIfClickOutside(at: point)
+        dismissNotepadIfClickOutside(at: point)
         // Mouse-down precedes the OS focus transfer. Persistent panels stay
         // visible, but must release layout hotkeys once that transfer completes.
         DispatchQueue.main.async { [weak self] in self?.updateOverlayInputMode() }
@@ -205,13 +221,16 @@ extension WindowManager {
     }
 
     func dismissNotepadIfClickOutside() {
+        dismissNotepadIfClickOutside(at: NSEvent.mouseLocation)
+    }
+
+    func dismissNotepadIfClickOutside(at loc: CGPoint) {
         guard configStore.config.settings.notepad.enabled else { return }
         guard configStore.config.settings.notepad.dismissOnClickOutside else { return }
         guard notepad.isVisible else { return }
         guard Date() >= suppressNotepadDismissUntil else { return }
         guard let monitor = monitorForAction() ?? primaryMonitor() else { return }
         let settings = configStore.config.settings.notepad
-        let loc = NSEvent.mouseLocation
         if notepad.containsClick(at: loc, settings: settings, monitor: monitor) {
             preferredOverlayFocus = .notepad
             return
@@ -222,6 +241,17 @@ extension WindowManager {
     func updateOverlayInputMode() {
         let overlayNow = overlaysCaptureFocus
         hotkeys.setOverlayKeyboardCapture(overlayNow)
+        let settings = configStore.config.settings
+        let visibleFrames = overlayClickCaptureFrames()
+        let dismissOnOutside = (quake.isVisible && settings.quake.enabled && settings.quake.dismissOnClickOutside)
+            || (notepad.isVisible && settings.notepad.enabled && settings.notepad.dismissOnClickOutside)
+        overlayClickCapture.update(
+            visibleFrames: visibleFrames,
+            dismissOnClickOutside: dismissOnOutside,
+            onOutsideClick: { [weak self] point in
+                self?.dismissOverlaysIfClickOutside(at: point)
+            }
+        )
 
         if overlayNow {
             // Stop any pending focus-follows-mouse hop onto tiles under the overlay.
@@ -281,23 +311,45 @@ extension WindowManager {
     }
 
     func dismissQuakeIfClickOutside() {
+        dismissQuakeIfClickOutside(at: NSEvent.mouseLocation)
+    }
+
+    func dismissQuakeIfClickOutside(at loc: CGPoint) {
         guard configStore.config.settings.quake.enabled else { return }
         guard configStore.config.settings.quake.dismissOnClickOutside else { return }
         guard quake.isVisible, let qid = quake.windowID else { return }
         guard Date() >= suppressQuakeDismissUntil else { return }
 
-        let loc = NSEvent.mouseLocation
-        let mainHeight = Double(NSScreen.screens.first?.frame.height ?? loc.y)
-        let axX = Double(loc.x)
-        let axY = mainHeight - Double(loc.y)
         let frame = ax.currentFrame(of: qid)
             ?? lastFrames[qid]
             ?? (primaryMonitor().map { quake.visibleFrame(settings: configStore.config.settings.quake, monitor: $0) })
-        if let frame, frame.contains(pointX: axX, pointY: axY) {
+        if let frame, frame.contains(pointX: loc.x, pointY: loc.y) {
             preferredOverlayFocus = .quake
             return
         }
         dismissQuake()
+    }
+
+    func overlayClickCaptureFrames() -> [Rect] {
+        var frames: [Rect] = []
+        let settings = configStore.config.settings
+        if quake.isVisible, settings.quake.enabled,
+           let monitor = monitorContainingQuakeWindow() {
+            frames.append(quake.windowID.flatMap { ax.currentFrame(of: $0) ?? lastFrames[$0] }
+                ?? quake.visibleFrame(settings: settings.quake, monitor: monitor))
+        }
+        if let frame = notepad.visibleAXFrame(settings: settings.notepad) {
+            frames.append(frame)
+        }
+        return frames
+    }
+
+    func monitorContainingQuakeWindow() -> MonitorInfo? {
+        if let id = quake.windowID,
+           let frame = ax.currentFrame(of: id) ?? lastFrames[id] {
+            return monitors.monitorContaining(pointX: frame.midX, pointY: frame.midY)
+        }
+        return monitorForAction() ?? primaryMonitor()
     }
 
     func dismissQuake() {
@@ -538,6 +590,21 @@ extension WindowManager {
         } else {
             suppressQuakeDismissUntil = Date().addingTimeInterval(2.0)
         }
+        updateOverlayInputMode()
+        refreshChrome()
+    }
+
+    func toggleQuakeFullscreen() {
+        guard quake.isVisible, let id = quake.windowID,
+              let monitor = monitorContainingQuakeWindow() ?? primaryMonitor() else { return }
+        let settings = configStore.config.settings.quake
+        let currentFrame = ax.currentFrame(of: id) ?? lastFrames[id]
+            ?? quake.visibleFrame(settings: settings, monitor: monitor)
+        let target = quake.toggleFullscreen(settings: settings, monitor: monitor, currentFrame: currentFrame)
+        ax.setMinimized(false, id: id)
+        ax.apply(frame: target, to: id)
+        ax.focus(id)
+        lastFrames[id] = target
         updateOverlayInputMode()
         refreshChrome()
     }

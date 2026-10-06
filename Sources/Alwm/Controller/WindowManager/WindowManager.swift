@@ -63,6 +63,8 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
 
     var appPopupOpenCache: (at: Date, pid: pid_t, value: Bool)?
 
+    let overlayClickCapture = OverlayClickCapture()
+
     var quakeClickMonitor: Any?
 
     var quakeClickLocalMonitor: Any?
@@ -78,11 +80,9 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
     var preferredOverlayFocus: OverlayFocusTarget?
 
     var overlaysCaptureFocus: Bool {
-        let notepadCaptures = notepad.isVisible && (notepad.isKeyWindow
-            || (preferredOverlayFocus == .notepad && Date() < suppressNotepadDismissUntil))
-        let quakeCaptures = quake.isVisible && (quakeHasKeyboardFocus()
-            || (preferredOverlayFocus == .quake && Date() < suppressQuakeDismissUntil))
-        return notepadCaptures || quakeCaptures
+        // Keep the overlay's input mode for its whole visible lifetime. AX/frontmost
+        // focus updates can arrive after the OS has already started activating a tile.
+        notepad.isVisible || quake.isVisible
     }
 
     var statusItem: NSStatusItem?
@@ -504,6 +504,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
             self?.updateOverlayInputMode()
         }
         quake.onDismiss = { [weak self] in self?.dismissQuake() }
+        quake.onToggleFullscreen = { [weak self] in self?.toggleQuakeFullscreen() }
         quake.onVisibilityChanged = { [weak self] _ in
             self?.updateOverlayInputMode()
         }
@@ -530,6 +531,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
 
     public func stop() {
         notepad.store.flushPendingSaves()
+        overlayClickCapture.stop()
         persistRuntimeState()
         for obs in systemObservers {
             NSWorkspace.shared.notificationCenter.removeObserver(obs)
@@ -574,6 +576,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
             NSEvent.removeMonitor(quakeClickLocalMonitor)
             self.quakeClickLocalMonitor = nil
         }
+        overlayClickCapture.stop()
         quakeClickEventBridge = nil
         animator.stop()
     }
@@ -606,7 +609,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         }
         reapplyAppRulesToAllWindows()
         refreshStatusItem()
-        if quake.isVisible, let mon = primaryMonitor() {
+        if quake.isVisible, let mon = monitorContainingQuakeWindow() ?? primaryMonitor() {
             let frame: Rect
             if let qid = quake.windowID {
                 frame = lastFrames[qid] ?? quake.visibleFrame(settings: config.settings.quake, monitor: mon)
@@ -615,7 +618,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
             }
             quake.refreshBlur(settings: config.settings.quake, monitor: mon, frame: frame)
         }
-        if notepad.isVisible, let mon = primaryMonitor() {
+        if notepad.isVisible, let mon = notepad.activeMonitor ?? primaryMonitor() {
             let settings = config.settings.notepad
             let visible = notepad.panelFrame(settings: settings, monitor: mon, visible: true)
             notepad.refreshLayout(settings: settings, monitor: mon, visible: true, frame: visible)

@@ -5,7 +5,9 @@ import Foundation
 @MainActor
 private final class QuakeDismissButtonTarget: NSObject {
     var onDismiss: (() -> Void)?
+    var onToggleFullscreen: (() -> Void)?
     @objc func dismiss(_ sender: Any?) { onDismiss?() }
+    @objc func toggleFullscreen(_ sender: Any?) { onToggleFullscreen?() }
 }
 
 private final class AppleScriptResultBox: @unchecked Sendable {
@@ -36,6 +38,7 @@ public final class QuakeTerminalController {
     /// Fires whenever `isVisible` changes (show/hide).
     public var onVisibilityChanged: ((Bool) -> Void)?
     public var onDismiss: (() -> Void)?
+    public var onToggleFullscreen: (() -> Void)?
     /// Bundle ID waiting for the next new window to become the quake scratchpad.
     public private(set) var pendingAdoptBundleID: String?
 
@@ -43,6 +46,13 @@ public final class QuakeTerminalController {
     private var dismissButtonPanel: NSPanel?
     private var dismissButtonTarget: QuakeDismissButtonTarget?
     var hasVisibleDismissButton: Bool { dismissButtonPanel?.isVisible == true }
+    var hasVisibleFullscreenButton: Bool {
+        guard let stack = dismissButtonPanel?.contentView as? NSStackView else { return false }
+        return stack.views.contains { $0.accessibilityLabel() == L10n.t("overlay.fullscreen.expand") }
+    }
+    private var fullscreenState = OverlayFullscreenState()
+    private var fullscreenDisplayID: CGDirectDisplayID?
+    var isFullscreen: Bool { fullscreenState.isFullscreen }
     private weak var blurTintView: NSView?
     private var pendingLaunch = false
     private var pendingLaunchStartedAt: CFAbsoluteTime = 0
@@ -192,6 +202,9 @@ public final class QuakeTerminalController {
 
     /// Visible float frame docked to the configured edge.
     public func visibleFrame(settings: QuakeSettings, monitor: MonitorInfo) -> Rect {
+        if fullscreenState.isFullscreen, fullscreenDisplayID == monitor.id {
+            return monitor.frame
+        }
         let mon = monitor.frame
         let inset = max(0, settings.inset)
         let sizeRatio = min(0.95, max(0.15, settings.sizeRatio))
@@ -223,6 +236,14 @@ public final class QuakeTerminalController {
 
     public func hiddenFrame(settings: QuakeSettings, monitor: MonitorInfo) -> Rect {
         QuakePanelGeometry.hiddenFrame(settings: settings, monitor: monitor)
+    }
+
+    @discardableResult
+    func toggleFullscreen(settings: QuakeSettings, monitor: MonitorInfo, currentFrame: Rect) -> Rect {
+        let target = fullscreenState.toggle(currentFrame: currentFrame, displayFrame: monitor.frame)
+        fullscreenDisplayID = fullscreenState.isFullscreen ? monitor.id : nil
+        updateBlur(settings: settings, frame: target, monitor: monitor, visible: isVisible)
+        return target
     }
 
     private func setVisible(_ visible: Bool) {
@@ -319,7 +340,7 @@ public final class QuakeTerminalController {
     }
 
     private func updateDismissButton(settings: QuakeSettings, frame: Rect, visible: Bool) {
-        guard visible, !settings.dismissOnClickOutside, frame.width > 1, frame.height > 1 else {
+        guard visible, frame.width > 1, frame.height > 1 else {
             dismissButtonPanel?.orderOut(nil)
             return
         }
@@ -335,25 +356,65 @@ public final class QuakeTerminalController {
             panel.isReleasedWhenClosed = false
             let target = QuakeDismissButtonTarget()
             target.onDismiss = { [weak self] in self?.onDismiss?() }
-            let button = NSButton(frame: NSRect(x: 0, y: 0, width: 28, height: 28))
-            button.isBordered = false
-            button.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: L10n.t("quake.hide"))
-            button.contentTintColor = .labelColor
-            button.wantsLayer = true
-            button.layer?.cornerRadius = 14
-            button.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.92).cgColor
-            button.target = target
-            button.action = #selector(QuakeDismissButtonTarget.dismiss(_:))
-            button.setAccessibilityLabel(L10n.t("quake.hide"))
-            button.toolTip = L10n.t("quake.hide")
-            panel.contentView = button
+            let closeButton = makeControlButton(
+                symbol: "xmark.circle.fill",
+                label: L10n.t("quake.hide"),
+                target: target,
+                action: #selector(QuakeDismissButtonTarget.dismiss(_:))
+            )
+            let fullscreenButton = makeControlButton(
+                symbol: "arrow.up.left.and.arrow.down.right",
+                label: L10n.t("overlay.fullscreen.expand"),
+                target: target,
+                action: #selector(QuakeDismissButtonTarget.toggleFullscreen(_:))
+            )
+            let stack = NSStackView(views: [fullscreenButton, closeButton])
+            stack.orientation = .horizontal
+            stack.alignment = .centerY
+            stack.spacing = 4
+            stack.frame = NSRect(x: 0, y: 0, width: 60, height: 28)
+            panel.contentView = stack
             dismissButtonTarget = target
             dismissButtonPanel = panel
         }
+        dismissButtonTarget?.onDismiss = { [weak self] in self?.onDismiss?() }
+        dismissButtonTarget?.onToggleFullscreen = { [weak self] in self?.onToggleFullscreen?() }
+        if let stack = dismissButtonPanel?.contentView as? NSStackView,
+           let fullscreenButton = stack.views.first as? NSButton {
+            let label = L10n.t(fullscreenState.isFullscreen ? "overlay.fullscreen.restore" : "overlay.fullscreen.expand")
+            fullscreenButton.setAccessibilityLabel(label)
+            fullscreenButton.toolTip = label
+            fullscreenButton.image = NSImage(
+                systemSymbolName: fullscreenState.isFullscreen
+                    ? "arrow.down.right.and.arrow.up.left"
+                    : "arrow.up.left.and.arrow.down.right",
+                accessibilityDescription: label
+            )
+        }
         let mainHeight = NSScreen.screens.first.map { Double($0.frame.height) } ?? frame.maxY
-        let rect = NSRect(x: frame.maxX - 36, y: mainHeight - frame.y - 36, width: 28, height: 28)
+        let rect = NSRect(x: frame.maxX - 68, y: mainHeight - frame.y - 36, width: 60, height: 28)
         dismissButtonPanel?.setFrame(rect, display: true)
         dismissButtonPanel?.orderFrontRegardless()
+    }
+
+    private func makeControlButton(
+        symbol: String,
+        label: String,
+        target: QuakeDismissButtonTarget,
+        action: Selector
+    ) -> NSButton {
+        let button = NSButton(frame: NSRect(x: 0, y: 0, width: 28, height: 28))
+        button.isBordered = false
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
+        button.contentTintColor = .labelColor
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 14
+        button.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.92).cgColor
+        button.target = target
+        button.action = action
+        button.setAccessibilityLabel(label)
+        button.toolTip = label
+        return button
     }
 
     /// Re-apply blur while Quake is already visible (Settings live update).

@@ -40,20 +40,45 @@ struct ReliabilityRegressionTests {
         #expect(manager.resolveTargetWorkspace(for: window, on: monitor) == "2")
     }
 
-    @Test("a persistent Quake panel does not disable tile hotkeys after focus moves away")
+    @Test("a visible Quake panel keeps overlay focus after macOS reports another window")
     @MainActor
-    func persistentQuakeReleasesKeyboard() {
+    func visibleQuakeRetainsOverlayFocus() {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-test-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
         let manager = manager(root: root)
         var config = manager.configStore.config
-        config.settings.quake.dismissOnClickOutside = false
+        config.settings.quake.dismissOnClickOutside = true
         manager.configStore.replaceConfig(config)
         manager.quake.rebind(WindowID(pid: 999_999, windowNumber: 1))
         manager.quake.setVisibleForRecovery(true)
         manager.axFocusedWindowID = WindowID(pid: 888_888, windowNumber: 2)
         let captured = manager.overlaysCaptureFocus
-        #expect(!captured)
+        #expect(captured)
+    }
+
+    @Test("an outside click is intercepted before it can select the window underneath")
+    func outsideOverlayClickIsConsumed() {
+        let overlay = Rect(x: 100, y: 100, width: 500, height: 300)
+        #expect(OverlayClickCapturePolicy.shouldConsumeOutsideClick(
+            pointX: 700, pointY: 700, visibleFrames: [overlay], dismissOnClickOutside: true
+        ))
+        #expect(!OverlayClickCapturePolicy.shouldConsumeOutsideClick(
+            pointX: 200, pointY: 200, visibleFrames: [overlay], dismissOnClickOutside: true
+        ))
+        #expect(!OverlayClickCapturePolicy.shouldConsumeOutsideClick(
+            pointX: 700, pointY: 700, visibleFrames: [overlay], dismissOnClickOutside: false
+        ))
+    }
+
+    @Test("fullscreen toggle uses the display bounds and restores the exact prior geometry")
+    func fullscreenToggleRestoresFrame() {
+        let windowed = Rect(x: 140, y: 90, width: 760, height: 510)
+        let screen = Rect(x: 0, y: 0, width: 1440, height: 900)
+        var state = OverlayFullscreenState()
+        #expect(state.toggle(currentFrame: windowed, displayFrame: screen) == screen)
+        #expect(state.isFullscreen)
+        #expect(state.toggle(currentFrame: screen, displayFrame: screen) == windowed)
+        #expect(!state.isFullscreen)
     }
 
     @Test("an unsuccessful AX close cannot discard a live window and its layout")

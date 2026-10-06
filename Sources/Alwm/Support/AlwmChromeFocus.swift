@@ -37,7 +37,7 @@ enum AlwmChromeFocus {
 
     static func isInteractiveChrome(_ win: NSWindow) -> Bool {
         // A persistent terminal's tiny dismissal accessory is not a dialog.
-        if win.identifier?.rawValue == "alwm.quake.dismiss" { return false }
+        if win.identifier?.rawValue == "alwm.quake.dismiss" || win.identifier?.rawValue == "alwm.quake.controls" { return false }
         // Focus border / workspace bar / other HUD that ignore mouse must never block FFM.
         if win.ignoresMouseEvents { return false }
 

@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "1.4.1",
+      "items": [
+        "Keep overlay focus and prevent outside clicks activating covered windows",
+        "Add fullscreen controls to Notepad and Quake terminal"
+      ]
+    },
+    {
       "version": "1.4.0",
       "items": [
         "Fix Quake and Notepad toggle hotkeys and persistent panel dismissal",
@@ -299,13 +306,6 @@
     },
     {
       "version": "1.0.2",
-      "items": [
-        "Update Package",
-        "Build and release scripts"
-      ]
-    },
-    {
-      "version": "1.0.1",
       "items": [
         "Update Package",
         "Build and release scripts"

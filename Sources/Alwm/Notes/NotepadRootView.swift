@@ -4,6 +4,20 @@ import SwiftUI
 struct NotepadRootView: View {
     @ObservedObject var store: NotesStore
     var onClose: () -> Void
+    var onFullscreen: () -> Bool
+    @State private var isFullscreen: Bool
+
+    init(
+        store: NotesStore,
+        onClose: @escaping () -> Void,
+        onFullscreen: @escaping () -> Bool,
+        fullscreenInitially: Bool = false
+    ) {
+        self.store = store
+        self.onClose = onClose
+        self.onFullscreen = onFullscreen
+        _isFullscreen = State(initialValue: fullscreenInitially)
+    }
 
     @State private var newCategoryName = ""
     @State private var showNewCategory = false
@@ -38,6 +52,17 @@ struct NotepadRootView: View {
                     .help("\(L10n.t("notepad.storage.error")): \(error)")
                     .accessibilityLabel(L10n.t("notepad.storage.error"))
             }
+            Button {
+                isFullscreen = onFullscreen()
+            } label: {
+                Image(systemName: isFullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                    .symbolRenderingMode(.hierarchical)
+                    .font(.system(size: 14))
+            }
+            .buttonStyle(.plain)
+            .help(L10n.t(isFullscreen ? "overlay.fullscreen.restore" : "overlay.fullscreen.expand"))
+            .accessibilityLabel(L10n.t(isFullscreen ? "overlay.fullscreen.restore" : "overlay.fullscreen.expand"))
+            .frame(width: 24, height: 24)
             Button(action: onClose) {
                 Image(systemName: "xmark.circle.fill")
                     .symbolRenderingMode(.hierarchical)

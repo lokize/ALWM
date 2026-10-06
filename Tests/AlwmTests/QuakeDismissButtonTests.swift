@@ -18,7 +18,15 @@ struct QuakeDismissButtonTests {
         #expect(visible)
         let panel = try #require(NSApp.windows.first { $0.identifier?.rawValue == "alwm.quake.dismiss" && $0.isVisible })
         #expect(!AlwmChromeFocus.isInteractiveChrome(panel))
-        let button = try #require(panel.contentView as? NSButton)
+        let controls = try #require(panel.contentView as? NSStackView)
+        #expect(controls.views.count == 2)
+        let fullscreen = try #require(controls.views.first as? NSButton)
+        let button = try #require(controls.views.last as? NSButton)
+        #expect(fullscreen.accessibilityLabel() == L10n.t("overlay.fullscreen.expand"))
+        var expanded = false
+        quake.onToggleFullscreen = { expanded = true }
+        fullscreen.performClick(nil)
+        #expect(expanded)
         var dismissed = false
         quake.onDismiss = { [weak quake] in
             dismissed = true

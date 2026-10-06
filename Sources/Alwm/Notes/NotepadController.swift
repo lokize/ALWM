@@ -16,6 +16,11 @@ public final class NotepadController {
     private var hosting: NSHostingController<NotepadRootView>?
     private var presentationGeneration: UInt64 = 0
     private var currentMonitor: MonitorInfo?
+    private var currentSettings: NotepadSettings?
+    private var fullscreenState = OverlayFullscreenState()
+
+    public var isFullscreen: Bool { fullscreenState.isFullscreen }
+    var activeMonitor: MonitorInfo? { currentMonitor }
 
     public init(store: NotesStore = NotesStore()) { self.store = store }
 
@@ -40,6 +45,7 @@ public final class NotepadController {
             }
         }
         currentMonitor = monitor
+        currentSettings = settings
         ensurePanel(settings: settings, monitor: monitor)
         animate(toVisible: true, settings: settings, monitor: monitor)
     }
@@ -61,16 +67,57 @@ public final class NotepadController {
     }
 
     public func panelFrame(settings: NotepadSettings, monitor: MonitorInfo, visible: Bool) -> NSRect {
-        let rect = visible
-            ? QuakePanelGeometry.visibleFrame(settings: settings, monitor: monitor)
-            : QuakePanelGeometry.hiddenFrame(settings: settings, monitor: monitor)
+        let rect: Rect
+        if visible, fullscreenState.isFullscreen {
+            rect = monitor.frame
+        } else {
+            rect = visible
+                ? QuakePanelGeometry.visibleFrame(settings: settings, monitor: monitor)
+                : QuakePanelGeometry.hiddenFrame(settings: settings, monitor: monitor)
+        }
         let mainH = Double(NSScreen.screens.first?.frame.height ?? monitor.frame.height + monitor.frame.y)
         return rect.cocoaRect(mainHeight: mainH)
     }
 
+    func visibleAXFrame(settings: NotepadSettings) -> Rect? {
+        guard isVisible, let monitor = currentMonitor else { return nil }
+        let frame = panelFrame(settings: settings, monitor: monitor, visible: true)
+        let mainHeight = Double(NSScreen.screens.first?.frame.height ?? CGFloat(monitor.frame.maxY))
+        return Rect(x: frame.minX, y: mainHeight - frame.maxY, width: frame.width, height: frame.height)
+    }
+
+    @discardableResult
+    public func toggleFullscreen(settings: NotepadSettings, monitor: MonitorInfo) -> Bool {
+        currentSettings = settings
+        currentMonitor = monitor
+        guard isVisible, let panel else { return fullscreenState.isFullscreen }
+        let mainHeight = Double(NSScreen.screens.first?.frame.height ?? CGFloat(monitor.frame.maxY))
+        let current = Rect(
+            x: panel.frame.minX,
+            y: mainHeight - panel.frame.maxY,
+            width: panel.frame.width,
+            height: panel.frame.height
+        )
+        let target = fullscreenState.toggle(currentFrame: current, displayFrame: monitor.frame)
+        let cocoaFrame = target.cocoaRect(mainHeight: mainHeight)
+        panel.setFrame(cocoaFrame, display: true)
+        updateBlur(settings: settings, frame: cocoaFrame, monitor: monitor, visible: true)
+        onKeyboardFocusChanged?()
+        return fullscreenState.isFullscreen
+    }
+
+    @discardableResult
+    private func toggleFullscreen() -> Bool {
+        guard let currentSettings, let currentMonitor else { return false }
+        return toggleFullscreen(settings: currentSettings, monitor: currentMonitor)
+    }
+
     public func refreshLayout(settings: NotepadSettings, monitor: MonitorInfo, visible: Bool, frame: NSRect? = nil) {
         currentMonitor = monitor
-        let target = frame ?? panelFrame(settings: settings, monitor: monitor, visible: visible)
+        currentSettings = settings
+        let target = fullscreenState.isFullscreen && visible
+            ? panelFrame(settings: settings, monitor: monitor, visible: true)
+            : (frame ?? panelFrame(settings: settings, monitor: monitor, visible: visible))
         panel?.setFrame(target, display: true)
         updateBlur(settings: settings, frame: target, monitor: monitor, visible: visible)
     }
@@ -139,9 +186,12 @@ public final class NotepadController {
         p.becomesKeyOnlyIfNeeded = false
         p.onKeyboardFocusChanged = { [weak self] in self?.onKeyboardFocusChanged?() }
 
-        let root = NotepadRootView(store: store, onClose: { [weak self] in
-            self?.onClose?()
-        })
+        let root = NotepadRootView(
+            store: store,
+            onClose: { [weak self] in self?.onClose?() },
+            onFullscreen: { [weak self] in self?.toggleFullscreen() ?? false },
+            fullscreenInitially: fullscreenState.isFullscreen
+        )
         let host = NSHostingController(rootView: root)
         host.view.wantsLayer = true
         host.view.layer?.cornerRadius = 12
