@@ -16,6 +16,23 @@ enum OverlayKeyboardFocus {
 }
 
 enum OverlayClickCapturePolicy {
+    static func eventPointInAXCoordinates(
+        x: Double,
+        y: Double
+    ) -> CGPoint {
+        // CGEvent locations and AX window frames both use the global top-left origin.
+        CGPoint(x: x, y: y)
+    }
+
+    static func shouldConsumeEventOutsideClick(
+        x: Double,
+        y: Double,
+        visibleFrames: [Rect]
+    ) -> Bool {
+        let point = eventPointInAXCoordinates(x: x, y: y)
+        return shouldConsumeOutsideClick(pointX: point.x, pointY: point.y, visibleFrames: visibleFrames)
+    }
+
     static func shouldConsumeOutsideClick(
         pointX: Double,
         pointY: Double,

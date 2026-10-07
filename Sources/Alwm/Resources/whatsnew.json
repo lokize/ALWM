@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.4.3",
+      "items": [
+        "Fix outside-click capture coordinates for overlays"
+      ]
+    },
+    {
       "version": "1.4.2",
       "items": [
         "Allow workspace switching with Notepad or Quake open"
@@ -295,26 +301,6 @@
       "version": "1.0.4",
       "items": [
         "Maintenance and fixes"
-      ]
-    },
-    {
-      "version": "1.0.3",
-      "items": [
-        "Update Package",
-        "Config updates",
-        "Window manager improvements",
-        "Plugin host updates",
-        "UI updates",
-        "Settings UI updates",
-        "Localization updates",
-        "Build and release scripts"
-      ]
-    },
-    {
-      "version": "1.0.2",
-      "items": [
-        "Update Package",
-        "Build and release scripts"
       ]
     }
   ]

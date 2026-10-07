@@ -73,6 +73,16 @@ struct ReliabilityRegressionTests {
         ))
     }
 
+    @Test("click outside a low overlay is not mirrored into its visible frame")
+    func lowOverlayOutsideClickUsesAXCoordinateOrigin() {
+        let lowOverlay = Rect(x: 100, y: 700, width: 500, height: 150)
+        #expect(OverlayClickCapturePolicy.shouldConsumeEventOutsideClick(
+            x: 500,
+            y: 150,
+            visibleFrames: [lowOverlay]
+        ))
+    }
+
     @Test("fullscreen toggle uses the display bounds and restores the exact prior geometry")
     func fullscreenToggleRestoresFrame() {
         let windowed = Rect(x: 140, y: 90, width: 760, height: 510)

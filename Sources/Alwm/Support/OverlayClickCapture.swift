@@ -9,7 +9,6 @@ final class OverlayClickCapture: @unchecked Sendable {
     private struct State {
         var visibleFrames: [Rect] = []
         var dismissOnClickOutside = false
-        var mainScreenHeight = 0.0
         var swallowedButtons: Set<Int64> = []
         var onOutsideClick: (@MainActor @Sendable (CGPoint) -> Void)?
     }
@@ -47,7 +46,6 @@ final class OverlayClickCapture: @unchecked Sendable {
         state.update { value in
             value.visibleFrames = visibleFrames
             value.dismissOnClickOutside = dismissOnClickOutside && !visibleFrames.isEmpty
-            value.mainScreenHeight = Double(NSScreen.screens.first?.frame.height ?? 0)
             value.onOutsideClick = onOutsideClick
         }
 
@@ -131,15 +129,14 @@ final class OverlayClickCapture: @unchecked Sendable {
         let result = state.update { value -> (consume: Bool, callback: (@MainActor @Sendable (CGPoint) -> Void)?, point: CGPoint?) in
             if button.kind == .down {
                 let location = event.location
-                let point = CGPoint(x: location.x, y: value.mainScreenHeight - location.y)
                 let outside = OverlayClickCapturePolicy.shouldConsumeOutsideClick(
-                    pointX: point.x,
-                    pointY: point.y,
+                    pointX: location.x,
+                    pointY: location.y,
                     visibleFrames: value.visibleFrames
                 )
                 guard outside else { return (false, nil, nil) }
                 value.swallowedButtons.insert(button.number)
-                return (true, value.dismissOnClickOutside ? value.onOutsideClick : nil, point)
+                return (true, value.dismissOnClickOutside ? value.onOutsideClick : nil, location)
             }
 
             guard value.swallowedButtons.contains(button.number) else { return (false, nil, nil) }
