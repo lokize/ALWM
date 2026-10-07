@@ -2,6 +2,8 @@ import Foundation
 
 @MainActor
 public final class NotesStore: ObservableObject {
+    public let undoManager = UndoManager()
+
     @Published private(set) var index = NotesIndexFile()
     @Published private(set) var loadedPages: [UUID: NotePage] = [:]
     @Published var openTabIDs: [UUID] = []
@@ -9,6 +11,7 @@ public final class NotesStore: ObservableObject {
     @Published var selectedCategoryID: UUID?
     @Published var searchQuery = ""
     @Published public private(set) var lastPersistenceError: String?
+    @Published public private(set) var undoRevision = 0
 
     public var onIndexChanged: (() -> Void)?
 
@@ -149,9 +152,33 @@ public final class NotesStore: ObservableObject {
         persistIndex()
     }
 
-    public func updatePage(_ page: NotePage) {
+    public func updatePage(_ page: NotePage, registerUndo: Bool = false) {
+        let previous = registerUndo ? self.page(page.id) : nil
         var p = page
         p.updatedAt = Date()
+        if let previous, Self.hasContentChanges(from: previous, to: p) {
+            undoManager.registerUndo(withTarget: self) { store in
+                store.restorePage(previous)
+            }
+            undoManager.setActionName(L10n.t("notepad.undo.edit"))
+        }
+        commitPage(p)
+    }
+
+    private func restorePage(_ snapshot: NotePage) {
+        guard let current = page(snapshot.id) else { return }
+        undoManager.registerUndo(withTarget: self) { store in
+            store.restorePage(current)
+        }
+        undoManager.setActionName(L10n.t("notepad.undo.edit"))
+
+        var restored = snapshot
+        restored.updatedAt = Date()
+        commitPage(restored)
+        undoRevision &+= 1
+    }
+
+    private func commitPage(_ p: NotePage) {
         loadedPages[p.id] = p
         if let idx = index.pages.firstIndex(where: { $0.id == p.id }) {
             index.pages[idx] = NotePageSummary(
@@ -163,6 +190,10 @@ public final class NotesStore: ObservableObject {
         }
         touchRecent(p.id)
         scheduleSave(p)
+    }
+
+    private static func hasContentChanges(from old: NotePage, to new: NotePage) -> Bool {
+        old.title != new.title || old.categoryID != new.categoryID || old.blocks != new.blocks
     }
 
     public func deletePage(_ id: UUID) {

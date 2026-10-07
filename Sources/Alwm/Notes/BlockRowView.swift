@@ -2,15 +2,17 @@ import SwiftUI
 
 struct BlockRowView: View {
     @Binding var block: NoteBlock
-    var index: Int
+    var canMoveUp: Bool
+    var canMoveDown: Bool
     var numberedIndex: Int
     var focusedBlockID: UUID?
     var onFocus: (UUID) -> Void
     var onEnter: (UUID) -> Void
     var onBackspaceEmpty: (UUID) -> Void
+    var onDuplicateBlock: (UUID) -> Void
     var onSlashCommand: (UUID, BlockKind) -> Void
     var onChangeKind: (UUID, BlockKind) -> Void
-    var onMoveBlock: (IndexSet, Int) -> Void
+    var onMoveBlock: (UUID, Int) -> Void
 
     @State private var slashFilter = ""
     @State private var showSlash = false
@@ -77,6 +79,24 @@ struct BlockRowView: View {
             }
 
             Menu {
+                Button {
+                    onDuplicateBlock(block.id)
+                } label: {
+                    Label(L10n.t("notepad.block.duplicate"), systemImage: "plus.square.on.square")
+                }
+                Button {
+                    onMoveBlock(block.id, -1)
+                } label: {
+                    Label(L10n.t("notepad.block.move_up"), systemImage: "arrow.up")
+                }
+                .disabled(!canMoveUp)
+                Button {
+                    onMoveBlock(block.id, 1)
+                } label: {
+                    Label(L10n.t("notepad.block.move_down"), systemImage: "arrow.down")
+                }
+                .disabled(!canMoveDown)
+                Divider()
                 ForEach(SlashCommands.all) { item in
                     Button {
                         onChangeKind(block.id, item.kind)
@@ -220,16 +240,31 @@ struct BlockRowView: View {
     private func childRow(_ child: NoteBlock, childIdx: Int) -> some View {
         BlockRowView(
             block: bindingForChild(at: childIdx),
-            index: childIdx,
+            canMoveUp: childIdx > 0,
+            canMoveDown: childIdx + 1 < block.children.count,
             numberedIndex: childIdx + 1,
             focusedBlockID: focusedBlockID,
             onFocus: onFocus,
             onEnter: { _ in },
             onBackspaceEmpty: { _ in },
+            onDuplicateBlock: { id in duplicateChild(id) },
             onSlashCommand: { _, _ in },
             onChangeKind: { _, _ in },
-            onMoveBlock: { _, _ in }
+            onMoveBlock: { id, direction in moveChild(id, direction: direction) }
         )
+    }
+
+    private func duplicateChild(_ id: UUID) {
+        guard let idx = block.children.firstIndex(where: { $0.id == id }) else { return }
+        block.children.insert(block.children[idx].copyWithNewIDs(), at: idx + 1)
+    }
+
+    private func moveChild(_ id: UUID, direction: Int) {
+        guard let idx = block.children.firstIndex(where: { $0.id == id }) else { return }
+        let targetIndex = idx + direction
+        guard targetIndex >= 0, targetIndex < block.children.count else { return }
+        let destination = direction < 0 ? targetIndex : targetIndex + 1
+        block.children.move(fromOffsets: IndexSet(integer: idx), toOffset: destination)
     }
 
     private func bindingForChild(at idx: Int) -> Binding<NoteBlock> {

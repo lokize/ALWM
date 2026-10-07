@@ -4,6 +4,7 @@ struct NotepadEditorView: View {
     @ObservedObject var store: NotesStore
     @State private var focusedBlockID: UUID?
     @State private var draftPage: NotePage?
+    @State private var isCompletedTasksExpanded = false
 
     private var currentPage: NotePage? {
         guard let activeID = store.activePageID, let base = store.page(activeID) else { return nil }
@@ -28,7 +29,12 @@ struct NotepadEditorView: View {
                 )
             }
         }
-        .onChange(of: store.activePageID) { _, _ in reloadDraft() }
+        .onChange(of: store.activePageID) { _, _ in
+            isCompletedTasksExpanded = false
+            store.undoManager.removeAllActions()
+            reloadDraft()
+        }
+        .onChange(of: store.undoRevision) { _, _ in syncDraftAfterUndo() }
         .onAppear { reloadDraft() }
     }
 
@@ -70,18 +76,63 @@ struct NotepadEditorView: View {
     @ViewBuilder
     private func blockList(page: NotePage) -> some View {
         let blocks = (draftPage ?? page).blocks
-        ForEach(Array(blocks.enumerated()), id: \.element.id) { idx, block in
+        let indexed = blocks.enumerated().map {
+            IndexedNoteBlock(sourceIndex: $0.offset, block: $0.element)
+        }
+        let pendingTasks = indexed.filter { $0.block.kind == .todo && !$0.block.checked }
+        let completedTasks = indexed.filter { $0.block.kind == .todo && $0.block.checked }
+        let noteBlocks = indexed.filter { $0.block.kind != .todo }
+
+        VStack(alignment: .leading, spacing: 6) {
+            if !pendingTasks.isEmpty {
+                Text("\(L10n.t("notepad.tasks.pending")) (\(pendingTasks.count))")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 2)
+                blockRows(pendingTasks, page: page, allBlocks: blocks)
+            }
+
+            if !completedTasks.isEmpty {
+                DisclosureGroup(isExpanded: $isCompletedTasksExpanded) {
+                    blockRows(completedTasks, page: page, allBlocks: blocks)
+                        .padding(.top, 4)
+                } label: {
+                    Text("\(L10n.t("notepad.tasks.completed")) (\(completedTasks.count))")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+            }
+
+            if (!pendingTasks.isEmpty || !completedTasks.isEmpty) && !noteBlocks.isEmpty {
+                Divider().padding(.vertical, 3)
+            }
+
+            blockRows(noteBlocks, page: page, allBlocks: blocks)
+        }
+    }
+
+    @ViewBuilder
+    private func blockRows(
+        _ entries: [IndexedNoteBlock],
+        page: NotePage,
+        allBlocks: [NoteBlock]
+    ) -> some View {
+        ForEach(Array(entries.enumerated()), id: \.element.id) { visibleIndex, entry in
+            let idx = entry.sourceIndex
             BlockRowView(
                 block: blockBinding(at: idx, page: page),
-                index: idx,
-                numberedIndex: numberedIndex(for: idx, in: blocks),
+                canMoveUp: visibleIndex > 0,
+                canMoveDown: visibleIndex + 1 < entries.count,
+                numberedIndex: numberedIndex(for: idx, in: allBlocks),
                 focusedBlockID: focusedBlockID,
                 onFocus: { focusedBlockID = $0 },
                 onEnter: { id in insertBlock(after: id, kind: .paragraph, page: page) },
                 onBackspaceEmpty: { id in deleteBlock(id, page: page) },
+                onDuplicateBlock: { id in duplicateBlock(id, page: page) },
                 onSlashCommand: { id, kind in applySlash(id, kind: kind, page: page) },
                 onChangeKind: { id, kind in applySlash(id, kind: kind, page: page) },
-                onMoveBlock: { from, to in moveBlocks(from: from, to: to, page: page) }
+                onMoveBlock: { id, direction in moveBlock(id, direction: direction, page: page) }
             )
         }
     }
@@ -96,9 +147,10 @@ struct NotepadEditorView: View {
             set: { new in
                 var p = draftPage ?? page
                 guard index < p.blocks.count else { return }
+                let oldBlock = p.blocks[index]
                 p.blocks[index] = new
                 draftPage = p
-                store.updatePage(p)
+                store.updatePage(p, registerUndo: blockChangeNeedsUndo(from: oldBlock, to: new))
             }
         )
     }
@@ -123,6 +175,20 @@ struct NotepadEditorView: View {
         }
         draftPage = p
         focusedBlockID = p.blocks.first?.id
+    }
+
+    private func syncDraftAfterUndo() {
+        guard let id = store.activePageID, let restored = store.page(id) else { return }
+        draftPage = restored
+        if let focusedBlockID, !containsBlock(focusedBlockID, in: restored.blocks) {
+            self.focusedBlockID = restored.blocks.first?.id
+        }
+    }
+
+    private func containsBlock(_ id: UUID, in blocks: [NoteBlock]) -> Bool {
+        blocks.contains { block in
+            block.id == id || containsBlock(id, in: block.children)
+        }
     }
 
     private func numberedIndex(for index: Int, in blocks: [NoteBlock]) -> Int {
@@ -158,7 +224,7 @@ struct NotepadEditorView: View {
         }
         draftPage = p
         focusedBlockID = block.id
-        store.updatePage(p)
+        store.updatePage(p, registerUndo: true)
     }
 
     private func deleteBlock(_ id: UUID, page: NotePage) {
@@ -167,7 +233,32 @@ struct NotepadEditorView: View {
         p.blocks.remove(at: idx)
         draftPage = p
         focusedBlockID = p.blocks[max(0, idx - 1)].id
-        store.updatePage(p)
+        store.updatePage(p, registerUndo: true)
+    }
+
+    private func duplicateBlock(_ id: UUID, page: NotePage) {
+        var p = draftPage ?? page
+        guard let idx = p.blocks.firstIndex(where: { $0.id == id }) else { return }
+        let duplicate = p.blocks[idx].copyWithNewIDs()
+        p.blocks.insert(duplicate, at: idx + 1)
+        draftPage = p
+        focusedBlockID = duplicate.id
+        store.updatePage(p, registerUndo: true)
+    }
+
+    private func blockChangeNeedsUndo(from old: NoteBlock, to new: NoteBlock) -> Bool {
+        var oldWithoutText = old
+        var newWithoutText = new
+        clearText(in: &oldWithoutText)
+        clearText(in: &newWithoutText)
+        return oldWithoutText != newWithoutText
+    }
+
+    private func clearText(in block: inout NoteBlock) {
+        block.text = ""
+        for index in block.children.indices {
+            clearText(in: &block.children[index])
+        }
     }
 
     private func applySlash(_ id: UUID, kind: BlockKind, page: NotePage) {
@@ -186,13 +277,34 @@ struct NotepadEditorView: View {
         }
         draftPage = p
         focusedBlockID = id
-        store.updatePage(p)
+        store.updatePage(p, registerUndo: true)
     }
 
-    private func moveBlocks(from: IndexSet, to: Int, page: NotePage) {
+    private func moveBlock(_ id: UUID, direction: Int, page: NotePage) {
         var p = draftPage ?? page
-        p.blocks.move(fromOffsets: from, toOffset: to)
+        guard direction == -1 || direction == 1,
+              let sourceIndex = p.blocks.firstIndex(where: { $0.id == id }) else { return }
+        let source = p.blocks[sourceIndex]
+        let siblingIndices = p.blocks.indices.filter { index in
+            let candidate = p.blocks[index]
+            if source.kind == .todo {
+                return candidate.kind == .todo && candidate.checked == source.checked
+            }
+            return candidate.kind != .todo
+        }
+        guard let siblingPosition = siblingIndices.firstIndex(of: sourceIndex) else { return }
+        let targetPosition = siblingPosition + direction
+        guard targetPosition >= 0, targetPosition < siblingIndices.count else { return }
+        let targetIndex = siblingIndices[targetPosition]
+        let destination = direction < 0 ? targetIndex : targetIndex + 1
+        p.blocks.move(fromOffsets: IndexSet(integer: sourceIndex), toOffset: destination)
         draftPage = p
-        store.updatePage(p)
+        store.updatePage(p, registerUndo: true)
     }
+}
+
+private struct IndexedNoteBlock: Identifiable {
+    var sourceIndex: Int
+    var block: NoteBlock
+    var id: UUID { block.id }
 }

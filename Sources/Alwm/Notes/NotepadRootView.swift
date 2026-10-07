@@ -43,6 +43,16 @@ struct NotepadRootView: View {
             VisualEffectBackground(material: .underWindowBackground, blendingMode: .withinWindow)
                 .opacity(0.98)
         )
+        .background {
+            VStack(spacing: 0) {
+                Button("") { store.undoManager.undo() }
+                    .keyboardShortcut("z", modifiers: .command)
+                Button("") { store.undoManager.undo() }
+                    .keyboardShortcut("z", modifiers: .control)
+            }
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+        }
     }
 
     private var fullscreenTopInset: CGFloat {
@@ -62,6 +72,17 @@ struct NotepadRootView: View {
                     .help("\(L10n.t("notepad.storage.error")): \(error)")
                     .accessibilityLabel(L10n.t("notepad.storage.error"))
             }
+            Button {
+                store.undoManager.undo()
+            } label: {
+                Image(systemName: "arrow.uturn.backward")
+                    .symbolRenderingMode(.hierarchical)
+                    .font(.system(size: 14))
+            }
+            .buttonStyle(.plain)
+            .help(L10n.t("notepad.undo.help"))
+            .accessibilityLabel(L10n.t("notepad.undo"))
+            .frame(width: 24, height: 24)
             Button {
                 isFullscreen = onFullscreen()
             } label: {

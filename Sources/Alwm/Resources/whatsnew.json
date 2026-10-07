@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "version": "1.4.4",
+      "items": [
+        "Keep pending tasks above a collapsible completed section",
+        "Add undo shortcuts and block editing tools",
+        "Translate the Notepad interface into all supported languages"
+      ]
+    },
+    {
       "version": "1.4.3",
       "items": [
         "Fix outside-click capture coordinates for overlays"
@@ -295,12 +303,6 @@
       "items": [
         "Add Docker, Brew, and Downloads plugins with UI enhancements and localization updates",
         "Implement drag-and-drop reordering for installed plugin cards with UI updates and localization improvements"
-      ]
-    },
-    {
-      "version": "1.0.4",
-      "items": [
-        "Maintenance and fixes"
       ]
     }
   ]

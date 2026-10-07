@@ -174,6 +174,7 @@ public final class NotepadController {
             backing: .buffered,
             defer: false
         )
+        p.notepadUndoManager = store.undoManager
         p.isFloatingPanel = true
         p.level = .floating
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
@@ -292,6 +293,8 @@ public final class NotepadController {
 /// Borderless floating panel that still accepts keyboard focus (search + editor).
 private final class NotepadKeyPanel: NSPanel {
     var onKeyboardFocusChanged: (() -> Void)?
+    var notepadUndoManager: UndoManager?
+    override var undoManager: UndoManager? { notepadUndoManager }
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
     override func becomeKey() {

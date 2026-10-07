@@ -50,6 +50,15 @@ public struct NoteBlock: Identifiable, Codable, Equatable, Sendable {
     }
 }
 
+extension NoteBlock {
+    func copyWithNewIDs() -> NoteBlock {
+        var copy = self
+        copy.id = UUID()
+        copy.children = children.map { $0.copyWithNewIDs() }
+        return copy
+    }
+}
+
 public struct NoteCategory: Identifiable, Codable, Equatable, Sendable {
     public var id: UUID
     public var name: String
