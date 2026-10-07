@@ -13,6 +13,7 @@ Add a history browser to the Quake terminal that imports saved command history f
 - Favorite entries and organize them into user-created categories.
 - Keep imported commands and organization metadata in a local ALWM data file.
 - Keep the history window open when clicks occur outside it; close it only through its close button or Escape.
+- Pause ALWM hotkeys while the history window is open; leave macOS system shortcuts such as Command-Tab available.
 - Localize new visible strings for all supported app languages.
 
 ## Existing context
@@ -31,7 +32,7 @@ The first implementation reads these standard per-user history files when presen
 | bash | `~/.bash_history` |
 | fish | `~/.local/share/fish/fish_history` |
 
-The importer scans when the history window first opens and refreshes when a watched history file changes. If a shell only writes its history at process exit, its new commands appear after the file is flushed. ALWM does not modify `.zshrc`, `.bashrc`, fish configuration, or terminal settings to force more frequent writes.
+The importer scans when the history window first opens and checks each source file's size and modification time once per second while the window is open. A changed source is re-read and merged. If a shell only writes its history at process exit, its new commands appear after the file is flushed. ALWM does not modify `.zshrc`, `.bashrc`, fish configuration, or terminal settings to force more frequent writes.
 
 The importer supports the common formats emitted by these shell history files:
 
@@ -60,13 +61,13 @@ Store the imported entries and organization metadata in `~/.config/alwm/terminal
 Add a dedicated ALWM history window controller and SwiftUI view. The Quake accessory panel gains a History button next to expand. Activating it opens and focuses the history window, which provides:
 
 - a text search field;
-- shell, date, favorite, and category filters;
+- shell, date, favorite, and category filters. Date filtering uses optional start and end dates, inclusive by local calendar day. Entries without timestamps remain visible only when both date bounds are unset;
 - a total result count;
 - favorite toggles and category assignment for each entry;
 - category creation, renaming, and removal;
 - a close button and Escape handling.
 
-While the history window is visible, WindowManager treats it as an overlay that captures focus. `OverlayClickCapture` receives the history window's frame as the sole interactive frame and consumes clicks outside that frame without dismissing the window. Closing the history window restores the normal Quake and Notepad click-capture frames and focus behavior. System shortcuts such as Command-Tab remain available.
+While the history window is visible, WindowManager treats it as a modal overlay that captures focus. `OverlayClickCapture` receives the history window's frame as the sole interactive frame and consumes clicks outside that frame without dismissing the window. ALWM hotkeys are paused while the history window is open. Closing the history window restores the normal Quake and Notepad click-capture frames and focus behavior. System shortcuts such as Command-Tab remain available.
 
 Date filters operate on entries with a shell-provided timestamp. Entries without timestamps are not assigned an invented date; they remain visible when no date filter is selected.
 

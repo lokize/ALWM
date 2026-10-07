@@ -15,18 +15,20 @@ public final class NotepadController {
     private weak var blurTintView: NSView?
     private var hosting: NSHostingController<NotepadRootView>?
     private var presentationGeneration: UInt64 = 0
+    private var targetVisibility = false
     private var currentMonitor: MonitorInfo?
     private var currentSettings: NotepadSettings?
     private var fullscreenState = OverlayFullscreenState()
 
     public var isFullscreen: Bool { fullscreenState.isFullscreen }
+    public var isTargetVisible: Bool { targetVisibility }
     var activeMonitor: MonitorInfo? { currentMonitor }
 
     public init(store: NotesStore = NotesStore()) { self.store = store }
 
     public func toggle(settings: NotepadSettings, monitor: MonitorInfo) {
         guard settings.enabled else { return }
-        if isVisible {
+        if targetVisibility {
             hide(settings: settings, monitor: monitor)
         } else {
             show(settings: settings, monitor: monitor)
@@ -61,7 +63,7 @@ public final class NotepadController {
     }
 
     public func hide(settings: NotepadSettings, monitor: MonitorInfo) {
-        guard isVisible else { return }
+        guard targetVisibility else { return }
         store.flushPendingSaves()
         animate(toVisible: false, settings: settings, monitor: monitor)
     }
@@ -208,8 +210,11 @@ public final class NotepadController {
         ensurePanel(settings: settings, monitor: monitor)
         guard let panel else { return }
 
-        isVisible = toVisible
-        onVisibilityChanged?(toVisible)
+        targetVisibility = toVisible
+        if toVisible, !isVisible {
+            isVisible = true
+            onVisibilityChanged?(true)
+        }
 
         let target = panelFrame(settings: settings, monitor: monitor, visible: toVisible)
         updateBlur(settings: settings, frame: target, monitor: monitor, visible: toVisible)
@@ -250,6 +255,8 @@ public final class NotepadController {
         } else {
             panel?.orderOut(nil)
             blurPanel?.orderOut(nil)
+            isVisible = false
+            onVisibilityChanged?(false)
         }
     }
 

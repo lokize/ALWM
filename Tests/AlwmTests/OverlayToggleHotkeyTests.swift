@@ -97,6 +97,62 @@ struct OverlayToggleHotkeyTests {
         #expect(saved.page(page.id)?.title == "Preserve me")
     }
 
+    @Test("Notepad retains overlay capture until its hide animation finishes")
+    @MainActor
+    func notepadRetainsOverlayCaptureDuringDismissal() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-notepad-dismiss-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let notepad = NotepadController(store: NotesStore(root: root))
+        var settings = NotepadSettings.default
+        settings.animationDuration = 0.25
+        settings.blur = false
+        let monitor = MonitorInfo(id: 1, frame: .init(x: 0, y: 0, width: 1440, height: 900), visibleFrame: .init(x: 0, y: 24, width: 1440, height: 876), name: "Test")
+        var visibilityChanges: [Bool] = []
+        notepad.onVisibilityChanged = { visibilityChanges.append($0) }
+
+        notepad.show(settings: settings, monitor: monitor)
+        try await Task.sleep(for: .milliseconds(350))
+        #expect(notepad.isVisible)
+        #expect(visibilityChanges == [true])
+
+        notepad.hide(settings: settings, monitor: monitor)
+        #expect(notepad.isVisible)
+        #expect(visibilityChanges == [true])
+
+        try await Task.sleep(for: .milliseconds(350))
+        #expect(!notepad.isVisible)
+        #expect(visibilityChanges == [true, false])
+    }
+
+    @Test("toggling Notepad during dismissal reverses the in-flight animation")
+    @MainActor
+    func notepadToggleReversesDismissal() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-notepad-reverse-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let notepad = NotepadController(store: NotesStore(root: root))
+        var settings = NotepadSettings.default
+        settings.animationDuration = 0.25
+        settings.blur = false
+        let monitor = MonitorInfo(id: 1, frame: .init(x: 0, y: 0, width: 1440, height: 900), visibleFrame: .init(x: 0, y: 24, width: 1440, height: 876), name: "Test")
+        var visibilityChanges: [Bool] = []
+        notepad.onVisibilityChanged = { visibilityChanges.append($0) }
+
+        notepad.show(settings: settings, monitor: monitor)
+        try await Task.sleep(for: .milliseconds(350))
+        notepad.hide(settings: settings, monitor: monitor)
+        notepad.toggle(settings: settings, monitor: monitor)
+        try await Task.sleep(for: .milliseconds(350))
+
+        #expect(notepad.isVisible)
+        #expect(notepad.isTargetVisible)
+        #expect(visibilityChanges == [true])
+
+        notepad.hide(settings: settings, monitor: monitor)
+        try await Task.sleep(for: .milliseconds(350))
+        #expect(!notepad.isVisible)
+        #expect(visibilityChanges == [true, false])
+    }
+
     @Test("persistent Quake toggles the same terminal session rather than destroying its window")
     @MainActor
     func persistentQuakeTogglesSameSession() {
@@ -117,7 +173,7 @@ struct OverlayToggleHotkeyTests {
         #expect(quake.visibleFrame(settings: settings, monitor: monitor) == monitor.frame)
         #expect(quake.toggleFullscreen(settings: settings, monitor: monitor, currentFrame: monitor.frame) == windowedFrame)
         #expect(!quake.isFullscreen)
-        for expectedVisibility in [true, false, true] {
+        for expectedVisibility in [false, true, false] {
             quake.toggle(settings: settings, monitor: monitor, windows: windows, ax: ax, applyFrame: { _, _ in }, focusTiled: {})
             #expect(quake.isVisible == expectedVisibility)
             #expect(quake.windowID == id)

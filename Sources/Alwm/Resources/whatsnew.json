@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.4.5",
+      "items": [
+        "Keep Notepad focus captured through its closing animation"
+      ]
+    },
+    {
       "version": "1.4.4",
       "items": [
         "Keep pending tasks above a collapsible completed section",
@@ -296,13 +302,6 @@
       "version": "1.0.6",
       "items": [
         "Maintenance and fixes"
-      ]
-    },
-    {
-      "version": "1.0.5",
-      "items": [
-        "Add Docker, Brew, and Downloads plugins with UI enhancements and localization updates",
-        "Implement drag-and-drop reordering for installed plugin cards with UI updates and localization improvements"
       ]
     }
   ]

@@ -299,10 +299,8 @@ extension WindowManager {
 
     func toggleNotepad(monitor: MonitorInfo) {
         let settings = configStore.config.settings.notepad
-        if notepad.isVisible {
-            dismissNotepad(on: monitor)
-        } else {
-            notepad.show(settings: settings, monitor: monitor)
+        notepad.toggle(settings: settings, monitor: monitor)
+        if notepad.isTargetVisible {
             preferredOverlayFocus = .notepad
             suppressNotepadDismissUntil = Date().addingTimeInterval(0.5)
         }
