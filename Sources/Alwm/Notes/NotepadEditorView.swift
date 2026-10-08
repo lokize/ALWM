@@ -127,7 +127,7 @@ struct NotepadEditorView: View {
                 numberedIndex: numberedIndex(for: idx, in: allBlocks),
                 focusedBlockID: focusedBlockID,
                 onFocus: { focusedBlockID = $0 },
-                onEnter: { id in insertBlock(after: id, kind: .paragraph, page: page) },
+                onEnter: { id in insertContinuation(after: id, page: page) },
                 onBackspaceEmpty: { id in deleteBlock(id, page: page) },
                 onDuplicateBlock: { id in duplicateBlock(id, page: page) },
                 onSlashCommand: { id, kind in applySlash(id, kind: kind, page: page) },
@@ -225,6 +225,13 @@ struct NotepadEditorView: View {
         draftPage = p
         focusedBlockID = block.id
         store.updatePage(p, registerUndo: true)
+    }
+
+    private func insertContinuation(after id: UUID, page: NotePage) {
+        guard let result = (draftPage ?? page).insertingContinuation(after: id) else { return }
+        draftPage = result.page
+        focusedBlockID = result.insertedBlockID
+        store.updatePage(result.page, registerUndo: true)
     }
 
     private func deleteBlock(_ id: UUID, page: NotePage) {

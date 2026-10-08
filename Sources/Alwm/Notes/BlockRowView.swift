@@ -245,7 +245,7 @@ struct BlockRowView: View {
             numberedIndex: childIdx + 1,
             focusedBlockID: focusedBlockID,
             onFocus: onFocus,
-            onEnter: { _ in },
+            onEnter: { id in insertChildContinuation(after: id) },
             onBackspaceEmpty: { _ in },
             onDuplicateBlock: { id in duplicateChild(id) },
             onSlashCommand: { _, _ in },
@@ -257,6 +257,13 @@ struct BlockRowView: View {
     private func duplicateChild(_ id: UUID) {
         guard let idx = block.children.firstIndex(where: { $0.id == id }) else { return }
         block.children.insert(block.children[idx].copyWithNewIDs(), at: idx + 1)
+    }
+
+    private func insertChildContinuation(after id: UUID) {
+        guard let idx = block.children.firstIndex(where: { $0.id == id }) else { return }
+        let continuation = block.children[idx].emptyContinuationForEnter()
+        block.children.insert(continuation, at: idx + 1)
+        onFocus(continuation.id)
     }
 
     private func moveChild(_ id: UUID, direction: Int) {

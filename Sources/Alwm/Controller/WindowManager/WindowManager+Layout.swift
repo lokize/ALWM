@@ -5,6 +5,19 @@ import SwiftUI
 import AlwmIPC
 import AlwmPluginAPI
 
+enum NewWindowLayoutRecoveryPolicy {
+    static func shouldRestore(
+        isResumeRecovering: Bool,
+        isResumeWindow: Bool,
+        addedTileCount: Int,
+        diskClaimsAddedWindow: Bool
+    ) -> Bool {
+        guard !isResumeRecovering else { return false }
+        return (isResumeWindow && addedTileCount >= 2)
+            || (isResumeWindow && diskClaimsAddedWindow)
+    }
+}
+
 enum AXDropClassification {
     static func isMassDisappear(
         removedTiledWindows: Int,
@@ -665,11 +678,15 @@ extension WindowManager {
                         || Date() < resumeRecoveryEligibleUntil
                     // Staggered recoverAfterSystemResume owns rematch during wake — ingest rematch
                     // here was spamming restore every few seconds and fighting column widths.
-                    let diskClaimsAdded = !isResumeRecovering && addedTiles.contains { id in
-                        diskLayoutClaimsWindow(id, allowFuzzy: resumeWindow)
+                    let diskClaimsAdded = resumeWindow && addedTiles.contains { id in
+                        diskLayoutClaimsWindow(id, allowFuzzy: true)
                     }
-                    let massRestore = !isResumeRecovering
-                        && ((resumeWindow && addedTiles.count >= 2) || diskClaimsAdded)
+                    let massRestore = NewWindowLayoutRecoveryPolicy.shouldRestore(
+                        isResumeRecovering: isResumeRecovering,
+                        isResumeWindow: resumeWindow,
+                        addedTileCount: addedTiles.count,
+                        diskClaimsAddedWindow: diskClaimsAdded
+                    )
                     if massRestore {
                         logMove(
                             "tile mass-restore rematch added=\(addedTiles.count) ids=\(addedTiles.map(\.token).sorted().joined(separator: ","))"

@@ -57,6 +57,26 @@ extension NoteBlock {
         copy.children = children.map { $0.copyWithNewIDs() }
         return copy
     }
+
+    func emptyContinuationForEnter() -> NoteBlock {
+        var continuation = NoteBlock.empty(kind)
+        continuation.calloutStyle = calloutStyle
+        continuation.language = language
+        if kind == .toggle {
+            continuation.children = [NoteBlock.empty()]
+        }
+        return continuation
+    }
+}
+
+extension NotePage {
+    func insertingContinuation(after blockID: UUID) -> (page: NotePage, insertedBlockID: UUID)? {
+        guard let index = blocks.firstIndex(where: { $0.id == blockID }) else { return nil }
+        var updated = self
+        let continuation = blocks[index].emptyContinuationForEnter()
+        updated.blocks.insert(continuation, at: index + 1)
+        return (updated, continuation.id)
+    }
 }
 
 public struct NoteCategory: Identifiable, Codable, Equatable, Sendable {

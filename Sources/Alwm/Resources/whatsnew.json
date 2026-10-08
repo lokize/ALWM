@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "1.4.6",
+      "items": [
+        "New windows enter the workspace layout without triggering an unnecessary full restore",
+        "Notepad Enter duplicates the current block type and popups outside the panel remain clickable"
+      ]
+    },
+    {
       "version": "1.4.5",
       "items": [
         "Keep Notepad focus captured through its closing animation"
@@ -296,12 +303,6 @@
       "version": "1.0.7",
       "items": [
         "Settings UI updates"
-      ]
-    },
-    {
-      "version": "1.0.6",
-      "items": [
-        "Maintenance and fixes"
       ]
     }
   ]

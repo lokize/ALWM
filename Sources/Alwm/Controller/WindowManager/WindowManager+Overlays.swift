@@ -36,10 +36,43 @@ enum OverlayClickCapturePolicy {
     static func shouldConsumeOutsideClick(
         pointX: Double,
         pointY: Double,
-        visibleFrames: [Rect]
+        visibleFrames: [Rect],
+        frontmostWindowOwnerPID: pid_t? = nil,
+        ownProcessID: pid_t = ProcessInfo.processInfo.processIdentifier
     ) -> Bool {
         guard !visibleFrames.isEmpty else { return false }
-        return !visibleFrames.contains { $0.contains(pointX: pointX, pointY: pointY) }
+        let insideOverlay = visibleFrames.contains { $0.contains(pointX: pointX, pointY: pointY) }
+        guard !insideOverlay else { return false }
+        return frontmostWindowOwnerPID != ownProcessID
+    }
+
+    /// CGWindowList is ordered from front to back. Return the owner of the
+    /// first visible window under the point so auxiliary ALWM menus remain
+    /// clickable even when they extend beyond the overlay panel.
+    static func windowOwnerPID(
+        atX pointX: Double,
+        y pointY: Double,
+        windowInfos: [[String: Any]]
+    ) -> pid_t? {
+        for info in windowInfos {
+            guard let ownerPID = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value
+                    ?? (info[kCGWindowOwnerPID as String] as? pid_t),
+                  let bounds = info[kCGWindowBounds as String] as? [String: Any]
+            else { continue }
+
+            let alpha = (info[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1
+            guard alpha > 0 else { continue }
+            let x = (bounds["X"] as? NSNumber)?.doubleValue ?? (bounds["X"] as? Double) ?? .nan
+            let y = (bounds["Y"] as? NSNumber)?.doubleValue ?? (bounds["Y"] as? Double) ?? .nan
+            let width = (bounds["Width"] as? NSNumber)?.doubleValue ?? (bounds["Width"] as? Double) ?? 0
+            let height = (bounds["Height"] as? NSNumber)?.doubleValue ?? (bounds["Height"] as? Double) ?? 0
+            guard x.isFinite, y.isFinite, width > 0, height > 0 else { continue }
+            if Rect(x: x, y: y, width: width, height: height)
+                .contains(pointX: pointX, pointY: pointY) {
+                return ownerPID
+            }
+        }
+        return nil
     }
 }
 

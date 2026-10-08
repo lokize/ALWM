@@ -126,13 +126,35 @@ final class OverlayClickCapture: @unchecked Sendable {
             return Unmanaged.passUnretained(event)
         }
 
+        let location = button.kind == .down ? event.location : nil
+        let shouldCheckAppWindow: Bool
+        if let location {
+            shouldCheckAppWindow = state.read { value in
+                !value.visibleFrames.isEmpty && !value.visibleFrames.contains {
+                    $0.contains(pointX: location.x, pointY: location.y)
+                }
+            }
+        } else {
+            shouldCheckAppWindow = false
+        }
+        let frontmostWindowOwnerPID: pid_t?
+        if shouldCheckAppWindow, let location {
+            frontmostWindowOwnerPID = Self.frontmostWindowOwnerPID(at: location)
+        } else {
+            frontmostWindowOwnerPID = nil
+        }
+
         let result = state.update { value -> (consume: Bool, callback: (@MainActor @Sendable (CGPoint) -> Void)?, point: CGPoint?) in
             if button.kind == .down {
-                let location = event.location
+                guard let location else { return (false, nil, nil) }
+                let insideOverlay = value.visibleFrames.contains {
+                    $0.contains(pointX: location.x, pointY: location.y)
+                }
                 let outside = OverlayClickCapturePolicy.shouldConsumeOutsideClick(
                     pointX: location.x,
                     pointY: location.y,
-                    visibleFrames: value.visibleFrames
+                    visibleFrames: value.visibleFrames,
+                    frontmostWindowOwnerPID: insideOverlay ? nil : frontmostWindowOwnerPID
                 )
                 guard outside else { return (false, nil, nil) }
                 value.swallowedButtons.insert(button.number)
@@ -148,6 +170,20 @@ final class OverlayClickCapture: @unchecked Sendable {
             Task { @MainActor in callback(point) }
         }
         return result.consume ? nil : Unmanaged.passUnretained(event)
+    }
+
+    /// The visible overlay's own frame is cached. Query WindowServer only for
+    /// outside points, where an auxiliary menu/popover may own the hit target.
+    private static func frontmostWindowOwnerPID(at point: CGPoint) -> pid_t? {
+        guard let infos = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements],
+            kCGNullWindowID
+        ) as? [[String: Any]] else { return nil }
+        return OverlayClickCapturePolicy.windowOwnerPID(
+            atX: point.x,
+            y: point.y,
+            windowInfos: infos
+        )
     }
 
     private struct MouseButton {
