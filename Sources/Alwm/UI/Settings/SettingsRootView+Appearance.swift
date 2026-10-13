@@ -55,10 +55,26 @@ extension SettingsRootView {
                     Text("Alfabética").tag(WallpaperOrder.alphabetical)
                 }
                 HStack {
-                    Text("Intervalo (segundos)")
+                    Text("Intervalo")
                     Spacer()
-                    TextField("Segundos", value: $config.settings.wallpaper.intervalSeconds, format: .number.precision(.fractionLength(0)))
+                    TextField("Intervalo", value: Binding(
+                        get: {
+                            config.settings.wallpaper.intervalUnit.displayValue(
+                                from: config.settings.wallpaper.intervalSeconds
+                            )
+                        },
+                        set: { value in
+                            config.settings.wallpaper.intervalSeconds = config.settings.wallpaper.intervalUnit
+                                .intervalSeconds(from: value)
+                        }
+                    ), format: .number.precision(.fractionLength(0...2)))
                         .frame(width: 100)
+                    Picker("Unidade do intervalo", selection: $config.settings.wallpaper.intervalUnit) {
+                        ForEach(WallpaperIntervalUnit.allCases) { unit in
+                            Text(unit.label).tag(unit)
+                        }
+                    }
+                    .labelsHidden()
                 }
                 .disabled(!config.settings.wallpaper.rotationEnabled)
                 Button("Próximo papel de parede") {
@@ -93,7 +109,7 @@ extension SettingsRootView {
         }
         .formStyle(.grouped)
         .onChange(of: config.settings.wallpaper.intervalSeconds) { _, interval in
-            let valid = min(86400, max(60, interval.isFinite ? interval : 1800))
+            let valid = min(86400, max(1, interval.isFinite ? interval : 1800))
             if interval != valid { config.settings.wallpaper.intervalSeconds = valid }
         }
     }

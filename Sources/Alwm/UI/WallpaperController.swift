@@ -2,6 +2,88 @@ import AppKit
 import AVFoundation
 import CoreGraphics
 import Foundation
+import UserNotifications
+
+enum WallpaperNotificationContent {
+    static let title = "Papel de parede alterado"
+
+    static func body(for url: URL) -> String {
+        let folder = url.deletingLastPathComponent().lastPathComponent
+        return "\(folder.isEmpty ? "Papéis de parede" : folder) — \(url.lastPathComponent)"
+    }
+}
+
+enum WallpaperUpdatePolicy {
+    static func shouldAdvance(from current: WallpaperSettings, to next: WallpaperSettings) -> Bool {
+        current.enabled != next.enabled
+            || current.directory != next.directory
+            || current.order != next.order
+            || current.recursive != next.recursive
+            || current.separatePerMonitor != next.separatePerMonitor
+            || current.monitorDirectories != next.monitorDirectories
+    }
+}
+
+@MainActor
+private final class WallpaperNotificationService: NSObject, UNUserNotificationCenterDelegate {
+    static let shared = WallpaperNotificationService()
+
+    private let center = UNUserNotificationCenter.current()
+    private var permissionGranted: Bool?
+    private var isRequestingPermission = false
+    private var pendingURLs: [URL] = []
+
+    private override init() {
+        super.init()
+        center.delegate = self
+    }
+
+    func notify(for urls: [URL]) {
+        let uniqueURLs = Array(Set(urls)).sorted { $0.path < $1.path }
+        guard !uniqueURLs.isEmpty else { return }
+        if let permissionGranted {
+            if permissionGranted { uniqueURLs.forEach(deliver(for:)) }
+            return
+        }
+        pendingURLs.append(contentsOf: uniqueURLs)
+        guard !isRequestingPermission else { return }
+        isRequestingPermission = true
+        center.requestAuthorization(options: [.alert, .sound]) { [weak self] granted, error in
+            Task { @MainActor in
+                guard let self else { return }
+                self.isRequestingPermission = false
+                self.permissionGranted = granted
+                if let error {
+                    NSLog("ALWM wallpaper notification: authorization failed: %@", error.localizedDescription)
+                }
+                let queued = self.pendingURLs
+                self.pendingURLs.removeAll()
+                if granted { queued.forEach(self.deliver(for:)) }
+            }
+        }
+    }
+
+    private func deliver(for url: URL) {
+        let content = UNMutableNotificationContent()
+        content.title = WallpaperNotificationContent.title
+        content.body = WallpaperNotificationContent.body(for: url)
+        content.sound = .default
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        center.add(request) { error in
+            if let error {
+                NSLog("ALWM wallpaper notification: failed to deliver %@: %@", url.path, error.localizedDescription)
+            }
+        }
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
+    }
+}
 
 enum WallpaperCatalog {
     static let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "heic", "heif", "tif", "tiff", "bmp", "webp"]
@@ -83,6 +165,10 @@ final class WallpaperController {
             player.pause()
             window.orderOut(nil)
         }
+
+        func setMuted(_ muted: Bool) {
+            player.isMuted = muted
+        }
     }
 
     private var settings: WallpaperSettings = .default
@@ -122,14 +208,22 @@ final class WallpaperController {
 
     func apply(_ next: WallpaperSettings) {
         guard settings != next else { return }
+        let shouldAdvance = WallpaperUpdatePolicy.shouldAdvance(from: settings, to: next)
+        let muteChanged = settings.videoMuted != next.videoMuted
         settings = next
         timer?.invalidate()
         timer = nil
-        stopVideos()
-        guard next.enabled else { return }
-        advance()
+        if !next.enabled {
+            stopVideos()
+            return
+        }
+        if shouldAdvance {
+            advance()
+        } else if muteChanged {
+            videoSessions.values.forEach { $0.setMuted(next.videoMuted) }
+        }
         if next.rotationEnabled {
-            timer = Timer.scheduledTimer(withTimeInterval: min(86400, max(60, next.intervalSeconds)), repeats: true) { [weak self] _ in
+            timer = Timer.scheduledTimer(withTimeInterval: min(86400, max(1, next.intervalSeconds)), repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.advance() }
             }
         }
@@ -144,32 +238,44 @@ final class WallpaperController {
             videoSessions.removeValue(forKey: id)?.stop()
         }
         if settings.separatePerMonitor {
+            var changedURLs: [URL] = []
             for screen in screens {
                 let id = Self.displayID(of: screen)
                 let key = String(id)
                 let directory = WallpaperCatalog.directory(settings: settings, displayID: id)
                 let files = WallpaperCatalog.files(in: directory, recursive: settings.recursive)
                 guard let url = WallpaperCatalog.next(from: files, after: previousByScreen[key], order: settings.order) else { continue }
+                let changed = previousByScreen[key] != url
                 previousByScreen[key] = url
-                show(url, on: screen, id: id)
+                if show(url, on: screen, id: id), changed { changedURLs.append(url) }
             }
+            WallpaperNotificationService.shared.notify(for: changedURLs)
         } else {
             let files = WallpaperCatalog.files(in: settings.directory, recursive: settings.recursive)
             guard let url = WallpaperCatalog.next(from: files, after: previousByScreen["all"], order: settings.order) else { return }
+            let changed = previousByScreen["all"] != url
             previousByScreen["all"] = url
-            for screen in screens { show(url, on: screen, id: Self.displayID(of: screen)) }
+            var didApply = false
+            for screen in screens {
+                didApply = show(url, on: screen, id: Self.displayID(of: screen)) || didApply
+            }
+            if changed && didApply { WallpaperNotificationService.shared.notify(for: [url]) }
         }
     }
 
-    private func show(_ url: URL, on screen: NSScreen, id: CGDirectDisplayID) {
+    @discardableResult
+    private func show(_ url: URL, on screen: NSScreen, id: CGDirectDisplayID) -> Bool {
         videoSessions.removeValue(forKey: id)?.stop()
         if WallpaperCatalog.videoExtensions.contains(url.pathExtension.lowercased()) {
             videoSessions[id] = VideoSession(url: url, screen: screen, muted: settings.videoMuted)
+            return true
         } else {
             do {
                 try NSWorkspace.shared.setDesktopImageURL(url, for: screen)
+                return true
             } catch {
                 NSLog("ALWM wallpaper: failed to set %@: %@", url.path, error.localizedDescription)
+                return false
             }
         }
     }

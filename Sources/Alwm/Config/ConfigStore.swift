@@ -253,7 +253,10 @@ public final class ConfigStore: @unchecked Sendable {
         if let v = table.wallpaperEnabled { s.wallpaper.enabled = v }
         if let v = table.wallpaperDirectory { s.wallpaper.directory = v }
         if let v = table.wallpaperRotationEnabled { s.wallpaper.rotationEnabled = v }
-        if let v = table.wallpaperIntervalSeconds { s.wallpaper.intervalSeconds = min(86400, max(60, v)) }
+        if let v = table.wallpaperIntervalSeconds { s.wallpaper.intervalSeconds = min(86400, max(1, v)) }
+        if let v = table.wallpaperIntervalUnit, let unit = WallpaperIntervalUnit(rawValue: v) {
+            s.wallpaper.intervalUnit = unit
+        }
         if let v = table.wallpaperOrder, let order = WallpaperOrder(rawValue: v) { s.wallpaper.order = order }
         if let v = table.wallpaperRecursive { s.wallpaper.recursive = v }
         if let v = table.wallpaperSeparatePerMonitor { s.wallpaper.separatePerMonitor = v }
@@ -469,6 +472,7 @@ public final class ConfigStore: @unchecked Sendable {
         var wallpaperDirectory: String?
         var wallpaperRotationEnabled: Bool?
         var wallpaperIntervalSeconds: Double?
+        var wallpaperIntervalUnit: String?
         var wallpaperOrder: String?
         var wallpaperRecursive: Bool?
         var wallpaperSeparatePerMonitor: Bool?
@@ -588,6 +592,7 @@ public final class ConfigStore: @unchecked Sendable {
     wallpaperDirectory = ""
     wallpaperRotationEnabled = false
     wallpaperIntervalSeconds = 1800.0
+    wallpaperIntervalUnit = "seconds"
     wallpaperOrder = "random"
     wallpaperRecursive = false
     wallpaperSeparatePerMonitor = false

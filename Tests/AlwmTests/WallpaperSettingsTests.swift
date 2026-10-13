@@ -13,6 +13,7 @@ struct WallpaperSettingsTests {
         settings.wallpaper.directory = "/tmp/Pictures \"Summer\""
         settings.wallpaper.rotationEnabled = true
         settings.wallpaper.intervalSeconds = 600
+        settings.wallpaper.intervalUnit = .minutes
         settings.wallpaper.order = .alphabetical
         settings.wallpaper.recursive = true
         settings.wallpaper.separatePerMonitor = true
@@ -22,6 +23,41 @@ struct WallpaperSettingsTests {
         #expect(parsed.wallpaper == settings.wallpaper)
         #expect(parsed.workspaceBar.separatePluginBadges)
         #expect(parsed.workspaceBar.pluginBadgeSpacing == 11)
+    }
+
+    @Test("wallpaper interval unit converts display values to persisted seconds")
+    func intervalUnitConversion() {
+        #expect(WallpaperIntervalUnit.seconds.intervalSeconds(from: 15) == 15)
+        #expect(WallpaperIntervalUnit.minutes.intervalSeconds(from: 2) == 120)
+        #expect(WallpaperIntervalUnit.minutes.displayValue(from: 120) == 2)
+        #expect(WallpaperIntervalUnit.seconds.intervalSeconds(from: 0) == 1)
+        #expect(WallpaperIntervalUnit.minutes.intervalSeconds(from: 2000) == 86400)
+    }
+
+    @Test("changing the rotation interval does not immediately advance the wallpaper")
+    func intervalUpdateDoesNotAdvance() {
+        var current = WallpaperSettings.default
+        current.enabled = true
+        current.directory = "/Wallpapers"
+        var next = current
+        next.intervalSeconds = 60
+        next.intervalUnit = .minutes
+        #expect(!WallpaperUpdatePolicy.shouldAdvance(from: current, to: next))
+        next.directory = "/Other wallpapers"
+        #expect(WallpaperUpdatePolicy.shouldAdvance(from: current, to: next))
+    }
+
+    @Test("older wallpaper configs keep the seconds unit by default")
+    func legacyIntervalUnitDefaultsToSeconds() throws {
+        let settings = try ConfigStore.parseSettings("wallpaperEnabled = true\nwallpaperIntervalSeconds = 45.0")
+        #expect(settings.wallpaper.intervalSeconds == 45)
+        #expect(settings.wallpaper.intervalUnit == .seconds)
+    }
+
+    @Test("wallpaper notification shows its parent folder and filename")
+    func notificationContent() {
+        let url = URL(fileURLWithPath: "/Users/test/Wallpapers/Travel/beach.mov")
+        #expect(WallpaperNotificationContent.body(for: url) == "Travel — beach.mov")
     }
 
     @Test("catalog filters media, respects recursion and rotates without immediate repetition")

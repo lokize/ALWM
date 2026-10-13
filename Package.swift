@@ -504,6 +504,7 @@ let package = Package(
                 .linkedFramework("ScreenCaptureKit"),
                 .linkedFramework("AVFoundation"),
                 .linkedFramework("SwiftUI"),
+                .linkedFramework("UserNotifications"),
                 .linkedFramework("ServiceManagement"),
                 .linkedFramework("WebKit")
             ]

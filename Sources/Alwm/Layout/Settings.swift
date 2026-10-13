@@ -352,11 +352,29 @@ public enum WallpaperOrder: String, Sendable, Codable, CaseIterable, Identifiabl
     public var id: String { rawValue }
 }
 
+public enum WallpaperIntervalUnit: String, Sendable, Codable, CaseIterable, Identifiable {
+    case seconds, minutes
+
+    public var id: String { rawValue }
+    public var label: String { self == .seconds ? "Segundos" : "Minutos" }
+    private var multiplier: Double { self == .seconds ? 1 : 60 }
+
+    public func intervalSeconds(from value: Double) -> Double {
+        let normalized = value.isFinite ? value : 30
+        return min(86400, max(1, normalized * multiplier))
+    }
+
+    public func displayValue(from intervalSeconds: Double) -> Double {
+        max(1, intervalSeconds) / multiplier
+    }
+}
+
 public struct WallpaperSettings: Equatable, Sendable {
     public var enabled = false
     public var directory = ""
     public var rotationEnabled = false
     public var intervalSeconds: Double = 1800
+    public var intervalUnit: WallpaperIntervalUnit = .seconds
     public var order: WallpaperOrder = .random
     public var recursive = false
     public var separatePerMonitor = false

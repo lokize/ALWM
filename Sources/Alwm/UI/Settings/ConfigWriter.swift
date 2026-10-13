@@ -60,6 +60,7 @@ enum ConfigWriter {
         wallpaperDirectory = \(tomlString(settings.wallpaper.directory))
         wallpaperRotationEnabled = \(settings.wallpaper.rotationEnabled)
         wallpaperIntervalSeconds = \(settings.wallpaper.intervalSeconds)
+        wallpaperIntervalUnit = \(tomlString(settings.wallpaper.intervalUnit.rawValue))
         wallpaperOrder = \(tomlString(settings.wallpaper.order.rawValue))
         wallpaperRecursive = \(settings.wallpaper.recursive)
         wallpaperSeparatePerMonitor = \(settings.wallpaper.separatePerMonitor)

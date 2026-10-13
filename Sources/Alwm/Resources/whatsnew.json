@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "1.5.3",
+      "items": [
+        "Wallpaper change notifications include folder and filename",
+        "Automatic rotation supports seconds and minutes"
+      ]
+    },
+    {
       "version": "1.5.2",
       "items": [
         "Use Ghostty's native action to keep the visible Quake window above other apps."
@@ -298,13 +305,6 @@
         "Plugins: brew/Sources/BrewStore.swift",
         "Plugins: calendar/Sources/CalendarStore.swift",
         "Build and release scripts"
-      ]
-    },
-    {
-      "version": "1.1.3",
-      "items": [
-        "Accessibility bridge updates",
-        "Window manager improvements"
       ]
     }
   ]
