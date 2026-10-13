@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.5.1",
+      "items": [
+        "Keep Settings, wallpaper picker, Notepad and Ghostty Quake above workspace windows."
+      ]
+    },
+    {
       "version": "1.5.0",
       "items": [
         "Persistent Quake and Notepad panels allow clicks and text selection in other apps."
@@ -300,12 +306,6 @@
       "items": [
         "Input handling updates",
         "Update main"
-      ]
-    },
-    {
-      "version": "1.1.1",
-      "items": [
-        "Window manager improvements"
       ]
     }
   ]

@@ -176,17 +176,8 @@ public final class NotepadController {
             backing: .buffered,
             defer: false
         )
+        Self.configurePanelPresentation(p)
         p.notepadUndoManager = store.undoManager
-        p.isFloatingPanel = true
-        p.level = .floating
-        p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        p.isOpaque = false
-        p.backgroundColor = .clear
-        p.hasShadow = true
-        p.isMovableByWindowBackground = false
-        p.hidesOnDeactivate = false
-        p.isReleasedWhenClosed = false
-        p.becomesKeyOnlyIfNeeded = false
         p.onKeyboardFocusChanged = { [weak self] in self?.onKeyboardFocusChanged?() }
 
         let root = NotepadRootView(
@@ -202,6 +193,19 @@ public final class NotepadController {
         p.contentViewController = host
         panel = p
         hosting = host
+    }
+
+    static func configurePanelPresentation(_ panel: NSPanel) {
+        panel.isFloatingPanel = true
+        panel.level = .statusBar
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.isMovableByWindowBackground = false
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.becomesKeyOnlyIfNeeded = false
     }
 
     private func animate(toVisible: Bool, settings: NotepadSettings, monitor: MonitorInfo) {

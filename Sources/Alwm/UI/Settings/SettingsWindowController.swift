@@ -6,6 +6,8 @@ import AlwmPluginAPI
 
 @MainActor
 public final class SettingsWindowController {
+    static let windowIdentifier = "alwm.settings"
+
     var window: NSWindow?
     var closeObserver: NSObjectProtocol?
     /// Separate from `window` so close/teardown can mutate the window without
@@ -48,9 +50,12 @@ public final class SettingsWindowController {
         )
         let hosting = NSHostingController(rootView: root)
         let window = NSWindow(contentViewController: hosting)
+        window.identifier = NSUserInterfaceItemIdentifier(Self.windowIdentifier)
         window.title = L10n.t("settings.title")
         window.setContentSize(NSSize(width: 1100, height: 780))
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.level = .statusBar
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         window.minSize = NSSize(width: 960, height: 680)
         window.center()
         window.isReleasedWhenClosed = false
@@ -59,9 +64,6 @@ public final class SettingsWindowController {
         self.window = window
         presented = true
         onVisibilityChange?(true)
-        PluginPanelOutsideClick.watch(window) { [weak self] in
-            self?.close()
-        }
         closeObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
             object: window,
@@ -99,7 +101,6 @@ public final class SettingsWindowController {
         let wasPresented = presented || window != nil
         presented = false
         let closing = window
-        PluginPanelOutsideClick.stop(for: closing)
         detachCloseObserver()
         window = nil
         if orderOut {
@@ -117,4 +118,3 @@ public final class SettingsWindowController {
         }
     }
 }
-

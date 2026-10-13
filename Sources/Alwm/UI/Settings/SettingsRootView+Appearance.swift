@@ -2,6 +2,29 @@ import AppKit
 import SwiftUI
 import AlwmPluginAPI
 
+@MainActor
+enum WallpaperDirectoryPickerPresentation {
+    static func configure(_ panel: NSOpenPanel) {
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Usar pasta"
+        panel.level = .statusBar
+    }
+
+    static func present(
+        _ panel: NSOpenPanel,
+        from parent: NSWindow?,
+        completion: @escaping (NSApplication.ModalResponse) -> Void
+    ) {
+        if let parent, parent.isVisible {
+            panel.beginSheetModal(for: parent, completionHandler: completion)
+        } else {
+            panel.begin(completionHandler: completion)
+        }
+    }
+}
+
 // MARK: - SettingsRootView — Workspace bar / Borders
 
 extension SettingsRootView {
@@ -13,7 +36,8 @@ extension SettingsRootView {
                 HStack {
                     TextField("Pasta de imagens e vídeos", text: $config.settings.wallpaper.directory)
                     Button("Escolher…") {
-                        if let path = chooseWallpaperDirectory() {
+                        chooseWallpaperDirectory { path in
+                            guard let path else { return }
                             config.settings.wallpaper.directory = path
                         }
                     }
@@ -55,7 +79,8 @@ extension SettingsRootView {
                                 set: { config.settings.wallpaper.monitorDirectories[String(monitor.id)] = $0 }
                             ))
                             Button("Escolher…") {
-                                if let path = chooseWallpaperDirectory() {
+                                chooseWallpaperDirectory { path in
+                                    guard let path else { return }
                                     config.settings.wallpaper.monitorDirectories[String(monitor.id)] = path
                                 }
                             }
@@ -73,14 +98,16 @@ extension SettingsRootView {
         }
     }
 
-    func chooseWallpaperDirectory() -> String? {
+    func chooseWallpaperDirectory(completion: @escaping (String?) -> Void) {
         let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Usar pasta"
-        guard panel.runModal() == .OK else { return nil }
-        return panel.url?.path
+        WallpaperDirectoryPickerPresentation.configure(panel)
+        let parent = NSApp.windows.first {
+            $0.identifier?.rawValue == SettingsWindowController.windowIdentifier
+                && $0.isVisible
+        } ?? NSApp.keyWindow
+        WallpaperDirectoryPickerPresentation.present(panel, from: parent) { response in
+            completion(response == .OK ? panel.url?.path : nil)
+        }
     }
 
     /// Form settings only — plugin order lives in a separate bottom inset so

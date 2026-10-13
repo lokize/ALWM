@@ -1,4 +1,5 @@
 import AppKit
+import CoreGraphics
 import Foundation
 
 /// Writes Ghostty Quake appearance overrides. Does **not** spawn processes or touch
@@ -6,6 +7,11 @@ import Foundation
 enum QuakeShellAppearance {
     private static let markerBegin = "# BEGIN ALWM_QUAKE"
     private static let markerEnd = "# END ALWM_QUAKE"
+    static let floatOnTopBinding = "ctrl+alt+super+shift+f19=toggle_window_float_on_top"
+
+    static func shouldToggleFloatOnTop(currentLayer: Int, enable: Bool, floatingLayer: Int) -> Bool {
+        enable ? currentLayer < floatingLayer : currentLayer >= floatingLayer
+    }
 
     static var ghosttyQuakeConfigURL: URL {
         ConfigPaths.root.appendingPathComponent("ghostty-quake.conf", isDirectory: false)
@@ -18,6 +24,17 @@ enum QuakeShellAppearance {
     }
 
     static func writeGhosttyQuakeConfig(settings: QuakeSettings) {
+        let contents = ghosttyQuakeConfigContents(settings: settings)
+        let url = ghosttyQuakeConfigURL
+        try? FileManager.default.createDirectory(at: ConfigPaths.root, withIntermediateDirectories: true)
+        // Skip no-op writes — Ghostty reloads on every change and used to fight ALWM.
+        if let existing = try? String(contentsOf: url, encoding: .utf8), existing == contents {
+            return
+        }
+        try? contents.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    static func ghosttyQuakeConfigContents(settings: QuakeSettings) -> String {
         let opacity = settings.effectiveOpacity
         let blurLine: String = {
             guard settings.blur else { return "background-blur = false" }
@@ -32,16 +49,42 @@ enum QuakeShellAppearance {
         # Managed by ALWM Quake. Do not add config-file lines to this file.
         background-opacity = \(String(format: "%.3f", opacity))
         \(blurLine)
+        keybind = \(floatOnTopBinding)
         \(markerEnd)
 
         """
-        let url = ghosttyQuakeConfigURL
-        try? FileManager.default.createDirectory(at: ConfigPaths.root, withIntermediateDirectories: true)
-        // Skip no-op writes — Ghostty reloads on every change and used to fight ALWM.
-        if let existing = try? String(contentsOf: url, encoding: .utf8), existing == body {
-            return
-        }
-        try? body.write(to: url, atomically: true, encoding: .utf8)
+        return body
+    }
+
+    static func setGhosttyFloatOnTop(windowID: Int, pid: pid_t, enabled: Bool) {
+        guard let infos = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements],
+            kCGNullWindowID
+        ) as? [[String: Any]],
+              let info = infos.first(where: {
+                  (($0[kCGWindowNumber as String] as? NSNumber)?.intValue
+                    ?? $0[kCGWindowNumber as String] as? Int) == windowID
+              }),
+              let currentLayer = (info[kCGWindowLayer as String] as? NSNumber)?.intValue
+                ?? info[kCGWindowLayer as String] as? Int
+        else { return }
+
+        let floatingLayer = Int(CGWindowLevelForKey(.floatingWindow))
+        guard shouldToggleFloatOnTop(
+            currentLayer: currentLayer,
+            enable: enabled,
+            floatingLayer: floatingLayer
+        ), let source = CGEventSource(stateID: .hidSystemState) else { return }
+
+        let modifiers: CGEventFlags = [.maskControl, .maskAlternate, .maskCommand, .maskShift]
+        let keyCode: CGKeyCode = 0x50 // F19
+        guard let down = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
+        else { return }
+        down.flags = modifiers
+        up.flags = modifiers
+        down.postToPid(pid)
+        up.postToPid(pid)
     }
 
     /// One-way include: user config → ALWM quake file (never the reverse).
