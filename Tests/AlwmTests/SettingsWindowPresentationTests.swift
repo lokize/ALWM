@@ -65,7 +65,10 @@ struct SettingsWindowPresentationTests {
             enable: false,
             floatingLayer: 3
         ))
-        #expect(QuakeShellAppearance.ghosttyQuakeConfigContents(settings: .default)
-            .contains("keybind = \(QuakeShellAppearance.floatOnTopBinding)"))
+        #expect(QuakeShellAppearance.ghosttyFloatOnTopScript.contains(
+            "perform action \"toggle_window_float_on_top\""
+        ))
+        #expect(!QuakeShellAppearance.ghosttyQuakeConfigContents(settings: .default)
+            .contains("keybind ="))
     }
 }

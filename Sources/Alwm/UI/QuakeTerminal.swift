@@ -283,11 +283,9 @@ public final class QuakeTerminalController {
         ax.setMinimized(false, id: id)
         ax.focus(id)
         if Self.resolveBundleID(configured: settings.bundleID) == "com.mitchellh.ghostty" {
-            QuakeShellAppearance.setGhosttyFloatOnTop(
-                windowID: id.windowNumber,
-                pid: id.pid,
-                enabled: true
-            )
+            if let script = QuakeShellAppearance.floatOnTopActionScript(windowID: id.windowNumber, enabled: true) {
+                runAppleScript(script, completion: {})
+            }
         }
         NSLog("ALWM Quake: show %@ edge=%@ opacity=%.2f blur=%@ frame=(%.0f,%.0f %.0fx%.0f)",
               id.token, settings.edge.rawValue, settings.effectiveOpacity,
@@ -303,11 +301,9 @@ public final class QuakeTerminalController {
     ) {
         presentationGeneration &+= 1
         if Self.resolveBundleID(configured: settings.bundleID) == "com.mitchellh.ghostty" {
-            QuakeShellAppearance.setGhosttyFloatOnTop(
-                windowID: id.windowNumber,
-                pid: id.pid,
-                enabled: false
-            )
+            if let script = QuakeShellAppearance.floatOnTopActionScript(windowID: id.windowNumber, enabled: false) {
+                runAppleScript(script, completion: {})
+            }
         }
         let hidden = hiddenFrame(settings: settings, monitor: monitor)
         setVisible(false)

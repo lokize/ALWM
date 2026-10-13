@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.5.2",
+      "items": [
+        "Use Ghostty's native action to keep the visible Quake window above other apps."
+      ]
+    },
+    {
       "version": "1.5.1",
       "items": [
         "Keep Settings, wallpaper picker, Notepad and Ghostty Quake above workspace windows."
@@ -299,13 +305,6 @@
       "items": [
         "Accessibility bridge updates",
         "Window manager improvements"
-      ]
-    },
-    {
-      "version": "1.1.2",
-      "items": [
-        "Input handling updates",
-        "Update main"
       ]
     }
   ]

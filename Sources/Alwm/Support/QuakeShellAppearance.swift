@@ -2,12 +2,15 @@ import AppKit
 import CoreGraphics
 import Foundation
 
-/// Writes Ghostty Quake appearance overrides. Does **not** spawn processes or touch
-/// AppleScript — those paths froze ALWM when toggling Quake.
+/// Writes Ghostty Quake appearance overrides and builds window-scoped actions.
 enum QuakeShellAppearance {
     private static let markerBegin = "# BEGIN ALWM_QUAKE"
     private static let markerEnd = "# END ALWM_QUAKE"
-    static let floatOnTopBinding = "ctrl+alt+super+shift+f19=toggle_window_float_on_top"
+    static let ghosttyFloatOnTopScript = """
+        tell application id "com.mitchellh.ghostty"
+          perform action "toggle_window_float_on_top" on focused terminal of selected tab of front window
+        end tell
+        """
 
     static func shouldToggleFloatOnTop(currentLayer: Int, enable: Bool, floatingLayer: Int) -> Bool {
         enable ? currentLayer < floatingLayer : currentLayer >= floatingLayer
@@ -49,16 +52,15 @@ enum QuakeShellAppearance {
         # Managed by ALWM Quake. Do not add config-file lines to this file.
         background-opacity = \(String(format: "%.3f", opacity))
         \(blurLine)
-        keybind = \(floatOnTopBinding)
         \(markerEnd)
 
         """
         return body
     }
 
-    static func setGhosttyFloatOnTop(windowID: Int, pid: pid_t, enabled: Bool) {
+    static func currentWindowLayer(windowID: Int) -> Int? {
         guard let infos = CGWindowListCopyWindowInfo(
-            [.optionOnScreenOnly, .excludeDesktopElements],
+            [.optionAll, .excludeDesktopElements],
             kCGNullWindowID
         ) as? [[String: Any]],
               let info = infos.first(where: {
@@ -67,24 +69,19 @@ enum QuakeShellAppearance {
               }),
               let currentLayer = (info[kCGWindowLayer as String] as? NSNumber)?.intValue
                 ?? info[kCGWindowLayer as String] as? Int
-        else { return }
+        else { return nil }
+        return currentLayer
+    }
 
-        let floatingLayer = Int(CGWindowLevelForKey(.floatingWindow))
-        guard shouldToggleFloatOnTop(
-            currentLayer: currentLayer,
-            enable: enabled,
-            floatingLayer: floatingLayer
-        ), let source = CGEventSource(stateID: .hidSystemState) else { return }
+    static func floatOnTopActionScript(windowID: Int, enabled: Bool) -> String? {
+        guard let currentLayer = currentWindowLayer(windowID: windowID),
+              shouldToggleFloatOnTop(
+                currentLayer: currentLayer,
+                enable: enabled,
+                floatingLayer: Int(CGWindowLevelForKey(.floatingWindow))
+              ) else { return nil }
 
-        let modifiers: CGEventFlags = [.maskControl, .maskAlternate, .maskCommand, .maskShift]
-        let keyCode: CGKeyCode = 0x50 // F19
-        guard let down = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true),
-              let up = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
-        else { return }
-        down.flags = modifiers
-        up.flags = modifiers
-        down.postToPid(pid)
-        up.postToPid(pid)
+        return ghosttyFloatOnTopScript
     }
 
     /// One-way include: user config → ALWM quake file (never the reverse).
