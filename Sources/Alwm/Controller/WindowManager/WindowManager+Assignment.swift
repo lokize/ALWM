@@ -375,7 +375,9 @@ extension WindowManager {
         }
         let mon = monitors.monitorContaining(pointX: win.frame.midX, pointY: win.frame.midY)
             ?? monitors.monitors.first
-        let home = mon.flatMap { workspaces.activeWorkspaceByMonitor[$0.id] } ?? firstWorkspaceID()
+        let configured = AppRules.preferredWorkspaceForOpening(rules: configStore.config.rules, window: win)
+            .flatMap { workspaces.workspaces[$0] != nil ? $0 : nil }
+        let home = configured ?? mon.flatMap { workspaces.activeWorkspaceByMonitor[$0.id] } ?? firstWorkspaceID()
         guard let home else { return }
         windowWorkspace[id] = home
         runtimeState.setAssignment(home, for: id)
@@ -447,6 +449,14 @@ extension WindowManager {
             if ax.currentAX[id]?.prefersFloating == true { continue }
             if quake.pendingAdoptBundleID != nil, floatingOverrides.contains(id) { continue }
             if AppRules.forcesFloat(rules: rules, window: win) { continue }
+            // Startup/wake force-clearing repairs accidental AX floats, but a disk
+            // floating slot is an intentional part of the saved session.
+            if forceClearOverrides,
+               runtimeState.snapshot.workspaceLayouts.values.contains(where: { layout in
+                   layout.floating.contains(where: { windowMatchesSavedRef(win, ref: $0) })
+               }) {
+                continue
+            }
             // Probation for Safari/Electron AX siblings — finishSameBundleSiblingSettle owns promotion.
             if sameBundleSiblingSettleWorkItems[id] != nil { continue }
 

@@ -249,6 +249,10 @@ extension WindowManager {
                 if missingLongEnough && shouldEjectMissingFromColumns(id, missingCount: count) {
                     let pid = id.pid
                     let bid = windowsByID[id]?.bundleID
+                    if !isLayoutMutationFrozen, !isResumeRecovering,
+                       let home, let win = windowsByID[id] {
+                        removePersistedWindowRefs(.init(window: win), fromWorkspace: home)
+                    }
                     workspaces.removeWindowEverywhere(id)
                     windowWorkspace.removeValue(forKey: id)
                     runtimeState.setAssignment(nil, for: id)
@@ -267,6 +271,10 @@ extension WindowManager {
             if count >= threshold && missingLongEnough {
                 forgotten.insert(id)
                 let home = windowWorkspace[id] ?? workspaces.workspaceID(containing: id)
+                if !isLayoutMutationFrozen, !isResumeRecovering,
+                   let home, let win = windowsByID[id] {
+                    removePersistedWindowRefs(.init(window: win), fromWorkspace: home)
+                }
                 let homeWasActive = home.map { isHomeActiveOnAnyMonitor($0) } ?? false
                 let wasLayoutTile = windowsByID[id]?.isTiled == true
                     || workspaces.workspaceID(containing: id) != nil
@@ -284,6 +292,7 @@ extension WindowManager {
                 workspaces.removeWindowEverywhere(id)
                 lastFrames.removeValue(forKey: id)
                 savedFrames.removeValue(forKey: id)
+                pendingSavedFloatFrames.remove(id)
                 floatingOverrides.remove(id)
                 windowWorkspace.removeValue(forKey: id)
                 runtimeState.setAssignment(nil, for: id)
@@ -411,7 +420,7 @@ extension WindowManager {
             guard let win = windowsByID[id], win.isTiled else {
                 if let win = windowsByID[id], !win.isIgnored {
                     ensureFloatHome(id, win: win)
-                    if !isBootstrapping, !blockingReassign,
+                    if !isBootstrapping, !blockingReassign, windowWorkspace[id] == nil,
                        let mon = monitors.monitorContaining(pointX: win.frame.midX, pointY: win.frame.midY)
                         ?? monitors.monitors.first,
                        let active = workspaces.activeWorkspaceByMonitor[mon.id] {
@@ -1845,6 +1854,11 @@ extension WindowManager {
         live: Rect,
         layoutMonitor: MonitorInfo
     ) -> Rect {
+        if pendingSavedFloatFrames.contains(id),
+           let saved = savedFrames[id],
+           frameIsOnMonitorShowingHome(home: home, frame: saved) {
+            return saved
+        }
         if frameIsOnMonitorShowingHome(home: home, frame: live) {
             return live
         }
@@ -2321,6 +2335,7 @@ extension WindowManager {
                        self.ax.isSettled(id: id, frame: target, monitors: allMonitorFrames),
                        !(self.authoritativeHome(for: id).map { self.frameLeaksWrongMonitor(home: $0, frame: self.liveFrameForVisibility(id) ?? target) } ?? false) {
                         self.lastFrames[id] = target
+                        self.pendingSavedFloatFrames.remove(id)
                         continue
                     }
                     // Electron: unminimize before sizing so Chromium lays out against the real tile.
@@ -2338,6 +2353,9 @@ extension WindowManager {
                     if let live = self.ax.currentFrame(of: id),
                        !OffscreenParking.isUsableOnscreenFrame(live, monitors: allMonitorFrames) {
                         self.ax.reveal(frame: target, id: id)
+                    }
+                    if self.ax.isSettled(id: id, frame: target, monitors: allMonitorFrames) {
+                        self.pendingSavedFloatFrames.remove(id)
                     }
                     self.lastFrames[id] = target
                 }

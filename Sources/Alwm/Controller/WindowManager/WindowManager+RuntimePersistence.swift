@@ -194,7 +194,13 @@ extension WindowManager {
 
         let savedTiles = savedTiledWindowCount()
         let liveTiles = liveTiledWindowCount()
-        let layoutStillRecovering = savedTiles > 0 && liveTiles < savedTiles
+        let liveBundles = Set(windowsByID.values.compactMap(\.bundleID))
+        let missingSavedBundles = Set(runtimeState.snapshot.workspaceLayouts.values.flatMap { layout in
+            (layout.columns.flatMap(\.windows) + layout.floating).compactMap(\.bundleID)
+        }).subtracting(liveBundles)
+        let missingSavedFloat = !savedFloatingWindowsMatched()
+        let layoutStillRecovering = (savedTiles > 0 && liveTiles < savedTiles)
+            || missingSavedFloat || !missingSavedBundles.isEmpty
 
         // Always sync stickies when the caller forced a user move flush — even if tile
         // counts still look "recovering" (AX blip mid-move).
@@ -228,6 +234,13 @@ extension WindowManager {
                     continue
                 }
                 let existing = runtimeState.workspaceLayout(for: wsID)
+                let savedRefs = (existing?.columns.flatMap(\.windows) ?? []) + (existing?.floating ?? [])
+                if savedRefs.contains(where: { $0.bundleID.map(missingSavedBundles.contains) == true }) {
+                    continue
+                }
+                // A saved float may belong to an app that has not relaunched yet.
+                // Do not replace its sole frame/home with an empty AX snapshot.
+                if missingSavedFloat, existing?.floating.isEmpty == false { continue }
                 let existingTiles = existing?.columns.reduce(0) { $0 + $1.windows.count } ?? 0
                 let liveTiles = ws.columns.reduce(0) { $0 + $1.windows.count }
                 // Width / ratio edits must persist even while tile recovery is incomplete.
@@ -252,7 +265,16 @@ extension WindowManager {
                 ($0.isFloating || floatingOverrides.contains($0.id) || $0.isScratchpad || quake.windowID == $0.id)
                     && windowWorkspace[$0.id] == wsID
             }
-            .map { RuntimeStateStore.WindowRef(window: $0) }
+            .map { win -> RuntimeStateStore.WindowRef in
+                let monitorFrames = monitors.monitors.map(\.frame)
+                let live = ax.currentFrame(of: win.id) ?? win.frame
+                let frame = OffscreenParking.isUsableOnscreenFrame(live, monitors: monitorFrames)
+                    ? live : (savedFrames[win.id] ?? win.frame)
+                return RuntimeStateStore.WindowRef(
+                    token: win.id.token, bundleID: win.bundleID,
+                    appName: win.appName, title: win.title, frame: frame
+                )
+            }
             .sorted { $0.token < $1.token }
         let columns = ws.columns.map { col in
             RuntimeStateStore.ColumnSnapshot(
@@ -1073,11 +1095,19 @@ extension WindowManager {
                   var win = windowsByID[id] else { continue }
             windowWorkspace[id] = wsID
             runtimeState.setAssignment(wsID, for: id)
+            // A manually floated window may be recreated as a standard AX window.
+            // The persisted float slot is its layout identity until the user retile it.
+            win.isFloating = true
+            windowsByID[id] = win
+            floatingOverrides.insert(id)
+            workspaces.removeWindowEverywhere(id)
+            if let frame = ref.frame {
+                savedFrames[id] = frame
+                pendingSavedFloatFrames.insert(id)
+            }
             if win.isScratchpad || quake.windowID == id {
-                floatingOverrides.insert(id)
-                win.isFloating = true
+                win.isScratchpad = true
                 windowsByID[id] = win
-                workspaces.removeWindowEverywhere(id)
             }
             used.insert(id)
         }

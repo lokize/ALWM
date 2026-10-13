@@ -1658,11 +1658,18 @@ extension WindowManager {
         }
         let pid = id.pid
         let bundleID = windowsByID[id]?.bundleID
+        let closedRef = windowsByID[id].map(RuntimeStateStore.WindowRef.init(window:))
         let home = windowWorkspace[id] ?? workspaces.workspaceID(containing: id)
         let homeWasActive = home.map { isHomeActiveOnAnyMonitor($0) } ?? false
         let wasInColumns = workspaces.workspaceID(containing: id) != nil
 
         logMove("close ax-destroy win=\(id.token) bundle=\(bundleID ?? "?") home=\(home ?? "-")")
+
+        // This is a confirmed close, unlike a transient AX disappearance. Remove
+        // the saved slot before the shrink guard can preserve it as a recovery target.
+        if let home, let closedRef {
+            removePersistedWindowRefs(closedRef, fromWorkspace: home)
+        }
 
         cancelSameBundleSiblingSettle(id)
         workspaces.removeWindowEverywhere(id)
@@ -1670,6 +1677,7 @@ extension WindowManager {
         windowWorkspace.removeValue(forKey: id)
         floatingOverrides.remove(id)
         savedFrames.removeValue(forKey: id)
+        pendingSavedFloatFrames.remove(id)
         lastFrames.removeValue(forKey: id)
         runtimeState.setAssignment(nil, for: id)
         windowFirstTrackedAt.removeValue(forKey: id)

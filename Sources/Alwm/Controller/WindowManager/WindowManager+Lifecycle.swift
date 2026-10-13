@@ -271,6 +271,7 @@ extension WindowManager {
 
     func resetRuntimeState() {
         floatingOverrides.removeAll()
+        pendingSavedFloatFrames.removeAll()
         lastFrames.removeAll()
         savedFrames.removeAll()
         windowWorkspace.removeAll()

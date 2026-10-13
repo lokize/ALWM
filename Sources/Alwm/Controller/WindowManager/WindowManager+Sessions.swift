@@ -1,7 +1,45 @@
 import AppKit
 import Foundation
 
+enum SavedSessionRestorePolicy {
+    static func bundleIDsToLaunch(
+        snapshot: RuntimeStateStore.Snapshot,
+        runningBundleIDs: Set<String>
+    ) -> [String] {
+        let saved = snapshot.workspaceLayouts.values.flatMap { layout in
+            layout.columns.flatMap(\.windows) + layout.floating
+        }
+        return Set(saved.compactMap { ref -> String? in
+            guard let bundle = ref.bundleID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !bundle.isEmpty, !runningBundleIDs.contains(bundle) else { return nil }
+            return bundle
+        }).sorted()
+    }
+}
+
 extension WindowManager {
+    /// Launch applications represented by saved open windows after the initial AX scan.
+    /// NSWorkspace deduplicates processes; running apps are left to AX rematching.
+    func restoreSavedSessionApps() {
+        let running = Set(NSWorkspace.shared.runningApplications.compactMap { app -> String? in
+            guard !app.isTerminated else { return nil }
+            return app.bundleIdentifier
+        })
+        restoreSavedSessionApps(runningBundleIDs: running) { [weak self] bundleID in
+            self?.openSessionApp(bundleID: bundleID)
+        }
+    }
+
+    func restoreSavedSessionApps(runningBundleIDs: Set<String>, launch: (String) -> Void) {
+        let missing = SavedSessionRestorePolicy.bundleIDsToLaunch(
+            snapshot: runtimeState.snapshot, runningBundleIDs: runningBundleIDs
+        )
+        for bundleID in missing {
+            logMove("session restore launch bundle=\(bundleID)")
+            launch(bundleID)
+        }
+    }
+
     /// After a workspace switch: open session apps and optionally quit others.
     func applyNamedSession(for workspaceID: String) {
         guard !isBootstrapping, !isResumeRecovering, !isLayoutMutationFrozen else { return }

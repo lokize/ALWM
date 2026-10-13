@@ -9,12 +9,15 @@ public final class RuntimeStateStore: @unchecked Sendable {
         public var bundleID: String?
         public var appName: String
         public var title: String
+        /// Last onscreen AX frame for a floating window. Older snapshots omit it.
+        public var frame: Rect?
 
-        public init(token: String, bundleID: String? = nil, appName: String = "", title: String = "") {
+        public init(token: String, bundleID: String? = nil, appName: String = "", title: String = "", frame: Rect? = nil) {
             self.token = token
             self.bundleID = bundleID
             self.appName = appName
             self.title = title
+            self.frame = frame
         }
 
         public init(window: ManagedWindow) {
@@ -22,6 +25,7 @@ public final class RuntimeStateStore: @unchecked Sendable {
             self.bundleID = window.bundleID
             self.appName = window.appName
             self.title = window.title
+            self.frame = window.isFloating ? window.frame : nil
         }
     }
 

@@ -135,6 +135,9 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
 
     var savedFrames: [WindowID: Rect] = [:]
 
+    /// Saved float geometry is authoritative until its first visible layout pass.
+    var pendingSavedFloatFrames: Set<WindowID> = []
+
     var ingestRelayoutWorkItem: DispatchWorkItem?
 
     var ingestDebounceWorkItem: DispatchWorkItem?
@@ -300,6 +303,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         applyWorkspaceVisibility(animated: false)
         ax.start()
         setupSystemResumeObservers()
+        restoreSavedSessionApps()
         // Accessibility can lag behind the TCC toggle — keep trying briefly after launch.
         scheduleAccessibilityRecoveryScans()
         scheduleSystemResumeRecovery(delay: 1.0)

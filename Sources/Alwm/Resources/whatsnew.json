@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "version": "1.4.8",
+      "items": [
+        "Reopen apps from saved workspace layouts after restarting ALWM",
+        "Restore floating window positions and sizes across app relaunches",
+        "Honor app rules after closed windows are reopened"
+      ]
+    },
+    {
       "version": "1.4.7",
       "items": [
         "Restore windows and workspace geometry after sleep, including floating windows and temporary Accessibility drops",
@@ -299,12 +307,6 @@
       "items": [
         "UI updates",
         "Localization updates"
-      ]
-    },
-    {
-      "version": "1.0.8",
-      "items": [
-        "Plugins: docker/Sources/DockerPlugin.swift"
       ]
     }
   ]
