@@ -16,6 +16,10 @@ enum OverlayKeyboardFocus {
 }
 
 enum OverlayClickCapturePolicy {
+    static func shouldInstallEventTap(visibleFrames: [Rect], dismissOnClickOutside: Bool) -> Bool {
+        dismissOnClickOutside && !visibleFrames.isEmpty
+    }
+
     static func eventPointInAXCoordinates(
         x: Double,
         y: Double
@@ -37,10 +41,11 @@ enum OverlayClickCapturePolicy {
         pointX: Double,
         pointY: Double,
         visibleFrames: [Rect],
+        dismissOnClickOutside: Bool = true,
         frontmostWindowOwnerPID: pid_t? = nil,
         ownProcessID: pid_t = ProcessInfo.processInfo.processIdentifier
     ) -> Bool {
-        guard !visibleFrames.isEmpty else { return false }
+        guard dismissOnClickOutside, !visibleFrames.isEmpty else { return false }
         let insideOverlay = visibleFrames.contains { $0.contains(pointX: pointX, pointY: pointY) }
         guard !insideOverlay else { return false }
         return frontmostWindowOwnerPID != ownProcessID

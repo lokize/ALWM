@@ -43,13 +43,18 @@ final class OverlayClickCapture: @unchecked Sendable {
         dismissOnClickOutside: Bool,
         onOutsideClick: @escaping @MainActor @Sendable (CGPoint) -> Void
     ) {
+        let shouldCapture = OverlayClickCapturePolicy.shouldInstallEventTap(
+            visibleFrames: visibleFrames,
+            dismissOnClickOutside: dismissOnClickOutside
+        )
         state.update { value in
             value.visibleFrames = visibleFrames
-            value.dismissOnClickOutside = dismissOnClickOutside && !visibleFrames.isEmpty
+            value.dismissOnClickOutside = shouldCapture
             value.onOutsideClick = onOutsideClick
+            if !shouldCapture { value.swallowedButtons.removeAll() }
         }
 
-        if !visibleFrames.isEmpty {
+        if shouldCapture {
             installTapIfNeeded()
         } else {
             removeTap()
@@ -130,7 +135,7 @@ final class OverlayClickCapture: @unchecked Sendable {
         let shouldCheckAppWindow: Bool
         if let location {
             shouldCheckAppWindow = state.read { value in
-                !value.visibleFrames.isEmpty && !value.visibleFrames.contains {
+                value.dismissOnClickOutside && !value.visibleFrames.contains {
                     $0.contains(pointX: location.x, pointY: location.y)
                 }
             }
@@ -154,6 +159,7 @@ final class OverlayClickCapture: @unchecked Sendable {
                     pointX: location.x,
                     pointY: location.y,
                     visibleFrames: value.visibleFrames,
+                    dismissOnClickOutside: value.dismissOnClickOutside,
                     frontmostWindowOwnerPID: insideOverlay ? nil : frontmostWindowOwnerPID
                 )
                 guard outside else { return (false, nil, nil) }

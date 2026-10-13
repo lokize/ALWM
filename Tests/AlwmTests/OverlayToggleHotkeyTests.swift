@@ -60,6 +60,8 @@ struct OverlayToggleHotkeyTests {
         #expect(!hotkeys.handleNSEvent(moveWindow))
         let typing = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 2, windowNumber: 0, context: nil, characters: "n", charactersIgnoringModifiers: "n", isARepeat: false, keyCode: 45))
         #expect(!hotkeys.handleNSEvent(typing))
+        let copy = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 2, windowNumber: 0, context: nil, characters: "c", charactersIgnoringModifiers: "c", isARepeat: false, keyCode: 8))
+        #expect(!hotkeys.handleNSEvent(copy))
         hotkeys.setOverlayKeyboardCapture(false)
         #expect(hotkeys.keyboardCaptureBindings == bindings)
     }
