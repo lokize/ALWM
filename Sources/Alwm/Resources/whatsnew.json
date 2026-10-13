@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.4.9",
+      "items": [
+        "Status menu controls stay clickable when the pointer moves during a click."
+      ]
+    },
+    {
       "version": "1.4.8",
       "items": [
         "Reopen apps from saved workspace layouts after restarting ALWM",
@@ -300,13 +306,6 @@
       "version": "1.1.0",
       "items": [
         "UI updates"
-      ]
-    },
-    {
-      "version": "1.0.9",
-      "items": [
-        "UI updates",
-        "Localization updates"
       ]
     }
   ]

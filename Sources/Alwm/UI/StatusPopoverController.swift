@@ -153,8 +153,8 @@ public final class StatusPopoverController {
 
     private func installClickOutsideMonitor() {
         removeClickOutsideMonitor()
-        let bridge = StatusMenuClickOutsideBridge { [weak self] in
-            self?.dismissIfClickOutside()
+        let bridge = StatusMenuClickOutsideBridge { [weak self] point in
+            self?.dismissIfClickOutside(at: point)
         }
         clickOutsideBridge = bridge
         clickOutsideGlobal = bridge.installGlobal()
@@ -173,9 +173,8 @@ public final class StatusPopoverController {
         clickOutsideBridge = nil
     }
 
-    private func dismissIfClickOutside() {
+    private func dismissIfClickOutside(at loc: CGPoint) {
         guard popover.isShown else { return }
-        let loc = NSEvent.mouseLocation
         if let win = popover.contentViewController?.view.window {
             if win.frame.insetBy(dx: -4, dy: -4).contains(loc) { return }
         }
@@ -263,24 +262,32 @@ private final class PopoverCloseBridge: NSObject, NSPopoverDelegate {
 }
 
 /// Click-outside monitors (same pattern as CommandPalette / plugins overlays).
-private final class StatusMenuClickOutsideBridge: @unchecked Sendable {
-    private let onClick: @MainActor () -> Void
+final class StatusMenuClickOutsideBridge: @unchecked Sendable {
+    private let onClick: @MainActor (CGPoint) -> Void
 
-    init(onClick: @escaping @MainActor () -> Void) {
+    init(onClick: @escaping @MainActor (CGPoint) -> Void) {
         self.onClick = onClick
     }
 
     func installGlobal() -> Any? {
-        NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+        NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
             guard let self else { return }
-            Task { @MainActor in self.onClick() }
+            // Global events have no in-process window; AppKit reports screen coordinates.
+            let point = event.locationInWindow
+            Task { @MainActor in self.onClick(point) }
         }
     }
 
     func installLocal() -> Any? {
         NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
             guard let self else { return event }
-            Task { @MainActor in self.onClick() }
+            let point = event.locationInWindow
+            let windowNumber = event.windowNumber
+            Task { @MainActor in
+                let screenPoint = NSApp.window(withWindowNumber: windowNumber)?
+                    .convertPoint(toScreen: point) ?? point
+                self.onClick(screenPoint)
+            }
             return event
         }
     }
