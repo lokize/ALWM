@@ -170,6 +170,151 @@ struct ReliabilityRegressionTests {
         #expect(!matches)
     }
 
+    @Test("a sleep-time AX destroy retains the window and its workspace slot")
+    @MainActor
+    func sleepDropRetainsWindowLayout() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let manager = manager(root: root)
+        let id = WindowID(pid: 999_999, windowNumber: 11)
+        manager.windowsByID[id] = ManagedWindow(id: id, title: "Editor", bundleID: "example.editor", appName: "Editor", frame: .init(x: 0, y: 0, width: 800, height: 600))
+        manager.workspaces.configure(definitions: [.init(id: "1", name: "1")], monitors: [])
+        manager.workspaces.setWorkspace(WorkspaceState(id: "1", name: "1", columns: [.init(windows: [id], width: 800)]))
+        manager.windowWorkspace[id] = "1"
+        manager.prepareForSystemSleep()
+        manager.handleUserClosedWindow(id)
+        #expect(manager.windowsByID[id] != nil)
+        #expect(manager.workspaces.workspaceID(containing: id) == "1")
+        #expect(manager.windowWorkspace[id] == "1")
+    }
+
+    @Test("a brief missing AX scan does not erase the first workspace tile")
+    @MainActor
+    func firstMissingScanPreservesTile() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let monitor = MonitorInfo(id: 1, frame: .init(x: 0, y: 0, width: 1440, height: 900), visibleFrame: .init(x: 0, y: 24, width: 1440, height: 876), name: "Test")
+        let manager = WindowManager(runtimeState: RuntimeStateStore(url: root.appendingPathComponent("runtime.json")), notesStore: NotesStore(root: root.appendingPathComponent("notes")), monitors: MonitorStore(monitors: [monitor]))
+        let id = WindowID(pid: 999_910, windowNumber: 1)
+        manager.windowsByID[id] = ManagedWindow(id: id, title: "Editor", bundleID: "example.editor", appName: "Editor", frame: monitor.visibleFrame)
+        manager.workspaces.configure(definitions: [.init(id: "1", name: "1")], monitors: [monitor])
+        manager.workspaces.setWorkspace(WorkspaceState(id: "1", name: "1", columns: [.init(windows: [id], width: 800)]))
+        manager.windowWorkspace[id] = "1"
+        manager.isBootstrapping = false
+        manager.ingest(windows: [])
+        #expect(manager.workspaces.workspaceID(containing: id) == "1")
+        manager.ingest(windows: [])
+        #expect(manager.workspaces.workspaceID(containing: id) == "1")
+    }
+
+    @Test("a persistently missing AX window eventually releases its tile")
+    @MainActor
+    func confirmedMissingScanReleasesTile() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let monitor = MonitorInfo(id: 1, frame: .init(x: 0, y: 0, width: 1440, height: 900), visibleFrame: .init(x: 0, y: 24, width: 1440, height: 876), name: "Test")
+        let manager = WindowManager(runtimeState: RuntimeStateStore(url: root.appendingPathComponent("runtime.json")), notesStore: NotesStore(root: root.appendingPathComponent("notes")), monitors: MonitorStore(monitors: [monitor]))
+        let id = WindowID(pid: 999_911, windowNumber: 1)
+        manager.windowsByID[id] = ManagedWindow(id: id, title: "Editor", bundleID: "example.editor", appName: "Editor", frame: monitor.visibleFrame)
+        manager.workspaces.configure(definitions: [.init(id: "1", name: "1")], monitors: [monitor])
+        manager.workspaces.setWorkspace(WorkspaceState(id: "1", name: "1", columns: [.init(windows: [id], width: 800)]))
+        manager.windowWorkspace[id] = "1"
+        manager.isBootstrapping = false
+        manager.ingest(windows: [])
+        try await Task.sleep(for: .milliseconds(800))
+        manager.ingest(windows: [])
+        #expect(manager.workspaces.workspaceID(containing: id) == nil)
+    }
+
+    @Test("an AX destroy burst arms wake recovery before removing any window")
+    @MainActor
+    func destroyBurstPreservesSlots() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let manager = manager(root: root)
+        defer { manager.cancelPendingResumeRecovery() }
+        let ids = [WindowID(pid: 999_991, windowNumber: 1), WindowID(pid: 999_992, windowNumber: 1)]
+        manager.isBootstrapping = false
+        manager.workspaces.configure(definitions: [.init(id: "1", name: "1")], monitors: [])
+        for id in ids {
+            manager.windowsByID[id] = ManagedWindow(id: id, title: "Editor", bundleID: "example.\(id.pid)", appName: "Editor", frame: .init(x: 0, y: 0, width: 800, height: 600))
+            manager.windowWorkspace[id] = "1"
+        }
+        manager.workspaces.setWorkspace(WorkspaceState(id: "1", name: "1", columns: ids.map { .init(windows: [$0], width: 600) }))
+        for id in ids { manager.axTrackerWindowDidClose(id) }
+        try await Task.sleep(for: .milliseconds(80))
+        #expect(manager.isResumeRecovering)
+        #expect(ids.allSatisfy { manager.windowsByID[$0] != nil && manager.workspaces.workspaceID(containing: $0) == "1" })
+    }
+
+    @Test("opening and closing a tile retains the surviving column proportions")
+    @MainActor
+    func temporaryColumnRestoresWidths() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let monitor = MonitorInfo(id: 1, frame: .init(x: 0, y: 0, width: 1440, height: 900), visibleFrame: .init(x: 0, y: 24, width: 1440, height: 876), name: "Test")
+        let manager = WindowManager(runtimeState: RuntimeStateStore(url: root.appendingPathComponent("runtime.json")), notesStore: NotesStore(root: root.appendingPathComponent("notes")), monitors: MonitorStore(monitors: [monitor]))
+        manager.isBootstrapping = false
+        manager.workspaces.configure(definitions: [.init(id: "1", name: "1")], monitors: [monitor])
+        let ids = (1...3).map { WindowID(pid: pid_t(999_900 + $0), windowNumber: 1) }
+        let usable = manager.engine.usableArea(monitor: monitor.layoutFrame)
+        let budget = manager.engine.niri.fillWidthBudget(columnCount: 2, usable: usable)
+        for id in ids {
+            manager.windowsByID[id] = ManagedWindow(id: id, title: "Tile", bundleID: "example.\(id.pid)", appName: "Tile", frame: usable)
+        }
+        manager.workspaces.setWorkspace(WorkspaceState(id: "1", name: "1", columns: [
+            .init(windows: [ids[0]], width: budget * 0.7),
+            .init(windows: [ids[1]], width: budget * 0.3),
+        ]))
+        manager.windowWorkspace[ids[0]] = "1"
+        manager.windowWorkspace[ids[1]] = "1"
+        manager.assignWindow(ids[2], to: "1", on: monitor)
+        let opened = manager.workspaces.workspaces["1"]!
+        #expect(abs(opened.columns[0].width / (opened.columns[0].width + opened.columns[1].width) - 0.7) < 0.04)
+        manager.handleUserClosedWindow(ids[2])
+        let closed = manager.workspaces.workspaces["1"]!
+        #expect(abs(closed.columns[0].width / (closed.columns[0].width + closed.columns[1].width) - 0.7) < 0.01)
+    }
+
+    @Test("a compact second document window is not mistaken for a popup")
+    @MainActor
+    func compactSiblingWindowStillTiles() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let monitor = MonitorInfo(id: 1, frame: .init(x: 0, y: 0, width: 1440, height: 900), visibleFrame: .init(x: 0, y: 24, width: 1440, height: 876), name: "Test")
+        let manager = WindowManager(runtimeState: RuntimeStateStore(url: root.appendingPathComponent("runtime.json")), notesStore: NotesStore(root: root.appendingPathComponent("notes")), monitors: MonitorStore(monitors: [monitor]))
+        let id = WindowID(pid: 999_800, windowNumber: 2)
+        let window = ManagedWindow(id: id, title: "Downloads", bundleID: "org.filezilla", appName: "FileZilla", frame: .init(x: 100, y: 100, width: 720, height: 430))
+        #expect(!manager.isLikelyTransientSameBundleOverlay(id, win: window))
+    }
+
+    @Test("resume cannot finish while a saved floating window is missing")
+    @MainActor
+    func missingFloatingWindowPreventsRecovery() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let manager = manager(root: root)
+        manager.workspaces.configure(definitions: [.init(id: "1", name: "1")], monitors: [])
+        let missing = RuntimeStateStore.WindowRef(token: "999999:22", bundleID: "example.float", appName: "Float", title: "Inspector")
+        manager.runtimeState.setWorkspaceLayout(.init(columns: [], floating: [missing]), for: "1")
+        #expect(!manager.layoutLooksRecovered())
+        #expect(!manager.layoutContentMatchesDiskSnapshot())
+    }
+
+    @Test("a rule-floating window is saved even without a manual float override")
+    @MainActor
+    func ruleFloatingWindowIsPersisted() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let manager = manager(root: root)
+        let id = WindowID(pid: 999_912, windowNumber: 1)
+        manager.workspaces.configure(definitions: [.init(id: "1", name: "1")], monitors: [])
+        manager.windowsByID[id] = ManagedWindow(id: id, title: "Settings", bundleID: "example.settings", appName: "Settings", frame: .init(x: 100, y: 100, width: 600, height: 500), isFloating: true)
+        manager.windowWorkspace[id] = "1"
+        manager.writeWorkspaceLayoutSnapshot(wsID: "1", ws: manager.workspaces.workspaces["1"]!)
+        #expect(manager.runtimeState.workspaceLayout(for: "1")?.floating.map(\.token) == [id.token])
+    }
+
     @Test("window-number churn must retain saved stack weights until rematching")
     func pruningPreservesRecoverableWeights() {
         let store = RuntimeStateStore(url: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))

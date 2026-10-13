@@ -17,8 +17,6 @@ public final class IPCServer: @unchecked Sendable {
         let fm = FileManager.default
         let dir = URL(fileURLWithPath: path).deletingLastPathComponent()
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
-        try? fm.removeItem(atPath: path)
-
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { throw POSIXError(.EIO) }
         var addr = sockaddr_un()
@@ -36,6 +34,31 @@ public final class IPCServer: @unchecked Sendable {
             }
         }
         let len = socklen_t(MemoryLayout<sockaddr_un>.size)
+        if fm.fileExists(atPath: path) {
+            guard let attributes = try? fm.attributesOfItem(atPath: path),
+                  attributes[.type] as? FileAttributeType == .typeSocket else {
+                close(fd)
+                throw POSIXError(.EADDRINUSE)
+            }
+            let probe = socket(AF_UNIX, SOCK_STREAM, 0)
+            guard probe >= 0 else {
+                close(fd)
+                throw POSIXError(.EIO)
+            }
+            let result = withUnsafePointer(to: &addr) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(probe, $0, len) }
+            }
+            let connectError = errno
+            close(probe)
+            guard result != 0, connectError == ECONNREFUSED else {
+                close(fd)
+                throw POSIXError(.EADDRINUSE)
+            }
+            do { try fm.removeItem(atPath: path) } catch {
+                close(fd)
+                throw error
+            }
+        }
         let bindResult = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, len) }
         }
@@ -96,13 +119,16 @@ public final class IPCServer: @unchecked Sendable {
     }
 
     public func stop() {
+        let ownedSocket = serverFD >= 0
         acceptSource?.cancel()
         acceptSource = nil
         if serverFD >= 0 {
-            close(serverFD)
+            // The dispatch source owns and closes this descriptor in its cancel handler.
             serverFD = -1
         }
-        try? FileManager.default.removeItem(atPath: socketPath)
+        if ownedSocket {
+            try? FileManager.default.removeItem(atPath: socketPath)
+        }
     }
 
     deinit { stop() }

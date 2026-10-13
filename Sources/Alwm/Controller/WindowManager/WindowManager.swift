@@ -7,6 +7,12 @@ import AlwmPluginAPI
 
 // MARK: - WindowManager core — state, start/stop, applyConfig
 
+struct ColumnWidthRestore {
+    let insertedWindow: WindowID
+    let columns: [[WindowID]]
+    let widths: [Double]
+}
+
 @MainActor
 public final class WindowManager: NSObject, AXTrackerDelegate {
     public let configStore = ConfigStore()
@@ -138,6 +144,12 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
     let ingestDebounceInterval: TimeInterval = 0.065
 
     var rebalanceWorkItems: [String: DispatchWorkItem] = [:]
+
+    var pendingAXDestroyWorkItems: [WindowID: DispatchWorkItem] = [:]
+
+    var missingScanFirstSeenAt: [WindowID: Date] = [:]
+
+    var columnWidthRestores: [String: [ColumnWidthRestore]] = [:]
 
     var tokenByWindowToken: [String: WindowID] = [:]
 
@@ -544,6 +556,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         resumeRecoveryWorkItems.removeAll()
         quake.hideBlur()
         SleepAssertion.setPreventDisplaySleep(false)
+        WallpaperController.shared.stop()
         // Update quit already persisted layouts — don't yank every window onscreen
         // (that raced the replace helper and scrambled the next restore).
         if !skipRestoreOnStopForUpdate {
@@ -602,6 +615,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         LocalizationController.shared.apply(config.settings.language)
         SleepAssertion.setPreventDisplaySleep(config.settings.preventDisplaySleep)
         LaunchAtLogin.setEnabled(config.settings.launchAtLogin)
+        WallpaperController.shared.apply(config.settings.wallpaper)
         let rulesSig = Self.appRulesSignature(config.rules)
         if rulesSig != appRulesSignature {
             appRulesSignature = rulesSig

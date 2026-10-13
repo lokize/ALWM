@@ -141,12 +141,20 @@ extension WindowManager {
             runtimeState.setAssignment(workspaceID, for: id)
             return
         }
+        if let previous = workspaces.workspaces[workspaceID], previous.columns.count > 1 {
+            columnWidthRestores[workspaceID, default: []].append(ColumnWidthRestore(
+                insertedWindow: id,
+                columns: previous.columns.map(\.windows),
+                widths: previous.columns.map(\.width)
+            ))
+        }
         workspaces.insert(id, into: workspaceID) { ws in
             // Brand-new window: sit beside existing tiles. Stacking into a 3-high
             // column (Calendar into WhatsApp+Discord) undersizes frames and AX flicker-loops.
             // Same-bundle already live here (Safari AX siblings): new column without
             // equal-rebalance so WhatsApp/Discord widths don't jump every few seconds.
             if !ws.columns.isEmpty {
+                let previousColumnCount = ws.columns.count
                 engine.insertWindowAsNewColumn(id, into: &ws, usable: usable)
                 let bid = windowsByID[id]?.bundleID
                 let sameBundleLive = bid.map { bundle in
@@ -156,7 +164,7 @@ extension WindowManager {
                             && missingScanCounts[wid] == nil
                     }
                 } ?? false
-                if sameBundleLive {
+                if sameBundleLive || previousColumnCount > 1 {
                     engine.ensureColumnWidths(workspace: &ws, usable: usable)
                     engine.fitAllColumnsOnScreen(workspace: &ws, usable: usable)
                 } else {
@@ -653,18 +661,16 @@ extension WindowManager {
         }
     }
 
-    /// Safari tab tooltips / hover cards: no traffic lights, short vs usable, or popup layer.
+    /// Safari tab tooltips / hover cards: require actual AX panel evidence. A small
+    /// normal Finder/FileZilla document is still a real tiling window.
     func isLikelyTransientSameBundleOverlay(_ id: WindowID, win: ManagedWindow) -> Bool {
         let usable = usableAreaNear(win.frame)
-        // Real browser windows fill most of the display; tooltips do not.
-        if win.frame.height < usable.height * 0.55 { return true }
-        if win.frame.width < usable.width * 0.20, win.frame.height < usable.height * 0.75 {
-            return true
-        }
-        if let ax = ax.currentAX[id] {
-            if ax.isLikelyTransientOverlay { return true }
-        }
-        return false
+        guard let axWindow = ax.currentAX[id] else { return false }
+        if axWindow.prefersFloating { return true }
+        if let layer = axWindow.cgWindowLayer(), layer > 0, layer < 24 { return true }
+        let compact = win.frame.height < usable.height * 0.55
+            || (win.frame.width < usable.width * 0.20 && win.frame.height < usable.height * 0.75)
+        return compact && !axWindow.hasCloseButton
     }
 
     func cancelSameBundleSiblingSettle(_ id: WindowID) {

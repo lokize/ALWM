@@ -248,6 +248,22 @@ public final class ConfigStore: @unchecked Sendable {
         if let v = table.workspaceBarShowFocusedStatus { s.workspaceBar.showFocusedStatus = v }
         if let v = table.workspaceBarBackgroundOpacity { s.workspaceBar.backgroundOpacity = v }
         if let v = table.workspaceBarReserveLayoutSpace { s.workspaceBar.reserveLayoutSpace = v }
+        if let v = table.workspaceBarSeparatePluginBadges { s.workspaceBar.separatePluginBadges = v }
+        if let v = table.workspaceBarPluginBadgeSpacing { s.workspaceBar.pluginBadgeSpacing = min(20, max(2, v)) }
+        if let v = table.wallpaperEnabled { s.wallpaper.enabled = v }
+        if let v = table.wallpaperDirectory { s.wallpaper.directory = v }
+        if let v = table.wallpaperRotationEnabled { s.wallpaper.rotationEnabled = v }
+        if let v = table.wallpaperIntervalSeconds { s.wallpaper.intervalSeconds = min(86400, max(60, v)) }
+        if let v = table.wallpaperOrder, let order = WallpaperOrder(rawValue: v) { s.wallpaper.order = order }
+        if let v = table.wallpaperRecursive { s.wallpaper.recursive = v }
+        if let v = table.wallpaperSeparatePerMonitor { s.wallpaper.separatePerMonitor = v }
+        if let v = table.wallpaperMonitorDirectories {
+            for entry in v {
+                guard let split = entry.firstIndex(of: ":") else { continue }
+                s.wallpaper.monitorDirectories[String(entry[..<split])] = String(entry[entry.index(after: split)...])
+            }
+        }
+        if let v = table.wallpaperVideoMuted { s.wallpaper.videoMuted = v }
 
         if let v = table.quakeEnabled { s.quake.enabled = v }
         if let v = table.quakeBundleID { s.quake.bundleID = v }
@@ -447,6 +463,17 @@ public final class ConfigStore: @unchecked Sendable {
         var workspaceBarShowFocusedStatus: Bool?
         var workspaceBarBackgroundOpacity: Double?
         var workspaceBarReserveLayoutSpace: Bool?
+        var workspaceBarSeparatePluginBadges: Bool?
+        var workspaceBarPluginBadgeSpacing: Double?
+        var wallpaperEnabled: Bool?
+        var wallpaperDirectory: String?
+        var wallpaperRotationEnabled: Bool?
+        var wallpaperIntervalSeconds: Double?
+        var wallpaperOrder: String?
+        var wallpaperRecursive: Bool?
+        var wallpaperSeparatePerMonitor: Bool?
+        var wallpaperMonitorDirectories: [String]?
+        var wallpaperVideoMuted: Bool?
         var quakeEnabled: Bool?
         var quakeBundleID: String?
         var quakeHeightRatio: Double?
@@ -555,6 +582,17 @@ public final class ConfigStore: @unchecked Sendable {
     workspaceBarShowFocusedStatus = false
     workspaceBarBackgroundOpacity = 0.0
     workspaceBarReserveLayoutSpace = false
+    workspaceBarSeparatePluginBadges = false
+    workspaceBarPluginBadgeSpacing = 6.0
+    wallpaperEnabled = false
+    wallpaperDirectory = ""
+    wallpaperRotationEnabled = false
+    wallpaperIntervalSeconds = 1800.0
+    wallpaperOrder = "random"
+    wallpaperRecursive = false
+    wallpaperSeparatePerMonitor = false
+    wallpaperMonitorDirectories = []
+    wallpaperVideoMuted = true
     quakeEnabled = true
     quakeBundleID = ""
     quakeSizeRatio = 0.4

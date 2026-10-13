@@ -6,6 +6,83 @@ import AlwmPluginAPI
 
 extension SettingsRootView {
 
+    var wallpapersPane: some View {
+        Form {
+            Section("Papel de parede") {
+                Toggle("Gerenciar papéis de parede pelo ALWM", isOn: $config.settings.wallpaper.enabled)
+                HStack {
+                    TextField("Pasta de imagens e vídeos", text: $config.settings.wallpaper.directory)
+                    Button("Escolher…") {
+                        if let path = chooseWallpaperDirectory() {
+                            config.settings.wallpaper.directory = path
+                        }
+                    }
+                }
+                Text("Formatos: JPG, PNG, HEIC, TIFF, WebP, MP4, MOV e M4V. Os vídeos são reproduzidos sem som por padrão.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle("Incluir subpastas", isOn: $config.settings.wallpaper.recursive)
+                Toggle("Silenciar vídeos", isOn: $config.settings.wallpaper.videoMuted)
+            }
+
+            Section("Rotação automática") {
+                Toggle("Mudar automaticamente", isOn: $config.settings.wallpaper.rotationEnabled)
+                Picker("Ordem", selection: $config.settings.wallpaper.order) {
+                    Text("Aleatória").tag(WallpaperOrder.random)
+                    Text("Alfabética").tag(WallpaperOrder.alphabetical)
+                }
+                HStack {
+                    Text("Intervalo (segundos)")
+                    Spacer()
+                    TextField("Segundos", value: $config.settings.wallpaper.intervalSeconds, format: .number.precision(.fractionLength(0)))
+                        .frame(width: 100)
+                }
+                .disabled(!config.settings.wallpaper.rotationEnabled)
+                Button("Próximo papel de parede") {
+                    WallpaperController.shared.advance()
+                }
+                .disabled(!config.settings.wallpaper.enabled)
+            }
+
+            Section("Monitores") {
+                Toggle("Selecionar arquivo separadamente por monitor", isOn: $config.settings.wallpaper.separatePerMonitor)
+                if config.settings.wallpaper.separatePerMonitor {
+                    ForEach(monitors, id: \.id) { monitor in
+                        HStack {
+                            Text(monitor.name.isEmpty ? "Monitor \(monitor.id)" : monitor.name)
+                                .frame(width: 170, alignment: .leading)
+                            TextField("Usar pasta principal", text: Binding(
+                                get: { config.settings.wallpaper.monitorDirectories[String(monitor.id)] ?? "" },
+                                set: { config.settings.wallpaper.monitorDirectories[String(monitor.id)] = $0 }
+                            ))
+                            Button("Escolher…") {
+                                if let path = chooseWallpaperDirectory() {
+                                    config.settings.wallpaper.monitorDirectories[String(monitor.id)] = path
+                                }
+                            }
+                        }
+                    }
+                    Text("Deixe a pasta de um monitor vazia para usar a pasta principal.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .onChange(of: config.settings.wallpaper.intervalSeconds) { _, interval in
+            let valid = min(86400, max(60, interval.isFinite ? interval : 1800))
+            if interval != valid { config.settings.wallpaper.intervalSeconds = valid }
+        }
+    }
+
+    func chooseWallpaperDirectory() -> String? {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Usar pasta"
+        guard panel.runModal() == .OK else { return nil }
+        return panel.url?.path
+    }
+
     /// Form settings only — plugin order lives in a separate bottom inset so
     /// reordering does not remount / jump the Form scroll.
     var workspaceBarPane: some View {
@@ -58,6 +135,23 @@ extension SettingsRootView {
                 Text("0 = transparente · 1 = opaco. Aplica ao vivo no fundo do pill / faixa.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle("Plugins em badges separados", isOn: $config.settings.workspaceBar.separatePluginBadges)
+                    .toggleStyle(.switch)
+                labeledSlider(
+                    "Espaço entre badges",
+                    value: $config.settings.workspaceBar.pluginBadgeSpacing,
+                    range: 2...20,
+                    id: "wsbar.badge_spacing"
+                )
+                .disabled(!config.settings.workspaceBar.separatePluginBadges)
+                Text("Cada plugin ganha uma cápsula própria; os workspaces continuam agrupados.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Badges dos plugins")
             }
 
             Section {

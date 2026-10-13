@@ -7,7 +7,7 @@ import AlwmPluginAPI
 enum SettingsPane: String, CaseIterable, Identifiable, Hashable {
     case general, about, diagnostics
     case layout, monitors, workspaces, rules
-    case workspaceBar, borders
+    case workspaceBar, wallpapers, borders
     case gesturesFocus, hotkeys
     case quake, capture, notepad, plugins
 
@@ -23,6 +23,7 @@ enum SettingsPane: String, CaseIterable, Identifiable, Hashable {
         case .workspaces: return L10n.t("pane.workspaces")
         case .rules: return L10n.t("pane.rules")
         case .workspaceBar: return L10n.t("pane.workspace_bar")
+        case .wallpapers: return "Papéis de parede"
         case .borders: return L10n.t("pane.borders")
         case .gesturesFocus: return L10n.t("pane.gestures")
         case .hotkeys: return L10n.t("pane.hotkeys")
@@ -43,6 +44,7 @@ enum SettingsPane: String, CaseIterable, Identifiable, Hashable {
         case .workspaces: return "square.grid.2x2"
         case .rules: return "list.bullet.rectangle"
         case .workspaceBar: return "menubar.rectangle"
+        case .wallpapers: return "photo.on.rectangle.angled"
         case .borders: return "square.dashed"
         case .gesturesFocus: return "hand.point.up.left"
         case .hotkeys: return "keyboard"
@@ -53,4 +55,3 @@ enum SettingsPane: String, CaseIterable, Identifiable, Hashable {
         }
     }
 }
-

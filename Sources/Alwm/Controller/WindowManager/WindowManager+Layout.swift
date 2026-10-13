@@ -201,6 +201,11 @@ extension WindowManager {
                 count += 1
             }
         }
+        // Freeze before processing the first missing window. Otherwise the loop below
+        // treats the first AX dropout as a red-X close and discards its saved slot.
+        if !isBootstrapping, removedTiledWindows >= 2 {
+            noteAXMassDropForRecovery()
+        }
 
         // Soft-delete: AX often drops windows briefly during park/minimize.
         // Only forget sticky after several consecutive missing scans.
@@ -209,6 +214,9 @@ extension WindowManager {
         var strippedLayouts: Set<String> = []
         var lastWindowQuitPIDs: [(pid: pid_t, bundleID: String?, homeWasActive: Bool)] = []
         for id in removed {
+            let firstMissing = missingScanFirstSeenAt[id] ?? Date()
+            missingScanFirstSeenAt[id] = firstMissing
+            let missingLongEnough = Date().timeIntervalSince(firstMissing) >= 0.75
             if id == quake.windowID {
                 // Soft-delete: ⌘T / tab chrome must not immediately tear Quake down.
                 let count = (missingScanCounts[id] ?? 0) + 1
@@ -238,8 +246,7 @@ extension WindowManager {
                 if let home = workspaces.workspaceID(containing: id) {
                     strippedLayouts.insert(home)
                 }
-                if shouldEjectMissingFromColumns(id, missingCount: count)
-                    || (closedOnActive && count >= 1) {
+                if missingLongEnough && shouldEjectMissingFromColumns(id, missingCount: count) {
                     let pid = id.pid
                     let bid = windowsByID[id]?.bundleID
                     workspaces.removeWindowEverywhere(id)
@@ -257,7 +264,7 @@ extension WindowManager {
                     }
                 }
             }
-            if count >= threshold {
+            if count >= threshold && missingLongEnough {
                 forgotten.insert(id)
                 let home = windowWorkspace[id] ?? workspaces.workspaceID(containing: id)
                 let homeWasActive = home.map { isHomeActiveOnAnyMonitor($0) } ?? false
@@ -289,12 +296,14 @@ extension WindowManager {
         }
         for id in next {
             missingScanCounts.removeValue(forKey: id)
+            missingScanFirstSeenAt.removeValue(forKey: id)
         }
         for id in added where !isBootstrapping {
             windowFirstTrackedAt[id] = Date()
         }
         for id in forgotten {
             windowFirstTrackedAt.removeValue(forKey: id)
+            missingScanFirstSeenAt.removeValue(forKey: id)
         }
 
         if added.isEmpty && removed.isEmpty && forgotten.isEmpty && !blockingReassign,
@@ -2596,7 +2605,7 @@ extension WindowManager {
 
     public nonisolated func axTrackerWindowDidClose(_ id: WindowID) {
         Task { @MainActor in
-            self.handleUserClosedWindow(id)
+            self.queueAXDestroyedWindow(id)
         }
     }
 }

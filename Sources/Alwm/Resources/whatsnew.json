@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "version": "1.4.7",
+      "items": [
+        "Restore windows and workspace geometry after sleep, including floating windows and temporary Accessibility drops",
+        "Preserve tile sizes when opening and closing windows, and improve mouse focus and compact window placement",
+        "Add rotating image and video wallpapers plus separate plugin badges in the workspace bar"
+      ]
+    },
+    {
       "version": "1.4.6",
       "items": [
         "New windows enter the workspace layout without triggering an unnecessary full restore",
@@ -297,12 +305,6 @@
       "version": "1.0.8",
       "items": [
         "Plugins: docker/Sources/DockerPlugin.swift"
-      ]
-    },
-    {
-      "version": "1.0.7",
-      "items": [
-        "Settings UI updates"
       ]
     }
   ]

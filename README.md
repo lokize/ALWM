@@ -54,7 +54,8 @@
 - **Sticky homes** — windows remember their workspace across relaunches
 
 ### Chrome & overlays
-- **Workspace bar** — chips, app icons, focused title, plugin slots (overlay menu bar or below)
+- **Workspace bar** — chips, app icons, focused title, plugin slots, and optional separate plugin badges (overlay menu bar or below)
+- **Wallpapers** — image and video folders, automatic rotation, and optional directory per monitor
 - **Overview** — workspace thumbnails (bind `overview.toggle` yourself; also via palette)
 - **Status menu** — Focus Follows Mouse, borders, workspace bar, sleep lock, tools, update badge
 - **Command palette** — fuzzy search for every action + chord
@@ -71,7 +72,7 @@
 - **Hotkeys** — fully editable (Settings or `hotkeys.toml`)
 - **Trackpad gestures** — 3-finger column/stack scroll, 4-finger workspace switch
 - **Focus follows mouse** — optional; warp cursor on focus / empty workspace
-- **Settings UI** — General, About, Diagnostics, Layout, Monitors, Workspaces, App Rules, Workspace Bar, Borders, Gestures, Hotkeys, Quake, Capture, Notepad, Plugins
+- **Settings UI** — General, About, Diagnostics, Layout, Monitors, Workspaces, App Rules, Workspace Bar, Wallpapers, Borders, Gestures, Hotkeys, Quake, Capture, Notepad, Plugins
 - **10 languages** — follows macOS by default
 - **Live TOML** — `~/.config/alwm/` reloads without a full restart for most settings
 - **IPC** — `alwmctl` for scripting

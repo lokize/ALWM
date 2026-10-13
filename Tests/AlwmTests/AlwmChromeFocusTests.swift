@@ -14,4 +14,10 @@ struct AlwmChromeFocusTests {
             appTransientPopupOpen: true
         ))
     }
+
+    @Test("a top window covering the focused tile lets focus follow the mouse")
+    func topWindowBeatsFocusedTileFrame() {
+        #expect(!FocusFollowsMousePolicy.shouldKeepCurrentFocus(pointerInside: true, focusedPID: 42, topPID: 43))
+        #expect(FocusFollowsMousePolicy.shouldKeepCurrentFocus(pointerInside: true, focusedPID: 42, topPID: 42))
+    }
 }

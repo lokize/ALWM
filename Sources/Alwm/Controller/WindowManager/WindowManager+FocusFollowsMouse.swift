@@ -7,6 +7,12 @@ import AlwmPluginAPI
 
 // MARK: - Focus-follows-mouse
 
+enum FocusFollowsMousePolicy {
+    static func shouldKeepCurrentFocus(pointerInside: Bool, focusedPID: pid_t?, topPID: pid_t?) -> Bool {
+        pointerInside && (topPID == nil || focusedPID == topPID)
+    }
+}
+
 extension WindowManager {
     func setupFocusFollowsMouse() {
         if let mouseMonitor {
@@ -160,9 +166,12 @@ extension WindowManager {
 
         // 1) Pointer still inside the AX-focused window → never steal to a tile behind it
         //    (Finder/float “sem workspace” overlapping Discord, etc.).
+        let topPID = cgOwnerPIDUnderPoint(axX: axX, axY: axY)
         if let current = currentFocus,
            current != quake.windowID || quake.isVisible,
-           containsMouse(current) {
+           FocusFollowsMousePolicy.shouldKeepCurrentFocus(
+               pointerInside: containsMouse(current), focusedPID: current.pid, topPID: topPID
+           ) {
             return
         }
 
@@ -172,7 +181,7 @@ extension WindowManager {
         let focusedPID = currentFocus?.pid
             ?? NSWorkspace.shared.frontmostApplication?.processIdentifier
         if let focusedPID,
-           let underPID = cgOwnerPIDUnderPoint(axX: axX, axY: axY),
+           let underPID = topPID,
            underPID == focusedPID {
             return
         }
@@ -182,12 +191,13 @@ extension WindowManager {
         let looseHits = windowsByID.keys.filter { id in
             guard let win = windowsByID[id], !win.isIgnored else { return false }
             if id == quake.windowID || isQuakeOwned(id) { return false }
+            if let topPID, id.pid != topPID { return false }
             let loose = win.isFloating || win.isScratchpad
                 || workspaces.workspaceID(containing: id) == nil
             return loose && containsMouse(id)
         }
         if let hit = looseHits.first(where: { $0 == axFocusedWindowID })
-            ?? looseHits.max(by: { a, b in
+            ?? looseHits.min(by: { a, b in
                 let aa = (frameOf(a)?.width ?? 0) * (frameOf(a)?.height ?? 0)
                 let bb = (frameOf(b)?.width ?? 0) * (frameOf(b)?.height ?? 0)
                 return aa < bb
@@ -204,6 +214,7 @@ extension WindowManager {
         var best: (WindowID, Double)?
         for (id, frame) in lastFrames {
             guard let win = windowsByID[id], win.isTiled, !win.isIgnored else { continue }
+            if let topPID, id.pid != topPID { continue }
             let home = authoritativeHome(for: id)
             guard let home, let activeOnCursor, home == activeOnCursor else { continue }
             guard frame.contains(pointX: axX, pointY: axY) else { continue }

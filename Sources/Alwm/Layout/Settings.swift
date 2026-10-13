@@ -272,6 +272,8 @@ public struct WorkspaceBarSettings: Equatable, Sendable {
     public var showFocusedStatus: Bool
     public var backgroundOpacity: Double
     public var reserveLayoutSpace: Bool
+    public var separatePluginBadges: Bool
+    public var pluginBadgeSpacing: Double
 
     public static let `default` = WorkspaceBarSettings(
         enabled: true,
@@ -285,7 +287,9 @@ public struct WorkspaceBarSettings: Equatable, Sendable {
         deduplicateAppIcons: true,
         showFocusedStatus: false,
         backgroundOpacity: 0.0,
-        reserveLayoutSpace: false
+        reserveLayoutSpace: false,
+        separatePluginBadges: false,
+        pluginBadgeSpacing: 6
     )
 
     public init(
@@ -300,7 +304,9 @@ public struct WorkspaceBarSettings: Equatable, Sendable {
         deduplicateAppIcons: Bool,
         showFocusedStatus: Bool,
         backgroundOpacity: Double,
-        reserveLayoutSpace: Bool
+        reserveLayoutSpace: Bool,
+        separatePluginBadges: Bool = false,
+        pluginBadgeSpacing: Double = 6
     ) {
         self.enabled = enabled
         self.height = height
@@ -314,6 +320,8 @@ public struct WorkspaceBarSettings: Equatable, Sendable {
         self.showFocusedStatus = showFocusedStatus
         self.backgroundOpacity = min(1, max(0, backgroundOpacity))
         self.reserveLayoutSpace = reserveLayoutSpace
+        self.separatePluginBadges = separatePluginBadges
+        self.pluginBadgeSpacing = min(20, max(2, pluginBadgeSpacing))
     }
 }
 
@@ -337,6 +345,25 @@ public struct BorderSettings: Equatable, Sendable {
         self.colorHex = colorHex
         self.cornerRadius = cornerRadius
     }
+}
+
+public enum WallpaperOrder: String, Sendable, Codable, CaseIterable, Identifiable {
+    case alphabetical, random
+    public var id: String { rawValue }
+}
+
+public struct WallpaperSettings: Equatable, Sendable {
+    public var enabled = false
+    public var directory = ""
+    public var rotationEnabled = false
+    public var intervalSeconds: Double = 1800
+    public var order: WallpaperOrder = .random
+    public var recursive = false
+    public var separatePerMonitor = false
+    public var monitorDirectories: [String: String] = [:]
+    public var videoMuted = true
+
+    public static let `default` = WallpaperSettings()
 }
 
 public enum AppTheme: String, Sendable, Codable, CaseIterable, Identifiable {
@@ -374,6 +401,7 @@ public struct LayoutSettings: Equatable, Sendable {
     public var onboardingCompleted: Bool
     public var borders: BorderSettings
     public var workspaceBar: WorkspaceBarSettings
+    public var wallpaper: WallpaperSettings
     public var quake: QuakeSettings
     public var notepad: NotepadSettings
     public var gestures: GestureSettings
@@ -418,6 +446,7 @@ public struct LayoutSettings: Equatable, Sendable {
         onboardingCompleted: false,
         borders: .default,
         workspaceBar: .default,
+        wallpaper: .default,
         quake: .default,
         notepad: .default,
         gestures: .default
@@ -442,6 +471,7 @@ public struct LayoutSettings: Equatable, Sendable {
         onboardingCompleted: Bool,
         borders: BorderSettings,
         workspaceBar: WorkspaceBarSettings,
+        wallpaper: WallpaperSettings = .default,
         quake: QuakeSettings,
         notepad: NotepadSettings,
         gestures: GestureSettings
@@ -464,6 +494,7 @@ public struct LayoutSettings: Equatable, Sendable {
         self.onboardingCompleted = onboardingCompleted
         self.borders = borders
         self.workspaceBar = workspaceBar
+        self.wallpaper = wallpaper
         self.quake = quake
         self.notepad = notepad
         self.gestures = gestures

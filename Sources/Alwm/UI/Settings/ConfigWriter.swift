@@ -18,7 +18,11 @@ enum ConfigWriter {
     }
 
     static func settingsTOML(_ settings: LayoutSettings) -> String {
-        """
+        let monitorDirectories = settings.wallpaper.monitorDirectories
+            .sorted { $0.key < $1.key }
+            .map { tomlString("\($0.key):\($0.value)") }
+            .joined(separator: ", ")
+        return """
         gap = \(settings.gap)
         outerGap = \(settings.outerGap)
         defaultColumnWidthRatio = \(settings.defaultColumnWidthRatio)
@@ -50,6 +54,17 @@ enum ConfigWriter {
         workspaceBarShowFocusedStatus = \(settings.workspaceBar.showFocusedStatus)
         workspaceBarBackgroundOpacity = \(settings.workspaceBar.backgroundOpacity)
         workspaceBarReserveLayoutSpace = \(settings.workspaceBar.reserveLayoutSpace)
+        workspaceBarSeparatePluginBadges = \(settings.workspaceBar.separatePluginBadges)
+        workspaceBarPluginBadgeSpacing = \(settings.workspaceBar.pluginBadgeSpacing)
+        wallpaperEnabled = \(settings.wallpaper.enabled)
+        wallpaperDirectory = \(tomlString(settings.wallpaper.directory))
+        wallpaperRotationEnabled = \(settings.wallpaper.rotationEnabled)
+        wallpaperIntervalSeconds = \(settings.wallpaper.intervalSeconds)
+        wallpaperOrder = \(tomlString(settings.wallpaper.order.rawValue))
+        wallpaperRecursive = \(settings.wallpaper.recursive)
+        wallpaperSeparatePerMonitor = \(settings.wallpaper.separatePerMonitor)
+        wallpaperMonitorDirectories = [\(monitorDirectories)]
+        wallpaperVideoMuted = \(settings.wallpaper.videoMuted)
         quakeEnabled = \(settings.quake.enabled)
         quakeBundleID = "\(settings.quake.bundleID)"
         quakeSizeRatio = \(settings.quake.sizeRatio)
@@ -76,6 +91,14 @@ enum ConfigWriter {
         swipeScrollFactor = \(settings.gestures.swipeScrollFactor)
         invertScroll = \(settings.gestures.invertScroll)
         """
+    }
+
+    static func tomlString(_ value: String) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes]
+        guard let data = try? encoder.encode(value),
+              let text = String(data: data, encoding: .utf8) else { return "\"\"" }
+        return text
     }
 
     static func writeHotkeys(_ hotkeys: [HotkeyBinding]) {

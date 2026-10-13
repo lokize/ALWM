@@ -130,7 +130,7 @@ extension WindowManager {
     /// layout before deriving the live columns and revealing the workspace.
     func recoverSavedWindowsIfMissing(workspaceID: String) {
         let snapshot = runtimeState.snapshot
-        let live = Array(windowsByID.values)
+        let live = windowsByID.values.filter { belongsToWorkspace($0.id, workspaceID) }
         let expectedBundles = WorkspaceWindowRecoveryPolicy.bundleIDs(
             workspaceID: workspaceID,
             snapshot: snapshot
@@ -1613,6 +1613,35 @@ extension WindowManager {
         }
     }
 
+    func queueAXDestroyedWindow(_ id: WindowID) {
+        guard windowsByID[id] != nil || workspaces.workspaceID(containing: id) != nil else { return }
+        guard pendingAXDestroyWorkItems[id] == nil else { return }
+        if isLayoutMutationFrozen {
+            logMove("close defer ax-destroy frozen win=\(id.token)")
+            return
+        }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingAXDestroyWorkItems.removeValue(forKey: id)
+            guard !self.isLayoutMutationFrozen else { return }
+            // An AX element may have been replaced while its window number survived.
+            self.ax.scanAll()
+            if self.ax.currentWindows.contains(where: { $0.id == id }) { return }
+            self.handleUserClosedWindow(id)
+        }
+        pendingAXDestroyWorkItems[id] = work
+        let tiledPending = pendingAXDestroyWorkItems.keys.filter {
+            windowsByID[$0]?.isTiled == true && workspaces.workspaceID(containing: $0) != nil
+        }
+        if tiledPending.count >= 2 {
+            for pending in pendingAXDestroyWorkItems.values { pending.cancel() }
+            pendingAXDestroyWorkItems.removeAll()
+            noteAXMassDropForRecovery()
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+    }
+
     func handleUserClosedWindow(_ id: WindowID) {
         if id == quake.windowID || isQuakeOwned(id) {
             // Ghostty/Terminal often emit AX destroy noise when opening tabs (⌘T).
@@ -1621,6 +1650,12 @@ extension WindowManager {
             return
         }
         guard windowsByID[id] != nil || workspaces.workspaceID(containing: id) != nil else { return }
+        // AX destroys window elements while displays sleep, even though the app and
+        // window will return. Keep the in-memory slot and saved home until recovery.
+        guard !isLayoutMutationFrozen else {
+            logMove("close defer ax-destroy frozen win=\(id.token)")
+            return
+        }
         let pid = id.pid
         let bundleID = windowsByID[id]?.bundleID
         let home = windowWorkspace[id] ?? workspaces.workspaceID(containing: id)
@@ -1640,6 +1675,7 @@ extension WindowManager {
         windowFirstTrackedAt.removeValue(forKey: id)
         forcedTiledUntil.removeValue(forKey: id)
         missingScanCounts.removeValue(forKey: id)
+        missingScanFirstSeenAt.removeValue(forKey: id)
         appRuleFramesApplied.remove(id)
 
         if let home, wasInColumns {

@@ -4,6 +4,27 @@ import Testing
 
 @Suite("Resume workspace selection")
 struct ResumeWorkspaceSelectionTests {
+    @Test("old bundle history alone does not rescan or unhide a closed app")
+    func historyOnlyBundleDoesNotTriggerRecovery() {
+        let snapshot = RuntimeStateStore.Snapshot(bundleWorkspace: ["example.closed": "1"])
+        #expect(WorkspaceWindowRecoveryPolicy.bundleIDs(workspaceID: "1", snapshot: snapshot).isEmpty)
+        #expect(!WorkspaceWindowRecoveryPolicy.shouldRescan(workspaceID: "1", snapshot: snapshot, liveWindows: []))
+    }
+
+    @Test("a live window with a new AX number satisfies its saved workspace slot")
+    func renumberedWindowDoesNotRescan() {
+        let ref = RuntimeStateStore.WindowRef(token: "42:1", bundleID: "example.editor", appName: "Editor", title: "Project")
+        let snapshot = RuntimeStateStore.Snapshot(workspaceLayouts: [
+            "1": .init(columns: [.init(windows: [ref], width: 800)])
+        ])
+        let live = ManagedWindow(
+            id: WindowID(pid: 42, windowNumber: 2), title: "Project",
+            bundleID: "example.editor", appName: "Editor", frame: .init(x: 0, y: 0, width: 800, height: 600)
+        )
+        #expect(!WorkspaceWindowRecoveryPolicy.shouldRescan(
+            workspaceID: "1", snapshot: snapshot, liveWindows: [live]
+        ))
+    }
     @Test("resume rejects a visible tile with the wrong position and size")
     func rejectsDisplacedTileFrame() {
         let expected = Rect(x: 0, y: 30, width: 1_000, height: 700)

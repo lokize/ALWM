@@ -68,6 +68,7 @@ struct SettingsRootView: View {
                 }
                 Section(L10n.t("nav.appearance")) {
                     nav(.workspaceBar)
+                    nav(.wallpapers)
                     nav(.borders)
                 }
                 Section(L10n.t("nav.input")) {
@@ -173,6 +174,7 @@ struct SettingsRootView: View {
         case .workspaces: return L10n.t("pane.workspaces.sub")
         case .rules: return L10n.t("pane.rules.sub")
         case .workspaceBar: return L10n.t("pane.workspace_bar.sub")
+        case .wallpapers: return "Imagens, vídeos e rotação automática por monitor"
         case .borders: return L10n.t("pane.borders.sub")
         case .gesturesFocus: return L10n.t("pane.gestures.sub")
         case .hotkeys: return L10n.t("pane.hotkeys.sub")
@@ -233,6 +235,7 @@ struct SettingsRootView: View {
         case .workspaces: workspacesPane
         case .rules: rulesPane
         case .workspaceBar: workspaceBarPane
+        case .wallpapers: wallpapersPane
         case .borders: bordersPane
         case .gesturesFocus: gesturesFocusPane
         case .hotkeys: hotkeysPane
@@ -243,4 +246,3 @@ struct SettingsRootView: View {
         }
     }
 }
-

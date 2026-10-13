@@ -31,9 +31,7 @@ enum ResumeWorkspaceSelection {
 
 enum WorkspaceWindowRecoveryPolicy {
     static func bundleIDs(workspaceID: String, snapshot: RuntimeStateStore.Snapshot) -> Set<String> {
-        var result = Set(snapshot.bundleWorkspace.compactMap { bundleID, savedWorkspace in
-            savedWorkspace == workspaceID ? bundleID : nil
-        })
+        var result: Set<String> = []
         guard let layout = snapshot.workspaceLayouts[workspaceID] else { return result }
         for ref in layout.columns.flatMap(\.windows) + layout.floating {
             if let bundleID = ref.bundleID {
@@ -48,17 +46,23 @@ enum WorkspaceWindowRecoveryPolicy {
         snapshot: RuntimeStateStore.Snapshot,
         liveWindows: [ManagedWindow]
     ) -> Bool {
-        let liveTokens = Set(liveWindows.map { $0.id.token })
         if let layout = snapshot.workspaceLayouts[workspaceID] {
             let refs = layout.columns.flatMap(\.windows) + layout.floating
-            if refs.contains(where: { !liveTokens.contains($0.token) }) {
-                return true
+            var used: Set<WindowID> = []
+            for ref in refs {
+                let savedTitle = ref.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let match = liveWindows.first(where: { win in
+                    guard !used.contains(win.id) else { return false }
+                    if win.id.token == ref.token { return true }
+                    let sameApp = (ref.bundleID != nil && ref.bundleID == win.bundleID)
+                        || (!ref.appName.isEmpty && ref.appName == win.appName)
+                    return sameApp && !savedTitle.isEmpty
+                        && savedTitle.caseInsensitiveCompare(win.title.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame
+                }) else { return true }
+                used.insert(match.id)
             }
         }
-        let liveBundles = Set(liveWindows.compactMap(\.bundleID))
-        return snapshot.bundleWorkspace.contains { bundleID, savedWorkspace in
-            savedWorkspace == workspaceID && !liveBundles.contains(bundleID)
-        }
+        return false
     }
 
 }
@@ -128,6 +132,7 @@ extension WindowManager {
         let saved = savedTiledWindowCount()
         let live = liveTiledWindowCount()
         if saved > 0, live < saved { return true }
+        if !savedFloatingWindowsMatched() { return true }
         if !persistedWorkspaceSelectionMatchesCurrent() { return true }
         for (wsID, snap) in runtimeState.snapshot.workspaceLayouts {
             guard workspaces.workspaces[wsID] != nil else { continue }
@@ -559,9 +564,26 @@ extension WindowManager {
 
     /// Live columns match the on-disk snapshot (order + apps + widths), allowing loose title match.
     /// Compare with the geometry restoration would produce on the current display.
+    func savedFloatingWindowsMatched() -> Bool {
+        for (wsID, layout) in runtimeState.snapshot.workspaceLayouts {
+            var used: Set<WindowID> = []
+            for ref in layout.floating {
+                guard let match = windowsByID.values.first(where: { win in
+                    !used.contains(win.id)
+                        && win.isFloating
+                        && belongsToWorkspace(win.id, wsID)
+                        && windowMatchesSavedRef(win, ref: ref)
+                }) else { return false }
+                used.insert(match.id)
+            }
+        }
+        return true
+    }
+
     func layoutContentMatchesDiskSnapshot() -> Bool {
         let diskKeys = Set(runtimeState.snapshot.workspaceLayouts.keys)
         guard !diskKeys.isEmpty else { return true }
+        guard savedFloatingWindowsMatched() else { return false }
         for wsID in diskKeys {
             guard let snap = runtimeState.snapshot.workspaceLayouts[wsID],
                   let ws = workspaces.workspaces[wsID]
@@ -654,6 +676,7 @@ extension WindowManager {
     }
 
     func layoutLooksRecovered() -> Bool {
+        if !savedFloatingWindowsMatched() { return false }
         let saved = savedTiledWindowCount()
         let live = liveTiledWindowCount()
         if saved == 0 { return true }

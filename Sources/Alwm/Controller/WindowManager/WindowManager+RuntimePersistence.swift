@@ -249,7 +249,7 @@ extension WindowManager {
     func writeWorkspaceLayoutSnapshot(wsID: String, ws: WorkspaceState, force: Bool = false) {
         let floatingRefs = windowsByID.values
             .filter {
-                (floatingOverrides.contains($0.id) || $0.isScratchpad || quake.windowID == $0.id)
+                ($0.isFloating || floatingOverrides.contains($0.id) || $0.isScratchpad || quake.windowID == $0.id)
                     && windowWorkspace[$0.id] == wsID
             }
             .map { RuntimeStateStore.WindowRef(window: $0) }
@@ -869,6 +869,21 @@ extension WindowManager {
         defer { snappingWorkspaces.remove(wsID) }
         guard var ws = workspaces.workspaces[wsID] else { return }
         guard !ws.columns.isEmpty else { return }
+        if var restores = columnWidthRestores[wsID] {
+            let liveColumns = ws.columns.map(\.windows)
+            let liveIDs = Set(liveColumns.flatMap { $0 })
+            if let restoreIndex = restores.lastIndex(where: {
+                !liveIDs.contains($0.insertedWindow) && $0.columns == liveColumns
+            }) {
+                let widths = restores[restoreIndex].widths
+                for index in ws.columns.indices where index < widths.count {
+                    ws.columns[index].width = widths[index]
+                }
+                restores.remove(at: restoreIndex)
+            }
+            restores.removeAll { !liveIDs.contains($0.insertedWindow) && $0.columns != liveColumns }
+            columnWidthRestores[wsID] = restores.isEmpty ? nil : restores
+        }
         let mon = workspaces.preferredMonitor(forWorkspace: wsID, monitors: monitors.monitors)
             ?? monitors.monitors.first(where: { workspaces.activeWorkspaceByMonitor[$0.id] == wsID })
             ?? primaryMonitor()

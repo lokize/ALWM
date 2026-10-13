@@ -80,11 +80,20 @@ extension WorkspaceBarController {
     ) -> NSView {
         let scale = pluginBarScale(settings: settings, pillHeight: pillHeight)
         let defaultPluginMonitorID = PluginManager.shared.settings.defaultDisplayMonitorID
-        let leftPill = makePill(height: pillHeight, alpha: pillAlpha)
+        let leftPill: NSView
+        if settings.separatePluginBadges {
+            let container = NSView()
+            container.translatesAutoresizingMaskIntoConstraints = false
+            container.heightAnchor.constraint(equalToConstant: pillHeight).isActive = true
+            leftPill = container
+        } else {
+            leftPill = makePill(height: pillHeight, alpha: pillAlpha)
+        }
         let pillStack = NSStackView()
         pillStack.orientation = .horizontal
         pillStack.alignment = .centerY
-        pillStack.spacing = max(2, 3 * scale)
+        pillStack.spacing = settings.separatePluginBadges
+            ? CGFloat(settings.pluginBadgeSpacing) : max(2, 3 * scale)
         // gravityAreas keeps chips at intrinsic width — `.fill` expands one chip into empty space.
         pillStack.distribution = .gravityAreas
         pillStack.translatesAutoresizingMaskIntoConstraints = false
@@ -94,7 +103,32 @@ extension WorkspaceBarController {
             $0.placement == .beforeWorkspaces
                 && $0.display.matches(monitor.id, defaultMonitorID: defaultPluginMonitorID)
         }
-        appendPluginViews(before, to: pillStack, scale: scale, trailingSeparator: !before.isEmpty)
+        appendPluginViews(
+            before, to: pillStack, scale: scale, trailingSeparator: !before.isEmpty,
+            separate: settings.separatePluginBadges, pillHeight: pillHeight, pillAlpha: pillAlpha
+        )
+
+        let workspaceStack: NSStackView
+        if settings.separatePluginBadges {
+            let workspacePill = makePill(height: pillHeight, alpha: pillAlpha)
+            let inner = NSStackView()
+            inner.orientation = .horizontal
+            inner.alignment = .centerY
+            inner.distribution = .gravityAreas
+            inner.spacing = max(2, 3 * scale)
+            inner.translatesAutoresizingMaskIntoConstraints = false
+            workspacePill.addSubview(inner)
+            NSLayoutConstraint.activate([
+                inner.leadingAnchor.constraint(equalTo: workspacePill.leadingAnchor, constant: 5 * scale),
+                inner.trailingAnchor.constraint(equalTo: workspacePill.trailingAnchor, constant: -5 * scale),
+                inner.centerYAnchor.constraint(equalTo: workspacePill.centerYAnchor)
+            ])
+            workspacePill.setContentHuggingPriority(.required, for: .horizontal)
+            pillStack.addArrangedSubview(workspacePill)
+            workspaceStack = inner
+        } else {
+            workspaceStack = pillStack
+        }
 
         // Badge matches the multi-window picker: count every live window of the app,
         // not only those on the chip's workspace (Safari often spans workspaces).
@@ -104,7 +138,7 @@ extension WorkspaceBarController {
 
         for (index, def) in definitions.enumerated() {
             if index > 0 {
-                pillStack.addArrangedSubview(makeVerticalSeparator(scale: scale))
+                workspaceStack.addArrangedSubview(makeVerticalSeparator(scale: scale))
             }
             let isActive = activeID == def.id
             let ws = workspaces[def.id]
@@ -125,7 +159,7 @@ extension WorkspaceBarController {
                 if !settings.showAppIcons { return def.name.isEmpty ? def.id : def.name }
                 return ""
             }()
-            pillStack.addArrangedSubview(
+            workspaceStack.addArrangedSubview(
                 makeWorkspaceChip(
                     name: label,
                     apps: apps,
@@ -154,8 +188,8 @@ extension WorkspaceBarController {
             floats = floats.uniqued(by: \.bundleID)
         }
         if !floats.isEmpty {
-            pillStack.addArrangedSubview(makeVerticalSeparator(scale: scale))
-            pillStack.addArrangedSubview(
+            workspaceStack.addArrangedSubview(makeVerticalSeparator(scale: scale))
+            workspaceStack.addArrangedSubview(
                 makeFloatChip(
                     name: "⌀",
                     apps: settings.showAppIcons ? floats : [],
@@ -172,19 +206,25 @@ extension WorkspaceBarController {
             ($0.placement == .afterWorkspaces || $0.placement == .afterCommand)
                 && $0.display.matches(monitor.id, defaultMonitorID: defaultPluginMonitorID)
         }
-        appendPluginViews(afterWS, to: pillStack, scale: scale, leadingSeparator: true)
+        appendPluginViews(
+            afterWS, to: pillStack, scale: scale, leadingSeparator: true,
+            separate: settings.separatePluginBadges, pillHeight: pillHeight, pillAlpha: pillAlpha
+        )
 
         if settings.showFocusedStatus {
             let label = focusedStatusLabel.trimmingCharacters(in: .whitespacesAndNewlines)
             if !label.isEmpty {
-                pillStack.addArrangedSubview(makeVerticalSeparator(scale: scale))
-                pillStack.addArrangedSubview(
-                    makeFocusedStatusChip(
+                if !settings.separatePluginBadges {
+                    pillStack.addArrangedSubview(makeVerticalSeparator(scale: scale))
+                }
+                let statusChip = makeFocusedStatusChip(
                         text: label,
                         chipHeight: max(14, pillHeight - 4),
                         scale: scale
                     )
-                )
+                pillStack.addArrangedSubview(settings.separatePluginBadges
+                    ? makePluginBadge(statusChip, height: pillHeight, alpha: pillAlpha, scale: scale)
+                    : statusChip)
             }
         }
 
@@ -193,13 +233,18 @@ extension WorkspaceBarController {
         pillStack.setHuggingPriority(.required, for: .horizontal)
         pillStack.setContentCompressionResistancePriority(.required, for: .horizontal)
 
-        let insetX: CGFloat = 5 * scale
-        NSLayoutConstraint.activate([
+        let insetX: CGFloat = settings.separatePluginBadges ? 0 : 5 * scale
+        var constraints = [
             pillStack.leadingAnchor.constraint(equalTo: leftPill.leadingAnchor, constant: insetX),
             pillStack.trailingAnchor.constraint(equalTo: leftPill.trailingAnchor, constant: -insetX),
-            pillStack.topAnchor.constraint(equalTo: leftPill.topAnchor, constant: 1),
-            pillStack.bottomAnchor.constraint(equalTo: leftPill.bottomAnchor, constant: -1)
-        ])
+        ]
+        if settings.separatePluginBadges {
+            constraints.append(pillStack.centerYAnchor.constraint(equalTo: leftPill.centerYAnchor))
+        } else {
+            constraints.append(pillStack.topAnchor.constraint(equalTo: leftPill.topAnchor, constant: 1))
+            constraints.append(pillStack.bottomAnchor.constraint(equalTo: leftPill.bottomAnchor, constant: -1))
+        }
+        NSLayoutConstraint.activate(constraints)
         return leftPill
     }
 
@@ -213,12 +258,29 @@ extension WorkspaceBarController {
     }
 
 
+    func makePluginBadge(_ view: NSView, height: CGFloat, alpha: CGFloat, scale: CGFloat) -> NSView {
+        let badge = makePill(height: height, alpha: alpha)
+        view.translatesAutoresizingMaskIntoConstraints = false
+        badge.addSubview(view)
+        NSLayoutConstraint.activate([
+            view.leadingAnchor.constraint(equalTo: badge.leadingAnchor, constant: 5 * scale),
+            view.trailingAnchor.constraint(equalTo: badge.trailingAnchor, constant: -5 * scale),
+            view.centerYAnchor.constraint(equalTo: badge.centerYAnchor)
+        ])
+        badge.setContentHuggingPriority(.required, for: .horizontal)
+        badge.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return badge
+    }
+
     func appendPluginViews(
         _ items: [PluginBarItem],
         to stack: NSStackView,
         scale: CGFloat,
         leadingSeparator: Bool = false,
-        trailingSeparator: Bool = false
+        trailingSeparator: Bool = false,
+        separate: Bool = false,
+        pillHeight: CGFloat = 20,
+        pillAlpha: CGFloat = 0
     ) {
         guard !items.isEmpty else { return }
         PluginManager.shared.updateBarScale(scale)
@@ -237,16 +299,18 @@ extension WorkspaceBarController {
             views.append(view)
         }
         guard !views.isEmpty else { return }
-        if leadingSeparator {
+        if leadingSeparator && !separate {
             stack.addArrangedSubview(makeVerticalSeparator(scale: scale))
         }
         for (index, view) in views.enumerated() {
-            if index > 0 {
+            if index > 0 && !separate {
                 stack.addArrangedSubview(makeVerticalSeparator(scale: scale))
             }
-            stack.addArrangedSubview(view)
+            stack.addArrangedSubview(separate
+                ? makePluginBadge(view, height: pillHeight, alpha: pillAlpha, scale: scale)
+                : view)
         }
-        if trailingSeparator {
+        if trailingSeparator && !separate {
             stack.addArrangedSubview(makeVerticalSeparator(scale: scale))
         }
     }
@@ -759,6 +823,7 @@ extension WorkspaceBarController {
         parts.append("fs=\(settings.showFocusedStatus)")
         parts.append("fst=\(focusedStatusLabel)")
         parts.append("ws=\(Int(settings.widthScale * 100))")
+        parts.append("badges=\(settings.separatePluginBadges):\(Int(settings.pluginBadgeSpacing))")
         for item in pluginItems {
             parts.append("pl:\(item.id):\(item.placement.rawString):\(item.display.rawString):\(item.signature)")
         }
