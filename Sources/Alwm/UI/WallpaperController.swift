@@ -2,7 +2,6 @@ import AppKit
 import AVFoundation
 import CoreGraphics
 import Foundation
-import UserNotifications
 
 enum WallpaperNotificationContent {
     static let title = "Papel de parede alterado"
@@ -39,18 +38,6 @@ enum WallpaperNotificationContent {
         )
     }
 
-    static func notification(for payload: Payload) -> UNMutableNotificationContent {
-        let content = UNMutableNotificationContent()
-        content.title = payload.title
-        content.subtitle = payload.subtitle
-        content.body = payload.body
-        content.sound = .default
-        return content
-    }
-}
-
-private struct WallpaperNotificationItem: Hashable {
-    let content: WallpaperNotificationContent.Payload
 }
 
 enum WallpaperUpdatePolicy {
@@ -61,69 +48,6 @@ enum WallpaperUpdatePolicy {
             || current.recursive != next.recursive
             || current.separatePerMonitor != next.separatePerMonitor
             || current.monitorDirectories != next.monitorDirectories
-    }
-}
-
-@MainActor
-private final class WallpaperNotificationService: NSObject, UNUserNotificationCenterDelegate {
-    static let shared = WallpaperNotificationService()
-
-    private let center = UNUserNotificationCenter.current()
-    private var permissionGranted: Bool?
-    private var isRequestingPermission = false
-    private var pendingItems: [WallpaperNotificationItem] = []
-
-    private override init() {
-        super.init()
-        center.delegate = self
-    }
-
-    func notify(for items: [WallpaperNotificationItem]) {
-        let uniqueItems = Array(Set(items)).sorted {
-            if $0.content.subtitle == $1.content.subtitle {
-                return $0.content.body < $1.content.body
-            }
-            return $0.content.subtitle < $1.content.subtitle
-        }
-        guard !uniqueItems.isEmpty else { return }
-        if let permissionGranted {
-            if permissionGranted { uniqueItems.forEach(deliver(for:)) }
-            return
-        }
-        pendingItems.append(contentsOf: uniqueItems)
-        guard !isRequestingPermission else { return }
-        isRequestingPermission = true
-        center.requestAuthorization(options: [.alert, .sound]) { [weak self] granted, error in
-            Task { @MainActor in
-                guard let self else { return }
-                self.isRequestingPermission = false
-                self.permissionGranted = granted
-                if let error {
-                    NSLog("ALWM wallpaper notification: authorization failed: %@", error.localizedDescription)
-                }
-                let queued = self.pendingItems
-                self.pendingItems.removeAll()
-                if granted { queued.forEach(self.deliver(for:)) }
-            }
-        }
-    }
-
-    private func deliver(for item: WallpaperNotificationItem) {
-        let content = WallpaperNotificationContent.notification(for: item.content)
-        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-        center.add(request) { error in
-            if let error {
-                NSLog("ALWM wallpaper notification: failed to deliver %@: %@", item.content.body, error.localizedDescription)
-            }
-        }
-    }
-
-    nonisolated func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification,
-        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
-    ) {
-        completionHandler([.banner, .sound])
     }
 }
 
@@ -280,7 +204,7 @@ final class WallpaperController {
             videoSessions.removeValue(forKey: id)?.stop()
         }
         if settings.separatePerMonitor {
-            var changedWallpapers: [WallpaperNotificationItem] = []
+            var changedWallpapers: [WallpaperNotificationContent.Payload] = []
             for screen in screens {
                 let id = Self.displayID(of: screen)
                 let key = String(id)
@@ -290,10 +214,10 @@ final class WallpaperController {
                 let changed = previousByScreen[key] != url
                 previousByScreen[key] = url
                 if show(url, on: screen, id: id), changed {
-                    changedWallpapers.append(notificationItem(for: url, in: directory))
+                    changedWallpapers.append(notificationContent(for: url, in: directory))
                 }
             }
-            WallpaperNotificationService.shared.notify(for: changedWallpapers)
+            WallpaperToastController.shared.show(changedWallpapers)
         } else {
             let files = WallpaperCatalog.files(in: settings.directory, recursive: settings.recursive)
             guard let url = WallpaperCatalog.next(from: files, after: previousByScreen["all"], order: settings.order) else { return }
@@ -304,17 +228,15 @@ final class WallpaperController {
                 didApply = show(url, on: screen, id: Self.displayID(of: screen)) || didApply
             }
             if changed && didApply {
-                WallpaperNotificationService.shared.notify(for: [notificationItem(for: url, in: settings.directory)])
+                WallpaperToastController.shared.show([notificationContent(for: url, in: settings.directory)])
             }
         }
     }
 
-    private func notificationItem(for url: URL, in directory: String) -> WallpaperNotificationItem {
+    private func notificationContent(for url: URL, in directory: String) -> WallpaperNotificationContent.Payload {
         let expandedDirectory = NSString(string: directory).expandingTildeInPath
         let root = URL(fileURLWithPath: expandedDirectory, isDirectory: true).standardizedFileURL
-        return WallpaperNotificationItem(
-            content: WallpaperNotificationContent.make(for: url, relativeTo: root)
-        )
+        return WallpaperNotificationContent.make(for: url, relativeTo: root)
     }
 
     @discardableResult

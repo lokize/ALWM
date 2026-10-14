@@ -57,26 +57,38 @@ struct WallpaperSettingsTests {
     @Test("wallpaper notification shows its subfolder path and filename")
     func notificationContent() {
         let url = URL(fileURLWithPath: "/Users/test/Wallpapers/Travel/beach.mov")
-        let direct = WallpaperNotificationContent.notification(
-            for: WallpaperNotificationContent.make(for: url)
-        )
+        let direct = WallpaperNotificationContent.make(for: url)
         #expect(direct.title == "Papel de parede alterado")
         #expect(direct.subtitle == "Travel")
         #expect(direct.body == "beach.mov")
 
         let nested = URL(fileURLWithPath: "/Users/test/Wallpapers/Travel/Italy/beach.mov")
         let root = URL(fileURLWithPath: "/Users/test/Wallpapers", isDirectory: true)
-        let nestedNotification = WallpaperNotificationContent.notification(
-            for: WallpaperNotificationContent.make(for: nested, relativeTo: root)
-        )
-        #expect(nestedNotification.subtitle == "Travel/Italy")
-        #expect(nestedNotification.body == "beach.mov")
+        let nestedBadge = WallpaperNotificationContent.make(for: nested, relativeTo: root)
+        #expect(nestedBadge.subtitle == "Travel/Italy")
+        #expect(nestedBadge.body == "beach.mov")
         let rootFile = URL(fileURLWithPath: "/Users/test/Wallpapers/beach.mov")
-        let rootNotification = WallpaperNotificationContent.notification(
-            for: WallpaperNotificationContent.make(for: rootFile, relativeTo: root)
+        let rootBadge = WallpaperNotificationContent.make(for: rootFile, relativeTo: root)
+        #expect(rootBadge.subtitle == "Wallpapers")
+        #expect(rootBadge.body == "beach.mov")
+    }
+
+    @Test("wallpaper badge is on top and does not take focus or mouse input")
+    @MainActor
+    func wallpaperBadgeWindowPolicy() {
+        let panel = WallpaperToastController.makePanel(frame: NSRect(x: 0, y: 0, width: 360, height: 100))
+        defer { panel.close() }
+        #expect(panel.level == .statusBar)
+        #expect(panel.ignoresMouseEvents)
+        #expect(panel.collectionBehavior.contains(.canJoinAllSpaces))
+        #expect(panel.styleMask.contains(.nonactivatingPanel))
+
+        let frame = WallpaperToastController.frame(
+            for: NSSize(width: 360, height: 100),
+            in: NSRect(x: 0, y: 0, width: 1000, height: 800)
         )
-        #expect(rootNotification.subtitle == "Wallpapers")
-        #expect(rootNotification.body == "beach.mov")
+        #expect(frame.maxX == 982)
+        #expect(frame.maxY == 782)
     }
 
     @Test("catalog filters media, respects recursion and rotates without immediate repetition")
