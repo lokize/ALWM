@@ -54,10 +54,16 @@ struct WallpaperSettingsTests {
         #expect(settings.wallpaper.intervalUnit == .seconds)
     }
 
-    @Test("wallpaper notification shows its parent folder and filename")
+    @Test("wallpaper notification shows its subfolder path and filename")
     func notificationContent() {
         let url = URL(fileURLWithPath: "/Users/test/Wallpapers/Travel/beach.mov")
         #expect(WallpaperNotificationContent.body(for: url) == "Travel — beach.mov")
+
+        let nested = URL(fileURLWithPath: "/Users/test/Wallpapers/Travel/Italy/beach.mov")
+        let root = URL(fileURLWithPath: "/Users/test/Wallpapers", isDirectory: true)
+        #expect(WallpaperNotificationContent.body(for: nested, relativeTo: root) == "Travel/Italy — beach.mov")
+        let rootFile = URL(fileURLWithPath: "/Users/test/Wallpapers/beach.mov")
+        #expect(WallpaperNotificationContent.body(for: rootFile, relativeTo: root) == "Wallpapers — beach.mov")
     }
 
     @Test("catalog filters media, respects recursion and rotates without immediate repetition")

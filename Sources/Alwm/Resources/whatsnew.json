@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.5.5",
+      "items": [
+        "Show nested wallpaper folders in change notifications"
+      ]
+    },
+    {
       "version": "1.5.4",
       "items": [
         "Keep workspace assignments aligned with the primary display",

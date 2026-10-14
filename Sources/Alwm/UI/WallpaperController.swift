@@ -7,10 +7,32 @@ import UserNotifications
 enum WallpaperNotificationContent {
     static let title = "Papel de parede alterado"
 
-    static func body(for url: URL) -> String {
-        let folder = url.deletingLastPathComponent().lastPathComponent
+    static func body(for url: URL, relativeTo root: URL? = nil) -> String {
+        let filePath = url.standardizedFileURL.path
+        let parentFolder = url.deletingLastPathComponent().lastPathComponent
+        let folder: String
+        if let root {
+            let rootPath = root.standardizedFileURL.path
+            let rootPrefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+            if filePath.hasPrefix(rootPrefix) {
+                let relativeFilePath = String(filePath.dropFirst(rootPrefix.count))
+                let relativeFolder = (relativeFilePath as NSString).deletingLastPathComponent
+                folder = relativeFolder == "." || relativeFolder.isEmpty
+                    ? root.lastPathComponent
+                    : relativeFolder
+            } else {
+                folder = parentFolder
+            }
+        } else {
+            folder = parentFolder
+        }
         return "\(folder.isEmpty ? "Papéis de parede" : folder) — \(url.lastPathComponent)"
     }
+}
+
+private struct WallpaperNotificationItem: Hashable {
+    let url: URL
+    let root: URL
 }
 
 enum WallpaperUpdatePolicy {
@@ -31,21 +53,24 @@ private final class WallpaperNotificationService: NSObject, UNUserNotificationCe
     private let center = UNUserNotificationCenter.current()
     private var permissionGranted: Bool?
     private var isRequestingPermission = false
-    private var pendingURLs: [URL] = []
+    private var pendingItems: [WallpaperNotificationItem] = []
 
     private override init() {
         super.init()
         center.delegate = self
     }
 
-    func notify(for urls: [URL]) {
-        let uniqueURLs = Array(Set(urls)).sorted { $0.path < $1.path }
-        guard !uniqueURLs.isEmpty else { return }
+    func notify(for items: [WallpaperNotificationItem]) {
+        let uniqueItems = Array(Set(items)).sorted {
+            if $0.url.path == $1.url.path { return $0.root.path < $1.root.path }
+            return $0.url.path < $1.url.path
+        }
+        guard !uniqueItems.isEmpty else { return }
         if let permissionGranted {
-            if permissionGranted { uniqueURLs.forEach(deliver(for:)) }
+            if permissionGranted { uniqueItems.forEach(deliver(for:)) }
             return
         }
-        pendingURLs.append(contentsOf: uniqueURLs)
+        pendingItems.append(contentsOf: uniqueItems)
         guard !isRequestingPermission else { return }
         isRequestingPermission = true
         center.requestAuthorization(options: [.alert, .sound]) { [weak self] granted, error in
@@ -56,22 +81,22 @@ private final class WallpaperNotificationService: NSObject, UNUserNotificationCe
                 if let error {
                     NSLog("ALWM wallpaper notification: authorization failed: %@", error.localizedDescription)
                 }
-                let queued = self.pendingURLs
-                self.pendingURLs.removeAll()
+                let queued = self.pendingItems
+                self.pendingItems.removeAll()
                 if granted { queued.forEach(self.deliver(for:)) }
             }
         }
     }
 
-    private func deliver(for url: URL) {
+    private func deliver(for item: WallpaperNotificationItem) {
         let content = UNMutableNotificationContent()
         content.title = WallpaperNotificationContent.title
-        content.body = WallpaperNotificationContent.body(for: url)
+        content.body = WallpaperNotificationContent.body(for: item.url, relativeTo: item.root)
         content.sound = .default
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         center.add(request) { error in
             if let error {
-                NSLog("ALWM wallpaper notification: failed to deliver %@: %@", url.path, error.localizedDescription)
+                NSLog("ALWM wallpaper notification: failed to deliver %@: %@", item.url.path, error.localizedDescription)
             }
         }
     }
@@ -238,7 +263,7 @@ final class WallpaperController {
             videoSessions.removeValue(forKey: id)?.stop()
         }
         if settings.separatePerMonitor {
-            var changedURLs: [URL] = []
+            var changedWallpapers: [WallpaperNotificationItem] = []
             for screen in screens {
                 let id = Self.displayID(of: screen)
                 let key = String(id)
@@ -247,9 +272,11 @@ final class WallpaperController {
                 guard let url = WallpaperCatalog.next(from: files, after: previousByScreen[key], order: settings.order) else { continue }
                 let changed = previousByScreen[key] != url
                 previousByScreen[key] = url
-                if show(url, on: screen, id: id), changed { changedURLs.append(url) }
+                if show(url, on: screen, id: id), changed {
+                    changedWallpapers.append(notificationItem(for: url, in: directory))
+                }
             }
-            WallpaperNotificationService.shared.notify(for: changedURLs)
+            WallpaperNotificationService.shared.notify(for: changedWallpapers)
         } else {
             let files = WallpaperCatalog.files(in: settings.directory, recursive: settings.recursive)
             guard let url = WallpaperCatalog.next(from: files, after: previousByScreen["all"], order: settings.order) else { return }
@@ -259,8 +286,18 @@ final class WallpaperController {
             for screen in screens {
                 didApply = show(url, on: screen, id: Self.displayID(of: screen)) || didApply
             }
-            if changed && didApply { WallpaperNotificationService.shared.notify(for: [url]) }
+            if changed && didApply {
+                WallpaperNotificationService.shared.notify(for: [notificationItem(for: url, in: settings.directory)])
+            }
         }
+    }
+
+    private func notificationItem(for url: URL, in directory: String) -> WallpaperNotificationItem {
+        let expandedDirectory = NSString(string: directory).expandingTildeInPath
+        return WallpaperNotificationItem(
+            url: url,
+            root: URL(fileURLWithPath: expandedDirectory, isDirectory: true).standardizedFileURL
+        )
     }
 
     @discardableResult
