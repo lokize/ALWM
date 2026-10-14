@@ -136,6 +136,13 @@ extension WindowManager {
         statusPopover.onNextWallpaper = {
             WallpaperController.shared.advance()
         }
+        statusPopover.onWallpaperRotationChange = { [weak self] enabled, intervalSeconds, unit in
+            self?.mutateSettings {
+                $0.wallpaper.rotationEnabled = enabled
+                $0.wallpaper.intervalUnit = unit
+                $0.wallpaper.intervalSeconds = min(86400, max(1, intervalSeconds))
+            }
+        }
 
         refreshStatusItem()
     }

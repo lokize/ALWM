@@ -26,6 +26,25 @@ struct WallpaperSettingsTests {
         #expect(parsed.workspaceBar.pluginBadgeSpacing == 11)
     }
 
+    @Test("workspace definitions survive TOML persistence and reload")
+    func workspaceSettingsRoundTrip() throws {
+        let workspaces = [
+            WorkspaceDefinition(
+                id: "4",
+                name: "Work \"A\"",
+                layout: .niri,
+                monitorIndex: 1,
+                sessionApps: ["com.example.Editor", "com.example.Chat"],
+                sessionQuitOthers: true
+            )
+        ]
+
+        let encoded = ConfigWriter.workspacesTOML(workspaces)
+        let decoded = try ConfigStore.parseWorkspaces(encoded)
+
+        #expect(decoded == workspaces)
+    }
+
     @Test("wallpaper interval unit converts display values to persisted seconds")
     func intervalUnitConversion() {
         #expect(WallpaperIntervalUnit.seconds.intervalSeconds(from: 15) == 15)
@@ -33,6 +52,18 @@ struct WallpaperSettingsTests {
         #expect(WallpaperIntervalUnit.minutes.displayValue(from: 120) == 2)
         #expect(WallpaperIntervalUnit.seconds.intervalSeconds(from: 0) == 1)
         #expect(WallpaperIntervalUnit.minutes.intervalSeconds(from: 2000) == 86400)
+    }
+
+    @Test("wallpaper rotation countdown rounds up and formats the next change")
+    func rotationCountdown() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        #expect(WallpaperRotationStatus.remainingSeconds(until: now.addingTimeInterval(600), now: now) == 600)
+        #expect(WallpaperRotationStatus.remainingSeconds(until: now.addingTimeInterval(0.1), now: now) == 1)
+        #expect(WallpaperRotationStatus.remainingSeconds(until: now.addingTimeInterval(-1), now: now) == 0)
+        #expect(WallpaperRotationStatus.remainingSeconds(until: nil, now: now) == nil)
+        #expect(WallpaperRotationStatus.nextChangeText(secondsRemaining: 599) == "Próximo em 9 min 59 s")
+        #expect(WallpaperRotationStatus.nextChangeText(secondsRemaining: 12) == "Próximo em 12 s")
+        #expect(WallpaperRotationStatus.nextChangeText(secondsRemaining: nil) == nil)
     }
 
     @Test("changing the rotation interval does not immediately advance the wallpaper")

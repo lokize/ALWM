@@ -132,12 +132,16 @@ enum ConfigWriter {
     }
 
     static func writeWorkspaces(_ workspaces: [WorkspaceDefinition]) {
+        try? workspacesTOML(workspaces).write(to: ConfigPaths.workspaces, atomically: true, encoding: .utf8)
+    }
+
+    static func workspacesTOML(_ workspaces: [WorkspaceDefinition]) -> String {
         var lines: [String] = []
         for ws in workspaces {
             var block = """
             [[workspaces]]
-            id = "\(ws.id)"
-            name = "\(ws.name)"
+            id = \(tomlString(ws.id))
+            name = \(tomlString(ws.name))
             layout = "\(ws.layout.rawValue)"
             """
             if let idx = ws.monitorIndex {
@@ -147,7 +151,7 @@ enum ConfigWriter {
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
             if !apps.isEmpty {
-                let listed = apps.map { "\"\(escapeTomlString($0))\"" }.joined(separator: ", ")
+                let listed = apps.map(tomlString).joined(separator: ", ")
                 block += "\nsessionApps = [\(listed)]"
             }
             if ws.sessionQuitOthers {
@@ -155,13 +159,7 @@ enum ConfigWriter {
             }
             lines.append(block)
         }
-        try? lines.joined(separator: "\n\n").write(to: ConfigPaths.workspaces, atomically: true, encoding: .utf8)
-    }
-
-    private static func escapeTomlString(_ value: String) -> String {
-        value
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
+        return lines.joined(separator: "\n\n")
     }
 
     static func writeRules(_ rules: [AppRule]) {

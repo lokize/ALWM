@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "1.6.1",
+      "items": [
+        "Save wallpaper and workspace settings immediately",
+        "Show wallpaper rotation controls and countdown in the menu"
+      ]
+    },
+    {
       "version": "1.6.0",
       "items": [
         "Show wallpaper names without extensions in the menu and on-screen badge"
@@ -272,13 +279,6 @@
         "Plugins: quotes/Sources/QuotesStore.swift",
         "Steam Price Watcher plugin updates",
         "Build and release scripts"
-      ]
-    },
-    {
-      "version": "1.2.1",
-      "items": [
-        "Plugins: quotes/Sources/QuotesPlugin.swift",
-        "Plugins: quotes/Sources/QuotesStore.swift"
       ]
     }
   ]

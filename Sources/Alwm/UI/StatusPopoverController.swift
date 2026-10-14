@@ -9,6 +9,7 @@ public final class StatusPopoverController {
     private var hostingController: NSHostingController<StatusMenuView>?
     private var updateResizeCancellable: AnyCancellable?
     private var wallpaperCancellable: AnyCancellable?
+    private var wallpaperRotationCancellable: AnyCancellable?
     /// Survives workspace-bar re-renders so toggles don't dismiss the menu when the chip is rebuilt.
     private let anchorWindow: NSWindow
     private let anchorView: NSView
@@ -35,6 +36,7 @@ public final class StatusPopoverController {
     public var onColorPalette: (() -> Void)?
     public var onQuit: (() -> Void)?
     public var onNextWallpaper: (() -> Void)?
+    public var onWallpaperRotationChange: ((Bool, Double, WallpaperIntervalUnit) -> Void)?
 
     public var isShown: Bool { popover.isShown }
 
@@ -73,6 +75,11 @@ public final class StatusPopoverController {
                 guard let self else { return }
                 self.model.activeWallpaper = payload
                 if self.popover.isShown { self.resizeToFit() }
+            }
+        wallpaperRotationCancellable = WallpaperController.shared.$rotationStatus
+            .receive(on: RunLoop.main)
+            .sink { [weak self] status in
+                self?.model.rotationStatus = status
             }
         updateResizeCancellable = AppUpdateService.shared.$phase
             .receive(on: RunLoop.main)
@@ -235,6 +242,9 @@ public final class StatusPopoverController {
             },
             onColorPalette: { [weak self] in self?.close(); self?.onColorPalette?() },
             onNextWallpaper: { [weak self] in self?.onNextWallpaper?() },
+            onWallpaperRotationChange: { [weak self] enabled, value, unit in
+                self?.onWallpaperRotationChange?(enabled, value, unit)
+            },
             onQuit: { [weak self] in self?.close(); self?.onQuit?() },
             onCloseMenu: { [weak self] in self?.close() }
         )
@@ -325,6 +335,7 @@ final class StatusMenuModel: ObservableObject {
     @Published var isRecording = false
     @Published var recentNotes: [NotePreview] = []
     @Published var activeWallpaper: WallpaperNotificationContent.Payload?
+    @Published var rotationStatus = WallpaperController.shared.rotationStatus
 }
 
 private enum StatusMenuTheme {
@@ -357,6 +368,7 @@ struct StatusMenuView: View {
     var onRelayout: () -> Void
     var onColorPalette: () -> Void
     var onNextWallpaper: () -> Void
+    var onWallpaperRotationChange: (Bool, Double, WallpaperIntervalUnit) -> Void
     var onQuit: () -> Void
     var onCloseMenu: () -> Void = {}
 
@@ -445,45 +457,102 @@ struct StatusMenuView: View {
     private var wallpaperSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             sectionTitle("Papel de parede")
-            HStack(spacing: 9) {
-                if let wallpaper = model.activeWallpaper {
-                    WallpaperThumbnailView(url: wallpaper.wallpaperURL, side: 48)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(wallpaper.subtitle)
-                            .font(.system(size: 10, weight: .medium))
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 9) {
+                    if let wallpaper = model.activeWallpaper {
+                        WallpaperThumbnailView(url: wallpaper.wallpaperURL, side: 48)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(wallpaper.subtitle)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                            Text(wallpaper.body)
+                                .font(.system(size: 12, weight: .semibold))
+                                .lineLimit(1)
+                                .help(wallpaper.wallpaperURL.path)
+                        }
+                    } else {
+                        Image(systemName: "photo.on.rectangle.angled")
+                            .font(.system(size: 18, weight: .medium))
                             .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                        Text(wallpaper.body)
-                            .font(.system(size: 12, weight: .semibold))
-                            .lineLimit(1)
-                            .help(wallpaper.wallpaperURL.path)
+                            .frame(width: 48, height: 48)
+                            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Nenhum papel de parede ativo")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("Ative o gerenciamento nas configurações")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
                     }
-                } else {
-                    Image(systemName: "photo.on.rectangle.angled")
-                        .font(.system(size: 18, weight: .medium))
+                    Spacer(minLength: 2)
+                    Button(action: onNextWallpaper) {
+                        Label("Próximo", systemImage: "forward.end.fill")
+                            .font(.system(size: 10, weight: .semibold))
+                            .labelStyle(.titleAndIcon)
+                            .lineLimit(1)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(model.activeWallpaper == nil)
+                    .help("Passar para o próximo papel de parede")
+                }
+
+                Divider().opacity(0.5)
+
+                Toggle("Troca automática", isOn: Binding(
+                    get: { model.rotationStatus.rotationEnabled },
+                    set: { enabled in
+                        onWallpaperRotationChange(
+                            enabled,
+                            model.rotationStatus.intervalSeconds,
+                            model.rotationStatus.intervalUnit
+                        )
+                    }
+                ))
+                .font(.system(size: 10, weight: .medium))
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+
+                HStack(spacing: 6) {
+                    Text("Atualizar a cada")
+                        .font(.system(size: 10))
                         .foregroundStyle(.secondary)
-                        .frame(width: 48, height: 48)
-                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Nenhum papel de parede ativo")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text("Ative o gerenciamento nas configurações")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                    TextField("Intervalo", value: Binding(
+                        get: { intervalDisplayValue },
+                        set: { value in
+                            onWallpaperRotationChange(
+                                model.rotationStatus.rotationEnabled,
+                                model.rotationStatus.intervalUnit.intervalSeconds(from: value),
+                                model.rotationStatus.intervalUnit
+                            )
+                        }
+                    ), format: .number.precision(.fractionLength(0...2)))
+                        .frame(width: 48)
+                        .textFieldStyle(.roundedBorder)
+                    Picker("Unidade do intervalo", selection: Binding(
+                        get: { model.rotationStatus.intervalUnit },
+                        set: { unit in
+                            onWallpaperRotationChange(
+                                model.rotationStatus.rotationEnabled,
+                                model.rotationStatus.intervalSeconds,
+                                unit
+                            )
+                        }
+                    )) {
+                        ForEach(WallpaperIntervalUnit.allCases) { unit in
+                            Text(unit.label).tag(unit)
+                        }
                     }
+                    .labelsHidden()
+                    .fixedSize()
                 }
-                Spacer(minLength: 2)
-                Button(action: onNextWallpaper) {
-                    Label("Próximo", systemImage: "forward.end.fill")
-                        .font(.system(size: 10, weight: .semibold))
-                        .labelStyle(.titleAndIcon)
-                        .lineLimit(1)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(model.activeWallpaper == nil)
-                .help("Passar para o próximo papel de parede")
+                .disabled(!model.rotationStatus.rotationEnabled)
+
+                Text(rotationCountdownText)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
             }
             .padding(8)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -492,6 +561,18 @@ struct StatusMenuView: View {
                     .fill(Color.primary.opacity(0.05))
             )
         }
+    }
+
+    private var intervalDisplayValue: Double {
+        model.rotationStatus.intervalUnit.displayValue(from: model.rotationStatus.intervalSeconds)
+    }
+
+    private var rotationCountdownText: String {
+        guard model.rotationStatus.rotationEnabled else { return "Troca automática desativada" }
+        guard model.activeWallpaper != nil else { return "Aguardando papel de parede" }
+        return WallpaperRotationStatus.nextChangeText(
+            secondsRemaining: model.rotationStatus.secondsUntilNextChange
+        ) ?? "Aguardando papel de parede"
     }
 
     private var header: some View {

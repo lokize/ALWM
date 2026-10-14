@@ -54,6 +54,30 @@ enum WallpaperUpdatePolicy {
     }
 }
 
+struct WallpaperRotationStatus: Equatable {
+    let rotationEnabled: Bool
+    let intervalSeconds: Double
+    let intervalUnit: WallpaperIntervalUnit
+    let secondsUntilNextChange: Int?
+
+    static func remainingSeconds(until deadline: Date?, now: Date) -> Int? {
+        guard let deadline else { return nil }
+        return max(0, Int(ceil(deadline.timeIntervalSince(now))))
+    }
+
+    static func nextChangeText(secondsRemaining: Int?) -> String? {
+        guard let secondsRemaining else { return nil }
+        let hours = secondsRemaining / 3600
+        let minutes = (secondsRemaining % 3600) / 60
+        let seconds = secondsRemaining % 60
+        if hours > 0 {
+            return minutes > 0 ? "Próximo em \(hours) h \(minutes) min" : "Próximo em \(hours) h"
+        }
+        if minutes > 0 { return "Próximo em \(minutes) min \(seconds) s" }
+        return "Próximo em \(seconds) s"
+    }
+}
+
 enum WallpaperCatalog {
     static let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "heic", "heif", "tif", "tiff", "bmp", "webp"]
     static let videoExtensions: Set<String> = ["mp4", "mov", "m4v"]
@@ -152,10 +176,17 @@ final class WallpaperController: ObservableObject {
 
     private var settings: WallpaperSettings = .default
     private var timer: Timer?
+    private var nextRotationDate: Date?
     private var videoSessions: [CGDirectDisplayID: VideoSession] = [:]
     private var previousByScreen: [String: URL] = [:]
     private var observers: [NSObjectProtocol] = []
     @Published private(set) var activeWallpaper: WallpaperNotificationContent.Payload?
+    @Published private(set) var rotationStatus = WallpaperRotationStatus(
+        rotationEnabled: WallpaperSettings.default.rotationEnabled,
+        intervalSeconds: WallpaperSettings.default.intervalSeconds,
+        intervalUnit: WallpaperSettings.default.intervalUnit,
+        secondsUntilNextChange: nil
+    )
 
     private init() {
         let sleep = NSWorkspace.shared.notificationCenter.addObserver(
@@ -193,25 +224,30 @@ final class WallpaperController: ObservableObject {
         settings = next
         timer?.invalidate()
         timer = nil
+        nextRotationDate = nil
         if !next.enabled {
             stopVideos()
             activeWallpaper = nil
+            updateRotationStatus()
             return
         }
         if shouldAdvance {
-            advance()
+            advance(resetRotationTimer: false)
         } else if muteChanged {
             videoSessions.values.forEach { $0.setMuted(next.videoMuted) }
         }
-        if next.rotationEnabled {
-            timer = Timer.scheduledTimer(withTimeInterval: min(86400, max(1, next.intervalSeconds)), repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { self?.advance() }
-            }
-        }
+        scheduleRotation()
     }
 
     func advance() {
+        advance(resetRotationTimer: true)
+    }
+
+    private func advance(resetRotationTimer: Bool) {
         guard settings.enabled else { return }
+        defer {
+            if resetRotationTimer { scheduleRotation() }
+        }
         let screens = NSScreen.screens
         guard !screens.isEmpty else { return }
         let connected = Set(screens.map(Self.displayID(of:)))
@@ -258,6 +294,47 @@ final class WallpaperController: ObservableObject {
         }
     }
 
+    private func scheduleRotation() {
+        timer?.invalidate()
+        timer = nil
+        nextRotationDate = nil
+        guard settings.enabled, settings.rotationEnabled else {
+            updateRotationStatus()
+            return
+        }
+        let interval = min(86400, max(1, settings.intervalSeconds))
+        nextRotationDate = Date().addingTimeInterval(interval)
+        updateRotationStatus()
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.rotationTimerFired() }
+        }
+    }
+
+    private func rotationTimerFired() {
+        guard let nextRotationDate else {
+            updateRotationStatus()
+            return
+        }
+        if nextRotationDate <= Date() {
+            advance(resetRotationTimer: false)
+            scheduleRotation()
+        } else {
+            updateRotationStatus()
+        }
+    }
+
+    private func updateRotationStatus() {
+        rotationStatus = WallpaperRotationStatus(
+            rotationEnabled: settings.rotationEnabled,
+            intervalSeconds: settings.intervalSeconds,
+            intervalUnit: settings.intervalUnit,
+            secondsUntilNextChange: WallpaperRotationStatus.remainingSeconds(
+                until: nextRotationDate,
+                now: Date()
+            )
+        )
+    }
+
     private func notificationContent(for url: URL, in directory: String) -> WallpaperNotificationContent.Payload {
         let expandedDirectory = NSString(string: directory).expandingTildeInPath
         let root = URL(fileURLWithPath: expandedDirectory, isDirectory: true).standardizedFileURL
@@ -291,10 +368,12 @@ final class WallpaperController: ObservableObject {
     func stop() {
         timer?.invalidate()
         timer = nil
+        nextRotationDate = nil
         stopVideos()
         settings = .default
         previousByScreen.removeAll()
         activeWallpaper = nil
+        updateRotationStatus()
     }
 
     private static func displayID(of screen: NSScreen) -> CGDirectDisplayID {
