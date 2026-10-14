@@ -8,6 +8,7 @@ public final class StatusPopoverController {
     private let model = StatusMenuModel()
     private var hostingController: NSHostingController<StatusMenuView>?
     private var updateResizeCancellable: AnyCancellable?
+    private var wallpaperCancellable: AnyCancellable?
     /// Survives workspace-bar re-renders so toggles don't dismiss the menu when the chip is rebuilt.
     private let anchorWindow: NSWindow
     private let anchorView: NSView
@@ -33,6 +34,7 @@ public final class StatusPopoverController {
     public var onRelayout: (() -> Void)?
     public var onColorPalette: (() -> Void)?
     public var onQuit: (() -> Void)?
+    public var onNextWallpaper: (() -> Void)?
 
     public var isShown: Bool { popover.isShown }
 
@@ -65,6 +67,13 @@ public final class StatusPopoverController {
         popoverCloseBridge = bridge
         popover.delegate = bridge
         installContent()
+        wallpaperCancellable = WallpaperController.shared.$activeWallpaper
+            .receive(on: RunLoop.main)
+            .sink { [weak self] payload in
+                guard let self else { return }
+                self.model.activeWallpaper = payload
+                if self.popover.isShown { self.resizeToFit() }
+            }
         updateResizeCancellable = AppUpdateService.shared.$phase
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
@@ -225,6 +234,7 @@ public final class StatusPopoverController {
                 DispatchQueue.main.async { self?.onRelayout?() }
             },
             onColorPalette: { [weak self] in self?.close(); self?.onColorPalette?() },
+            onNextWallpaper: { [weak self] in self?.onNextWallpaper?() },
             onQuit: { [weak self] in self?.close(); self?.onQuit?() },
             onCloseMenu: { [weak self] in self?.close() }
         )
@@ -314,6 +324,7 @@ final class StatusMenuModel: ObservableObject {
     @Published var version = AlwmVersion.string
     @Published var isRecording = false
     @Published var recentNotes: [NotePreview] = []
+    @Published var activeWallpaper: WallpaperNotificationContent.Payload?
 }
 
 private enum StatusMenuTheme {
@@ -345,6 +356,7 @@ struct StatusMenuView: View {
     var onCaptureRecordToggle: () -> Void
     var onRelayout: () -> Void
     var onColorPalette: () -> Void
+    var onNextWallpaper: () -> Void
     var onQuit: () -> Void
     var onCloseMenu: () -> Void = {}
 
@@ -369,6 +381,8 @@ struct StatusMenuView: View {
                         actionRow(title: L10n.t("menu.restart_clearing"), systemImage: "arrow.triangle.2.circlepath", action: onRestart)
                     }
                 }
+
+                wallpaperSection
 
                 sectionBlock(title: L10n.t("menu.tools")) {
                     if !model.recentNotes.isEmpty {
@@ -426,6 +440,58 @@ struct StatusMenuView: View {
         .fixedSize(horizontal: true, vertical: true)
         .background(Color(nsColor: .windowBackgroundColor).opacity(0.92))
         .alwmLocalized()
+    }
+
+    private var wallpaperSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionTitle("Papel de parede")
+            HStack(spacing: 9) {
+                if let wallpaper = model.activeWallpaper {
+                    WallpaperThumbnailView(url: wallpaper.wallpaperURL, side: 48)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(wallpaper.subtitle)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        Text(wallpaper.body)
+                            .font(.system(size: 12, weight: .semibold))
+                            .lineLimit(1)
+                            .help(wallpaper.wallpaperURL.path)
+                    }
+                } else {
+                    Image(systemName: "photo.on.rectangle.angled")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 48, height: 48)
+                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Nenhum papel de parede ativo")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("Ative o gerenciamento nas configurações")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 2)
+                Button(action: onNextWallpaper) {
+                    Label("Próximo", systemImage: "forward.end.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                        .labelStyle(.titleAndIcon)
+                        .lineLimit(1)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(model.activeWallpaper == nil)
+                .help("Passar para o próximo papel de parede")
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.primary.opacity(0.05))
+            )
+        }
     }
 
     private var header: some View {

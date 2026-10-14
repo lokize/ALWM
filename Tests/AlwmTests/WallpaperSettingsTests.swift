@@ -75,6 +75,24 @@ struct WallpaperSettingsTests {
         #expect(rootBadge.body == "beach.mov")
     }
 
+    @Test("workspace menu shows the primary monitor wallpaper, with a stable fallback")
+    func activeWallpaperSelection() {
+        let primary = WallpaperNotificationContent.make(
+            for: URL(fileURLWithPath: "/wallpapers/primary.png")
+        )
+        let secondary = WallpaperNotificationContent.make(
+            for: URL(fileURLWithPath: "/wallpapers/secondary.png")
+        )
+        let displays: [CGDirectDisplayID: WallpaperNotificationContent.Payload] = [
+            5: secondary,
+            2: primary
+        ]
+
+        #expect(WallpaperActiveSelection.preferred(from: displays, primaryDisplayID: 5) == secondary)
+        #expect(WallpaperActiveSelection.preferred(from: displays, primaryDisplayID: 99) == primary)
+        #expect(WallpaperActiveSelection.preferred(from: [:], primaryDisplayID: 5) == nil)
+    }
+
     @Test("wallpaper badge is on top and does not take focus or mouse input")
     @MainActor
     func wallpaperBadgeWindowPolicy() {

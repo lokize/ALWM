@@ -23,6 +23,16 @@ struct WorkspaceBarRenderTests {
                 ) == 650 + CGFloat(offset))
             }
         }
+
+        var zeroOffsetSettings = WorkspaceBarSettings.default
+        zeroOffsetSettings.horizontalOffset = 0
+        #expect(controller.overlayOriginX(
+            barWidth: 300,
+            settings: zeroOffsetSettings,
+            screenFrame: screen,
+            minOriginX: 100,
+            rightClearX: 400
+        ) == 650)
     }
 
     @Test("nonzero offset keeps the selected workspace bar alignment")

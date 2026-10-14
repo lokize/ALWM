@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import Combine
 import CoreGraphics
 import Foundation
 
@@ -96,8 +97,18 @@ enum WallpaperCatalog {
     }
 }
 
+enum WallpaperActiveSelection {
+    static func preferred(
+        from wallpapers: [CGDirectDisplayID: WallpaperNotificationContent.Payload],
+        primaryDisplayID: CGDirectDisplayID
+    ) -> WallpaperNotificationContent.Payload? {
+        wallpapers[primaryDisplayID]
+            ?? wallpapers.keys.sorted().first.flatMap { wallpapers[$0] }
+    }
+}
+
 @MainActor
-final class WallpaperController {
+final class WallpaperController: ObservableObject {
     static let shared = WallpaperController()
 
     @MainActor private final class VideoSession {
@@ -144,6 +155,7 @@ final class WallpaperController {
     private var videoSessions: [CGDirectDisplayID: VideoSession] = [:]
     private var previousByScreen: [String: URL] = [:]
     private var observers: [NSObjectProtocol] = []
+    @Published private(set) var activeWallpaper: WallpaperNotificationContent.Payload?
 
     private init() {
         let sleep = NSWorkspace.shared.notificationCenter.addObserver(
@@ -183,6 +195,7 @@ final class WallpaperController {
         timer = nil
         if !next.enabled {
             stopVideos()
+            activeWallpaper = nil
             return
         }
         if shouldAdvance {
@@ -207,6 +220,7 @@ final class WallpaperController {
         }
         if settings.separatePerMonitor {
             var changedWallpapers: [WallpaperNotificationContent.Payload] = []
+            var activeWallpapers: [CGDirectDisplayID: WallpaperNotificationContent.Payload] = [:]
             for screen in screens {
                 let id = Self.displayID(of: screen)
                 let key = String(id)
@@ -215,10 +229,16 @@ final class WallpaperController {
                 guard let url = WallpaperCatalog.next(from: files, after: previousByScreen[key], order: settings.order) else { continue }
                 let changed = previousByScreen[key] != url
                 previousByScreen[key] = url
-                if show(url, on: screen, id: id), changed {
-                    changedWallpapers.append(notificationContent(for: url, in: directory))
+                if show(url, on: screen, id: id) {
+                    let payload = notificationContent(for: url, in: directory)
+                    activeWallpapers[id] = payload
+                    if changed { changedWallpapers.append(payload) }
                 }
             }
+            activeWallpaper = WallpaperActiveSelection.preferred(
+                from: activeWallpapers,
+                primaryDisplayID: CGMainDisplayID()
+            )
             WallpaperToastController.shared.show(changedWallpapers)
         } else {
             let files = WallpaperCatalog.files(in: settings.directory, recursive: settings.recursive)
@@ -228,6 +248,9 @@ final class WallpaperController {
             var didApply = false
             for screen in screens {
                 didApply = show(url, on: screen, id: Self.displayID(of: screen)) || didApply
+            }
+            if didApply {
+                activeWallpaper = notificationContent(for: url, in: settings.directory)
             }
             if changed && didApply {
                 WallpaperToastController.shared.show([notificationContent(for: url, in: settings.directory)])
@@ -271,6 +294,7 @@ final class WallpaperController {
         stopVideos()
         settings = .default
         previousByScreen.removeAll()
+        activeWallpaper = nil
     }
 
     private static func displayID(of screen: NSScreen) -> CGDirectDisplayID {

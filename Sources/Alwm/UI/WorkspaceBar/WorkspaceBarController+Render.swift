@@ -121,7 +121,7 @@ extension WorkspaceBarController {
     }
 
 
-    /// Place the overlay pill per `settings.alignment`, clamped so it stays clear of
+    /// Center the overlay at zero offset; other placements stay clamped clear of
     /// Apple menu chrome (left) and status / document-title region (right).
     func overlayOriginX(
         barWidth: CGFloat,
@@ -131,6 +131,10 @@ extension WorkspaceBarController {
         rightClearX: CGFloat
     ) -> CGFloat {
         let offset = CGFloat(settings.horizontalOffset)
+        if abs(settings.horizontalOffset) < 0.005 {
+            let centered = screenFrame.midX - barWidth / 2 + offset
+            return min(max(centered, screenFrame.minX), max(screenFrame.minX, screenFrame.maxX - barWidth))
+        }
         let maxOriginX = max(minOriginX, rightClearX - barWidth)
 
         let unclamped: CGFloat

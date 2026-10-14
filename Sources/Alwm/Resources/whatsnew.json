@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "1.5.9",
+      "items": [
+        "Show the active wallpaper and advance it from the status menu",
+        "Keep the workspace bar centered at zero offset when workspace content changes"
+      ]
+    },
+    {
       "version": "1.5.8",
       "items": [
         "Show wallpaper thumbnails in the on-screen badge"
@@ -275,56 +282,6 @@
         "Plugin host updates",
         "Localization updates",
         "Build and release scripts"
-      ]
-    },
-    {
-      "version": "1.1.9",
-      "items": [
-        "Update Package",
-        "Localization updates",
-        "Build and release scripts"
-      ]
-    },
-    {
-      "version": "1.1.8",
-      "items": [
-        "Update PluginPanelAnchor",
-        "Nintendo Price Watcher plugin updates",
-        "Steam Price Watcher plugin updates"
-      ]
-    },
-    {
-      "version": "1.1.7",
-      "items": [
-        "Localization updates",
-        "Plugins: clipboard/Sources/ClipboardPanel.swift",
-        "Plugins: clipboard/Sources/ClipboardStore.swift",
-        "Build and release scripts"
-      ]
-    },
-    {
-      "version": "1.1.6",
-      "items": [
-        "Localization updates",
-        "Plugins: brew/Sources/BrewStore.swift",
-        "Build and release scripts"
-      ]
-    },
-    {
-      "version": "1.1.5",
-      "items": [
-        "Update Package",
-        "Plugins: brew/Sources/BrewPanel.swift",
-        "Plugins: brew/Sources/BrewPlugin.swift",
-        "Plugins: brew/Sources/BrewStore.swift",
-        "Plugins: calendar/Sources/CalendarPanel.swift",
-        "Plugins: calendar/Sources/CalendarPlugin.swift",
-        "Plugins: clipboard/Sources/ClipboardPanel.swift",
-        "Plugins: clipboard/Sources/ClipboardPlugin.swift",
-        "Plugins: docker/Sources/DockerPanel.swift",
-        "Plugins: docker/Sources/DockerPlugin.swift",
-        "Plugins: downloads/Sources/DownloadsPanel.swift",
-        "Plugins: downloads/Sources/DownloadsPlugin.swift"
       ]
     }
   ]

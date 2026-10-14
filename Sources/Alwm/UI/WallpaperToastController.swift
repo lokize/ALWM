@@ -79,7 +79,7 @@ private struct WallpaperToastView: View {
 
             ForEach(Array(payloads.prefix(4).enumerated()), id: \.offset) { _, payload in
                 HStack(spacing: 10) {
-                    WallpaperToastThumbnailView(url: payload.wallpaperURL)
+                    WallpaperThumbnailView(url: payload.wallpaperURL)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(payload.subtitle)
                             .font(.system(size: 11, weight: .medium))
@@ -110,8 +110,9 @@ private struct WallpaperToastView: View {
     }
 }
 
-private struct WallpaperToastThumbnailView: View {
+struct WallpaperThumbnailView: View {
     let url: URL
+    var side: CGFloat = 44
     @State private var thumbnailData: Data?
 
     var body: some View {
@@ -125,7 +126,7 @@ private struct WallpaperToastThumbnailView: View {
                     .fill(.white.opacity(0.08))
             }
         }
-        .frame(width: 44, height: 44)
+        .frame(width: side, height: side)
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 7, style: .continuous)

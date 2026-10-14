@@ -133,6 +133,9 @@ extension WindowManager {
             self?.stop()
             NSApp.terminate(nil)
         }
+        statusPopover.onNextWallpaper = {
+            WallpaperController.shared.advance()
+        }
 
         refreshStatusItem()
     }
