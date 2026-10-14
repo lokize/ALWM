@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.6.2",
+      "items": [
+        "Preserve the configured outer gap at the bottom edge"
+      ]
+    },
+    {
       "version": "1.6.1",
       "items": [
         "Save wallpaper and workspace settings immediately",
@@ -266,19 +272,6 @@
       "version": "1.2.3",
       "items": [
         "Runtime support updates"
-      ]
-    },
-    {
-      "version": "1.2.2",
-      "items": [
-        "Localization updates",
-        "GitHub plugin: notifications, PRs, issues, and stars on the workspace bar",
-        "Nintendo Price Watcher plugin updates",
-        "Plugins: quotes/Sources/QuotesPanel.swift",
-        "Plugins: quotes/Sources/QuotesPlugin.swift",
-        "Plugins: quotes/Sources/QuotesStore.swift",
-        "Steam Price Watcher plugin updates",
-        "Build and release scripts"
       ]
     }
   ]

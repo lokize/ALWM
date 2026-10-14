@@ -116,7 +116,11 @@ extension WindowManager {
                    abs(live.x - expected.x) < 10,
                    abs(live.width - expected.width) < 12,
                    abs(live.y - expected.y) < 48,
-                   live.maxY <= expected.maxY + 8 {
+                   !TileBoundaryPolicy.exceedsBottomBoundary(
+                    frameMaxY: live.maxY,
+                    usableMaxY: expected.maxY,
+                    outerGap: self.configStore.config.settings.outerGap
+                   ) {
                     self.lastFrames[id] = live
                     continue
                 }
@@ -1028,8 +1032,12 @@ extension WindowManager {
                     }
                     let overflow = stackFrames.contains { wid, frame in
                         guard let live = ax.currentFrame(of: wid) else { return true }
-                        return live.maxY > usable.maxY + 8
-                            || live.maxY > frame.maxY + 8
+                        let outerGap = configStore.config.settings.outerGap
+                        return TileBoundaryPolicy.exceedsBottomBoundary(
+                            frameMaxY: live.maxY, usableMaxY: usable.maxY, outerGap: outerGap
+                        ) || TileBoundaryPolicy.exceedsBottomBoundary(
+                            frameMaxY: live.maxY, usableMaxY: frame.maxY, outerGap: outerGap
+                        )
                             || live.height > frame.height + 80
                             || live.width > frame.width + 40
                     }
@@ -1059,7 +1067,12 @@ extension WindowManager {
                         continue
                     }
                     guard let live = ax.currentFrame(of: wid) else { continue }
-                    guard live.maxY > usable.maxY + 8 || live.y < usable.y - 8 else { continue }
+                    guard TileBoundaryPolicy.exceedsBottomBoundary(
+                        frameMaxY: live.maxY,
+                        usableMaxY: usable.maxY,
+                        outerGap: configStore.config.settings.outerGap
+                    )
+                        || live.y < usable.y - 8 else { continue }
                     let target: Rect = {
                         if let expected = lastFrames[wid], expected.maxY <= usable.maxY + 1 {
                             return clampStackTileFrame(expected, usable: usable)
@@ -1366,7 +1379,12 @@ extension WindowManager {
                         || !ax.isSettled(id: a.windowID, frame: target, monitors: monitorFrames) {
                         ax.applyFrameOnly(frame: target, to: a.windowID)
                     }
-                    if let live = ax.currentFrame(of: a.windowID), live.maxY > usable.maxY + 8 {
+                    if let live = ax.currentFrame(of: a.windowID),
+                       TileBoundaryPolicy.exceedsBottomBoundary(
+                        frameMaxY: live.maxY,
+                        usableMaxY: usable.maxY,
+                        outerGap: configStore.config.settings.outerGap
+                       ) {
                         ax.forceFrame(target, id: a.windowID)
                     }
                     // Prefer engine target — storing Electron's overflowed live hid the composer.
