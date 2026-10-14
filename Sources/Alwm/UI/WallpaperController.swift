@@ -10,6 +10,7 @@ enum WallpaperNotificationContent {
         let title: String
         let subtitle: String
         let body: String
+        let wallpaperURL: URL
     }
 
     static func make(for url: URL, relativeTo root: URL? = nil) -> Payload {
@@ -34,7 +35,8 @@ enum WallpaperNotificationContent {
         return Payload(
             title: title,
             subtitle: folder.isEmpty ? "Papéis de parede" : folder,
-            body: url.lastPathComponent
+            body: url.lastPathComponent,
+            wallpaperURL: url
         )
     }
 

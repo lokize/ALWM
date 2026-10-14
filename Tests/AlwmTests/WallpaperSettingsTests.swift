@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Testing
 @testable import Alwm
@@ -61,6 +62,7 @@ struct WallpaperSettingsTests {
         #expect(direct.title == "Papel de parede alterado")
         #expect(direct.subtitle == "Travel")
         #expect(direct.body == "beach.mov")
+        #expect(direct.wallpaperURL == url)
 
         let nested = URL(fileURLWithPath: "/Users/test/Wallpapers/Travel/Italy/beach.mov")
         let root = URL(fileURLWithPath: "/Users/test/Wallpapers", isDirectory: true)
@@ -89,6 +91,37 @@ struct WallpaperSettingsTests {
         )
         #expect(frame.maxX == 982)
         #expect(frame.maxY == 782)
+    }
+
+    @Test("wallpaper badge creates a thumbnail from the selected wallpaper")
+    @MainActor
+    func wallpaperBadgeThumbnail() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("alwm-wallpaper-thumb-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let url = root.appendingPathComponent("badge.png")
+
+        guard let bitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: 2,
+            pixelsHigh: 2,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ), let png = bitmap.representation(using: .png, properties: [:]) else {
+            Issue.record("Could not create the wallpaper fixture image")
+            return
+        }
+        try png.write(to: url)
+
+        let thumbnail = await WallpaperToastThumbnail.data(for: url)
+        #expect(thumbnail != nil)
+        #expect(thumbnail.flatMap(NSImage.init(data:)) != nil)
     }
 
     @Test("catalog filters media, respects recursion and rotates without immediate repetition")

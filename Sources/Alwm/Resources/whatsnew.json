@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.5.8",
+      "items": [
+        "Show wallpaper thumbnails in the on-screen badge"
+      ]
+    },
+    {
       "version": "1.5.7",
       "items": [
         "Show wallpaper changes in an ALWM on-screen badge"
