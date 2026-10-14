@@ -16,6 +16,7 @@ struct SettingsRootView: View {
     @ObservedObject var credits = CreditsService.shared
     @ObservedObject var loc = LocalizationController.shared
     let monitors: [MonitorInfo]
+    let monitorIndexByID: [CGDirectDisplayID: Int]
     let runningAppsProvider: () -> [AppRuleRunningApp]
     let onCaptureAppRuleFrame: (String?) -> AppRuleCapturedGeometry?
     let onApplyRulesNow: () -> Void
@@ -29,6 +30,7 @@ struct SettingsRootView: View {
         config: AlwmConfig,
         initialPane: SettingsPane,
         monitors: [MonitorInfo],
+        monitorIndexByID: [CGDirectDisplayID: Int] = [:],
         runningAppsProvider: @escaping () -> [AppRuleRunningApp],
         onCaptureAppRuleFrame: @escaping (String?) -> AppRuleCapturedGeometry?,
         onApplyRulesNow: @escaping () -> Void,
@@ -42,6 +44,7 @@ struct SettingsRootView: View {
         _pane = State(initialValue: initialPane)
         _pluginOrderRows = State(initialValue: PluginOrderInline.loadRows())
         self.monitors = monitors
+        self.monitorIndexByID = monitorIndexByID
         self.runningAppsProvider = runningAppsProvider
         self.onCaptureAppRuleFrame = onCaptureAppRuleFrame
         self.onApplyRulesNow = onApplyRulesNow

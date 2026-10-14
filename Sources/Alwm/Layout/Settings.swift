@@ -275,6 +275,11 @@ public struct WorkspaceBarSettings: Equatable, Sendable {
     public var separatePluginBadges: Bool
     public var pluginBadgeSpacing: Double
 
+    /// A zero (or UI-rounded zero) offset anchors the bar at the monitor center.
+    public var effectiveAlignment: WorkspaceBarAlignment {
+        abs(horizontalOffset) < 0.005 ? .center : alignment
+    }
+
     public static let `default` = WorkspaceBarSettings(
         enabled: true,
         height: 24,

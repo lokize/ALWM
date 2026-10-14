@@ -156,7 +156,7 @@ extension SettingsRootView {
                     range: -300...300,
                     id: "wsbar.offset"
                 )
-                Text("Negativo = esquerda · positivo = direita (px a partir do alinhamento).")
+                Text("Offset zero centraliza a barra. Outros valores partem do alinhamento selecionado.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 labeledSlider("Height", value: $config.settings.workspaceBar.height, range: 22...40, id: "wsbar.height")

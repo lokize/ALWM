@@ -4,6 +4,37 @@ import Testing
 
 @Suite("Monitor workspace reconnection")
 struct MonitorWorkspaceReconnectionTests {
+    @Test("the primary monitor always retains logical workspace slot zero")
+    func keepsPrimaryMonitorInSlotZeroWhenPersistedSlotsAreInverted() {
+        let msi = MonitorInfo(
+            id: 2,
+            frame: Rect(x: 0, y: 0, width: 3440, height: 1440),
+            visibleFrame: Rect(x: 0, y: 0, width: 3440, height: 1440),
+            name: "MSI MAG401QR"
+        )
+        let hdmi = MonitorInfo(
+            id: 3,
+            frame: Rect(x: 774, y: 1440, width: 1920, height: 1080),
+            visibleFrame: Rect(x: 774, y: 1440, width: 1920, height: 1080),
+            name: "HDMI"
+        )
+        let definitions = [
+            WorkspaceDefinition(id: "1", name: "1", layout: .niri, monitorIndex: 0),
+            WorkspaceDefinition(id: "4", name: "4", layout: .niri, monitorIndex: 1)
+        ]
+        let store = WorkspaceStore()
+
+        store.configure(
+            definitions: definitions,
+            monitors: [msi, hdmi],
+            savedMonitorIndexByID: [msi.id: 1, hdmi.id: 0],
+            primaryMonitorID: msi.id
+        )
+
+        #expect(store.logicalMonitorIndices(for: [msi, hdmi]) == [msi.id: 0, hdmi.id: 1])
+        #expect(store.preferredMonitor(forWorkspace: "4", monitors: [msi, hdmi])?.id == hdmi.id)
+    }
+
     @Test("display enumeration changing order keeps workspaces on their original displays")
     func keepsPhysicalWorkspaceWhenScreenOrderChanges() {
         let builtIn = MonitorInfo(

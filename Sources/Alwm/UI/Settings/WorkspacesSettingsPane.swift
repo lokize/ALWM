@@ -7,6 +7,7 @@ import AlwmPluginAPI
 struct WorkspacesSettingsPane: View {
     @Binding var config: AlwmConfig
     let monitors: [MonitorInfo]
+    let monitorIndexByID: [CGDirectDisplayID: Int]
     let runningApps: [AppRuleRunningApp]
 
     var body: some View {
@@ -16,6 +17,7 @@ struct WorkspacesSettingsPane: View {
                     WorkspaceSettingsRow(
                         workspace: $ws,
                         monitors: monitors,
+                        monitorIndexByID: monitorIndexByID,
                         runningApps: runningApps,
                         onDelete: { id in
                             config.workspaces.removeAll { $0.id == id }
@@ -47,6 +49,7 @@ struct WorkspacesSettingsPane: View {
 struct WorkspaceSettingsRow: View {
     @Binding var workspace: WorkspaceDefinition
     let monitors: [MonitorInfo]
+    let monitorIndexByID: [CGDirectDisplayID: Int]
     let runningApps: [AppRuleRunningApp]
     var onDelete: (String) -> Void
 
@@ -78,8 +81,8 @@ struct WorkspaceSettingsRow: View {
             }
             Picker(L10n.t("workspaces.monitor"), selection: monitorSelection) {
                 Text(L10n.t("workspaces.monitor.primary")).tag("auto")
-                ForEach(Array(monitors.enumerated()), id: \.offset) { idx, mon in
-                    Text(monitorLabel(idx: idx, mon: mon)).tag(String(idx))
+                ForEach(WorkspaceMonitorChoice.make(monitors: monitors, indicesByID: monitorIndexByID)) { choice in
+                    Text(monitorLabel(idx: choice.index, mon: choice.monitor)).tag(String(choice.index))
                 }
             }
 
@@ -152,6 +155,23 @@ struct WorkspaceSettingsRow: View {
     func monitorLabel(idx: Int, mon: MonitorInfo) -> String {
         let name = mon.name.isEmpty ? L10n.tf("workspaces.monitor.unnamed", idx) : mon.name
         return L10n.tf("workspaces.monitor.only", idx, name)
+    }
+}
+
+struct WorkspaceMonitorChoice: Identifiable, Equatable {
+    let index: Int
+    let monitor: MonitorInfo
+
+    var id: CGDirectDisplayID { monitor.id }
+
+    static func make(
+        monitors: [MonitorInfo],
+        indicesByID: [CGDirectDisplayID: Int]
+    ) -> [WorkspaceMonitorChoice] {
+        monitors.enumerated().map { offset, monitor in
+            WorkspaceMonitorChoice(index: indicesByID[monitor.id] ?? offset, monitor: monitor)
+        }
+        .sorted { $0.index < $1.index }
     }
 }
 

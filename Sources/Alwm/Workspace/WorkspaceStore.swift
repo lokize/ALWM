@@ -116,7 +116,8 @@ public final class WorkspaceStore: @unchecked Sendable {
         definitions: [WorkspaceDefinition],
         monitors: [MonitorInfo],
         savedWorkspaceByMonitor: [CGDirectDisplayID: String] = [:],
-        savedMonitorIndexByID: [CGDirectDisplayID: Int] = [:]
+        savedMonitorIndexByID: [CGDirectDisplayID: Int] = [:],
+        primaryMonitorID: CGDirectDisplayID? = nil
     ) {
         self.definitions = definitions
         connectedMonitorCount = monitors.count
@@ -124,6 +125,7 @@ public final class WorkspaceStore: @unchecked Sendable {
             logicalMonitorIndexByID[id] = index
         }
         assignLogicalMonitorIndices(for: monitors)
+        normalizePrimaryMonitorSlot(primaryMonitorID, monitors: monitors)
         var next: [String: WorkspaceState] = [:]
         for def in definitions {
             if let existing = workspaces[def.id] {
@@ -241,6 +243,24 @@ public final class WorkspaceStore: @unchecked Sendable {
             logicalMonitorIndexByID[monitor.id] = slot
             used.insert(slot)
         }
+    }
+
+    private func normalizePrimaryMonitorSlot(
+        _ primaryMonitorID: CGDirectDisplayID?,
+        monitors: [MonitorInfo]
+    ) {
+        guard let primaryMonitorID,
+              monitors.contains(where: { $0.id == primaryMonitorID }),
+              let primaryIndex = logicalMonitorIndexByID[primaryMonitorID],
+              primaryIndex != 0
+        else { return }
+
+        if let occupant = logicalMonitorIndexByID.first(where: {
+            $0.key != primaryMonitorID && $0.value == 0
+        })?.key {
+            logicalMonitorIndexByID[occupant] = primaryIndex
+        }
+        logicalMonitorIndexByID[primaryMonitorID] = 0
     }
 
     /// Switch the active workspace on one monitor.

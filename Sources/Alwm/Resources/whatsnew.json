@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "1.5.4",
+      "items": [
+        "Keep workspace assignments aligned with the primary display",
+        "Center the workspace bar when horizontal offset is zero"
+      ]
+    },
+    {
       "version": "1.5.3",
       "items": [
         "Wallpaper change notifications include folder and filename",
@@ -294,17 +301,6 @@
         "Plugins: docker/Sources/DockerPlugin.swift",
         "Plugins: downloads/Sources/DownloadsPanel.swift",
         "Plugins: downloads/Sources/DownloadsPlugin.swift"
-      ]
-    },
-    {
-      "version": "1.1.4",
-      "items": [
-        "Localization updates",
-        "Plugins: brew/Sources/BrewPanel.swift",
-        "Plugins: brew/Sources/BrewPlugin.swift",
-        "Plugins: brew/Sources/BrewStore.swift",
-        "Plugins: calendar/Sources/CalendarStore.swift",
-        "Build and release scripts"
       ]
     }
   ]

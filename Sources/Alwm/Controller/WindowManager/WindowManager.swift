@@ -486,6 +486,10 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         settingsUI.monitorsProvider = { [weak self] in
             self?.monitors.monitors ?? []
         }
+        settingsUI.monitorIndexByIDProvider = { [weak self] in
+            guard let self else { return [:] }
+            return self.workspaces.logicalMonitorIndices(for: self.monitors.monitors)
+        }
         settingsUI.runningAppsProvider = { [weak self] in
             self?.runningAppsForRules() ?? []
         }

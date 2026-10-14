@@ -134,7 +134,7 @@ extension WorkspaceBarController {
         let maxOriginX = max(minOriginX, rightClearX - barWidth)
 
         let unclamped: CGFloat
-        switch settings.alignment {
+        switch settings.effectiveAlignment {
         case .left:
             unclamped = minOriginX + offset
         case .center:
@@ -206,7 +206,7 @@ extension WorkspaceBarController {
             line.heightAnchor.constraint(equalToConstant: 2)
         ]
         let offset = CGFloat(settings.horizontalOffset)
-        switch settings.alignment {
+        switch settings.effectiveAlignment {
         case .left:
             constraints.append(pill.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 10 + offset))
         case .center:

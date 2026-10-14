@@ -19,6 +19,7 @@ public final class SettingsWindowController {
     public var onResetRuntime: (() -> Void)?
     public var onRerunOnboarding: (() -> Void)?
     public var monitorsProvider: (() -> [MonitorInfo])?
+    public var monitorIndexByIDProvider: (() -> [CGDirectDisplayID: Int])?
     public var runningAppsProvider: (() -> [AppRuleRunningApp])?
     public var onCaptureAppRuleFrame: ((String?) -> AppRuleCapturedGeometry?)?
     public var onApplyRulesNow: (() -> Void)?
@@ -39,6 +40,7 @@ public final class SettingsWindowController {
             config: config,
             initialPane: pane,
             monitors: monitorsProvider?() ?? [],
+            monitorIndexByID: monitorIndexByIDProvider?() ?? [:],
             runningAppsProvider: { [weak self] in self?.runningAppsProvider?() ?? [] },
             onCaptureAppRuleFrame: { [weak self] bundleID in self?.onCaptureAppRuleFrame?(bundleID) },
             onApplyRulesNow: { [weak self] in self?.onApplyRulesNow?() },

@@ -4,6 +4,51 @@ import Testing
 
 @Suite("Workspace bar rendering")
 struct WorkspaceBarRenderTests {
+    @Test("zero horizontal offset centers the workspace bar for every saved alignment")
+    @MainActor
+    func zeroOffsetUsesMonitorCenter() {
+        let controller = WorkspaceBarController()
+        let screen = NSRect(x: 0, y: 0, width: 1600, height: 900)
+        for offset in [0.0, 0.004] {
+            for alignment in WorkspaceBarAlignment.allCases {
+                var settings = WorkspaceBarSettings.default
+                settings.alignment = alignment
+                settings.horizontalOffset = offset
+                #expect(controller.overlayOriginX(
+                    barWidth: 300,
+                    settings: settings,
+                    screenFrame: screen,
+                    minOriginX: 100,
+                    rightClearX: 1500
+                ) == 650 + CGFloat(offset))
+            }
+        }
+    }
+
+    @Test("nonzero offset keeps the selected workspace bar alignment")
+    @MainActor
+    func nonzeroOffsetUsesSavedAlignment() {
+        let controller = WorkspaceBarController()
+        let screen = NSRect(x: 0, y: 0, width: 1600, height: 900)
+        let expectedOrigins: [WorkspaceBarAlignment: CGFloat] = [
+            .left: 140,
+            .center: 690,
+            .right: 1200
+        ]
+        for (alignment, expected) in expectedOrigins {
+            var settings = WorkspaceBarSettings.default
+            settings.alignment = alignment
+            settings.horizontalOffset = 40
+            #expect(controller.overlayOriginX(
+                barWidth: 300,
+                settings: settings,
+                screenFrame: screen,
+                minOriginX: 100,
+                rightClearX: 1500
+            ) == expected)
+        }
+    }
+
     @Test("render signature changes when monitor geometry changes")
     @MainActor
     func monitorGeometryInvalidatesRender() {
