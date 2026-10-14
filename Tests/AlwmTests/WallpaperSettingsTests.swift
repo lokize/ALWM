@@ -61,18 +61,18 @@ struct WallpaperSettingsTests {
         let direct = WallpaperNotificationContent.make(for: url)
         #expect(direct.title == "Papel de parede alterado")
         #expect(direct.subtitle == "Travel")
-        #expect(direct.body == "beach.mov")
+        #expect(direct.body == "beach")
         #expect(direct.wallpaperURL == url)
 
         let nested = URL(fileURLWithPath: "/Users/test/Wallpapers/Travel/Italy/beach.mov")
         let root = URL(fileURLWithPath: "/Users/test/Wallpapers", isDirectory: true)
         let nestedBadge = WallpaperNotificationContent.make(for: nested, relativeTo: root)
         #expect(nestedBadge.subtitle == "Travel/Italy")
-        #expect(nestedBadge.body == "beach.mov")
+        #expect(nestedBadge.body == "beach")
         let rootFile = URL(fileURLWithPath: "/Users/test/Wallpapers/beach.mov")
         let rootBadge = WallpaperNotificationContent.make(for: rootFile, relativeTo: root)
         #expect(rootBadge.subtitle == "Wallpapers")
-        #expect(rootBadge.body == "beach.mov")
+        #expect(rootBadge.body == "beach")
     }
 
     @Test("workspace menu shows the primary monitor wallpaper, with a stable fallback")

@@ -36,7 +36,7 @@ enum WallpaperNotificationContent {
         return Payload(
             title: title,
             subtitle: folder.isEmpty ? "Papéis de parede" : folder,
-            body: url.lastPathComponent,
+            body: url.deletingPathExtension().lastPathComponent,
             wallpaperURL: url
         )
     }
