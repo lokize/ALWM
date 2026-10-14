@@ -7,7 +7,13 @@ import UserNotifications
 enum WallpaperNotificationContent {
     static let title = "Papel de parede alterado"
 
-    static func body(for url: URL, relativeTo root: URL? = nil) -> String {
+    struct Payload: Hashable {
+        let title: String
+        let subtitle: String
+        let body: String
+    }
+
+    static func make(for url: URL, relativeTo root: URL? = nil) -> Payload {
         let filePath = url.standardizedFileURL.path
         let parentFolder = url.deletingLastPathComponent().lastPathComponent
         let folder: String
@@ -26,13 +32,25 @@ enum WallpaperNotificationContent {
         } else {
             folder = parentFolder
         }
-        return "\(folder.isEmpty ? "Papéis de parede" : folder) — \(url.lastPathComponent)"
+        return Payload(
+            title: title,
+            subtitle: folder.isEmpty ? "Papéis de parede" : folder,
+            body: url.lastPathComponent
+        )
+    }
+
+    static func notification(for payload: Payload) -> UNMutableNotificationContent {
+        let content = UNMutableNotificationContent()
+        content.title = payload.title
+        content.subtitle = payload.subtitle
+        content.body = payload.body
+        content.sound = .default
+        return content
     }
 }
 
 private struct WallpaperNotificationItem: Hashable {
-    let url: URL
-    let root: URL
+    let content: WallpaperNotificationContent.Payload
 }
 
 enum WallpaperUpdatePolicy {
@@ -62,8 +80,10 @@ private final class WallpaperNotificationService: NSObject, UNUserNotificationCe
 
     func notify(for items: [WallpaperNotificationItem]) {
         let uniqueItems = Array(Set(items)).sorted {
-            if $0.url.path == $1.url.path { return $0.root.path < $1.root.path }
-            return $0.url.path < $1.url.path
+            if $0.content.subtitle == $1.content.subtitle {
+                return $0.content.body < $1.content.body
+            }
+            return $0.content.subtitle < $1.content.subtitle
         }
         guard !uniqueItems.isEmpty else { return }
         if let permissionGranted {
@@ -89,14 +109,11 @@ private final class WallpaperNotificationService: NSObject, UNUserNotificationCe
     }
 
     private func deliver(for item: WallpaperNotificationItem) {
-        let content = UNMutableNotificationContent()
-        content.title = WallpaperNotificationContent.title
-        content.body = WallpaperNotificationContent.body(for: item.url, relativeTo: item.root)
-        content.sound = .default
+        let content = WallpaperNotificationContent.notification(for: item.content)
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         center.add(request) { error in
             if let error {
-                NSLog("ALWM wallpaper notification: failed to deliver %@: %@", item.url.path, error.localizedDescription)
+                NSLog("ALWM wallpaper notification: failed to deliver %@: %@", item.content.body, error.localizedDescription)
             }
         }
     }
@@ -294,9 +311,9 @@ final class WallpaperController {
 
     private func notificationItem(for url: URL, in directory: String) -> WallpaperNotificationItem {
         let expandedDirectory = NSString(string: directory).expandingTildeInPath
+        let root = URL(fileURLWithPath: expandedDirectory, isDirectory: true).standardizedFileURL
         return WallpaperNotificationItem(
-            url: url,
-            root: URL(fileURLWithPath: expandedDirectory, isDirectory: true).standardizedFileURL
+            content: WallpaperNotificationContent.make(for: url, relativeTo: root)
         )
     }
 

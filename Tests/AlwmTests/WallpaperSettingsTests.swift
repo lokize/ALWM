@@ -57,13 +57,26 @@ struct WallpaperSettingsTests {
     @Test("wallpaper notification shows its subfolder path and filename")
     func notificationContent() {
         let url = URL(fileURLWithPath: "/Users/test/Wallpapers/Travel/beach.mov")
-        #expect(WallpaperNotificationContent.body(for: url) == "Travel — beach.mov")
+        let direct = WallpaperNotificationContent.notification(
+            for: WallpaperNotificationContent.make(for: url)
+        )
+        #expect(direct.title == "Papel de parede alterado")
+        #expect(direct.subtitle == "Travel")
+        #expect(direct.body == "beach.mov")
 
         let nested = URL(fileURLWithPath: "/Users/test/Wallpapers/Travel/Italy/beach.mov")
         let root = URL(fileURLWithPath: "/Users/test/Wallpapers", isDirectory: true)
-        #expect(WallpaperNotificationContent.body(for: nested, relativeTo: root) == "Travel/Italy — beach.mov")
+        let nestedNotification = WallpaperNotificationContent.notification(
+            for: WallpaperNotificationContent.make(for: nested, relativeTo: root)
+        )
+        #expect(nestedNotification.subtitle == "Travel/Italy")
+        #expect(nestedNotification.body == "beach.mov")
         let rootFile = URL(fileURLWithPath: "/Users/test/Wallpapers/beach.mov")
-        #expect(WallpaperNotificationContent.body(for: rootFile, relativeTo: root) == "Wallpapers — beach.mov")
+        let rootNotification = WallpaperNotificationContent.notification(
+            for: WallpaperNotificationContent.make(for: rootFile, relativeTo: root)
+        )
+        #expect(rootNotification.subtitle == "Wallpapers")
+        #expect(rootNotification.body == "beach.mov")
     }
 
     @Test("catalog filters media, respects recursion and rotates without immediate repetition")

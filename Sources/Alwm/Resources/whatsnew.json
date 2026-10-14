@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.5.6",
+      "items": [
+        "Show wallpaper folder and filename in separate notification fields"
+      ]
+    },
+    {
       "version": "1.5.5",
       "items": [
         "Show nested wallpaper folders in change notifications"
