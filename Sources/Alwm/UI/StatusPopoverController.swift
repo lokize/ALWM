@@ -516,49 +516,62 @@ struct StatusMenuView: View {
     }
 
     private var toolsSection: some View {
-        sectionBlock(title: L10n.t("menu.tools")) {
-            if !model.recentNotes.isEmpty {
-                Text(L10n.t("menu.notepad.recent"))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 4) {
+            VStack(spacing: 2) {
+                Text(L10n.t("menu.tools"))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 4)
-                    .padding(.bottom, 1)
+
+                if !model.recentNotes.isEmpty {
+                    Text(L10n.t("menu.notepad.recent"))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 4)
+                        .padding(.bottom, 1)
+
+                    LazyVGrid(
+                        columns: [GridItem(.flexible(), spacing: 5), GridItem(.flexible(), spacing: 5)],
+                        spacing: 4
+                    ) {
+                        ForEach(model.recentNotes.prefix(4)) { note in
+                            notePreviewCard(note)
+                        }
+                    }
+                    .padding(.bottom, 3)
+                }
 
                 LazyVGrid(
-                    columns: [GridItem(.flexible(), spacing: 5), GridItem(.flexible(), spacing: 5)],
-                    spacing: 4
+                    columns: [GridItem(.flexible(), spacing: 3), GridItem(.flexible(), spacing: 3)],
+                    spacing: 0
                 ) {
-                    ForEach(model.recentNotes.prefix(4)) { note in
-                        notePreviewCard(note)
-                    }
+                    actionRow(title: L10n.t("menu.command_palette"), systemImage: "command", action: onPalette)
+                    actionRow(title: L10n.t("menu.quake"), systemImage: "terminal", action: onQuake)
+                    actionRow(title: L10n.t("menu.color_palette"), systemImage: "paintpalette", action: onColorPalette)
+                    actionRow(title: L10n.t("menu.notepad"), systemImage: "note.text", action: onNotepad)
+                    actionRow(title: L10n.t("menu.capture.region"), systemImage: "crop", action: onCaptureRegion)
+                    actionRow(title: L10n.t("menu.capture.display"), systemImage: "rectangle.dashed", action: onCaptureDisplay)
+                    actionRow(title: "Visão geral", systemImage: "rectangle.3.group", action: onOverview)
+                    actionRow(title: "Desfazer janela", systemImage: "arrow.uturn.backward", action: onUndo)
+                    actionRow(
+                        title: model.isRecording ? L10n.t("menu.capture.record_stop") : L10n.t("menu.capture.record"),
+                        systemImage: model.isRecording ? "stop.circle.fill" : "record.circle",
+                        action: onCaptureRecordToggle
+                    )
+                    actionRow(title: L10n.t("menu.relayout"), systemImage: "rectangle.split.3x1", action: onRelayout)
+                    navRow(title: L10n.t("menu.settings"), systemImage: "gearshape", action: onSettings)
+                    navRow(title: L10n.t("menu.plugins"), systemImage: "puzzlepiece.extension", action: onPlugins)
                 }
-                .padding(.bottom, 3)
-            }
 
-            LazyVGrid(
-                columns: [GridItem(.flexible(), spacing: 3), GridItem(.flexible(), spacing: 3)],
-                spacing: 0
-            ) {
-                actionRow(title: L10n.t("menu.command_palette"), systemImage: "command", action: onPalette)
-                actionRow(title: L10n.t("menu.quake"), systemImage: "terminal", action: onQuake)
-                actionRow(title: L10n.t("menu.color_palette"), systemImage: "paintpalette", action: onColorPalette)
-                actionRow(title: L10n.t("menu.notepad"), systemImage: "note.text", action: onNotepad)
-                actionRow(title: L10n.t("menu.capture.region"), systemImage: "crop", action: onCaptureRegion)
-                actionRow(title: L10n.t("menu.capture.display"), systemImage: "rectangle.dashed", action: onCaptureDisplay)
-                actionRow(title: "Visão geral", systemImage: "rectangle.3.group", action: onOverview)
-                actionRow(title: "Desfazer janela", systemImage: "arrow.uturn.backward", action: onUndo)
-                actionRow(
-                    title: model.isRecording ? L10n.t("menu.capture.record_stop") : L10n.t("menu.capture.record"),
-                    systemImage: model.isRecording ? "stop.circle.fill" : "record.circle",
-                    action: onCaptureRecordToggle
-                )
-                actionRow(title: L10n.t("menu.relayout"), systemImage: "rectangle.split.3x1", action: onRelayout)
-                navRow(title: L10n.t("menu.settings"), systemImage: "gearshape", action: onSettings)
-                navRow(title: L10n.t("menu.plugins"), systemImage: "puzzlepiece.extension", action: onPlugins)
+                navRow(title: L10n.t("menu.whats_new"), systemImage: "sparkles", action: onWhatsNew)
+                    .padding(.top, 3)
             }
-
-            navRow(title: L10n.t("menu.whats_new"), systemImage: "sparkles", action: onWhatsNew)
-                .padding(.top, 3)
+            .padding(5)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.primary.opacity(0.05))
+            )
         }
     }
 

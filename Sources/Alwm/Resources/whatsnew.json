@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.8.1",
+      "items": [
+        "Move the Tools heading into its card"
+      ]
+    },
+    {
       "version": "1.8.0",
       "items": [
         "Make wallpaper navigation buttons fill the card"
@@ -250,13 +256,6 @@
       "version": "1.4.2",
       "items": [
         "Allow workspace switching with Notepad or Quake open"
-      ]
-    },
-    {
-      "version": "1.4.1",
-      "items": [
-        "Keep overlay focus and prevent outside clicks activating covered windows",
-        "Add fullscreen controls to Notepad and Quake terminal"
       ]
     }
   ]
