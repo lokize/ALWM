@@ -6,15 +6,62 @@ import AlwmPluginAPI
 
 enum ConfigWriter {
     static func write(_ config: AlwmConfig) {
-        writeSettings(config.settings)
-        writeHotkeys(config.hotkeys)
-        writeGestures(config.settings.gestures.bindings)
-        writeWorkspaces(config.workspaces)
-        writeRules(config.rules)
+        do {
+            try write(config, to: ConfigPaths.root)
+        } catch {
+            NSLog("ALWM could not save configuration: %@", String(describing: error))
+        }
+    }
+
+    static func write(_ config: AlwmConfig, to root: URL) throws {
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try writeSettings(config.settings, to: root.appendingPathComponent("settings.toml"))
+        try writeHotkeys(config.hotkeys, to: root.appendingPathComponent("hotkeys.toml"))
+        try writeGestures(config.settings.gestures.bindings, to: root.appendingPathComponent("gestures.toml"))
+        try writeWorkspaces(config.workspaces, to: root.appendingPathComponent("workspaces.toml"))
+        try writeRules(config.rules, to: root.appendingPathComponent("apprules.d", isDirectory: true))
+    }
+
+    /// Synchronously flush only the changed groups. The settings window uses this
+    /// at the edit boundary so a later app quit cannot cancel a debounce-only save.
+    static func writeChanges(from old: AlwmConfig, to new: AlwmConfig) {
+        do {
+            try writeChanges(from: old, to: new, at: ConfigPaths.root)
+        } catch {
+            NSLog("ALWM could not save changed configuration: %@", String(describing: error))
+        }
+    }
+
+    static func writeChanges(from old: AlwmConfig, to new: AlwmConfig, at root: URL) throws {
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        if old.settings != new.settings {
+            try writeSettings(new.settings, to: root.appendingPathComponent("settings.toml"))
+        }
+        if old.hotkeys != new.hotkeys {
+            try writeHotkeys(new.hotkeys, to: root.appendingPathComponent("hotkeys.toml"))
+        }
+        if old.settings.gestures.bindings != new.settings.gestures.bindings {
+            try writeGestures(new.settings.gestures.bindings, to: root.appendingPathComponent("gestures.toml"))
+        }
+        if old.workspaces != new.workspaces {
+            try writeWorkspaces(new.workspaces, to: root.appendingPathComponent("workspaces.toml"))
+        }
+        if old.rules != new.rules {
+            try writeRules(new.rules, to: root.appendingPathComponent("apprules.d", isDirectory: true))
+        }
     }
 
     static func writeSettings(_ settings: LayoutSettings) {
-        try? settingsTOML(settings).write(to: ConfigPaths.settings, atomically: true, encoding: .utf8)
+        do {
+            try FileManager.default.createDirectory(at: ConfigPaths.root, withIntermediateDirectories: true)
+            try writeSettings(settings, to: ConfigPaths.settings)
+        } catch {
+            NSLog("ALWM could not save settings.toml: %@", String(describing: error))
+        }
+    }
+
+    private static func writeSettings(_ settings: LayoutSettings, to url: URL) throws {
+        try settingsTOML(settings).write(to: url, atomically: true, encoding: .utf8)
     }
 
     static func settingsTOML(_ settings: LayoutSettings) -> String {
@@ -103,6 +150,15 @@ enum ConfigWriter {
     }
 
     static func writeHotkeys(_ hotkeys: [HotkeyBinding]) {
+        do {
+            try FileManager.default.createDirectory(at: ConfigPaths.root, withIntermediateDirectories: true)
+            try writeHotkeys(hotkeys, to: ConfigPaths.hotkeys)
+        } catch {
+            NSLog("ALWM could not save hotkeys.toml: %@", String(describing: error))
+        }
+    }
+
+    private static func writeHotkeys(_ hotkeys: [HotkeyBinding], to url: URL) throws {
         var lines: [String] = []
         for hk in hotkeys {
             let mods = hk.modifiers.map { "\"\($0)\"" }.joined(separator: ", ")
@@ -113,10 +169,19 @@ enum ConfigWriter {
             modifiers = [\(mods)]
             """)
         }
-        try? lines.joined(separator: "\n\n").write(to: ConfigPaths.hotkeys, atomically: true, encoding: .utf8)
+        try lines.joined(separator: "\n\n").write(to: url, atomically: true, encoding: .utf8)
     }
 
     static func writeGestures(_ bindings: [GestureBinding]) {
+        do {
+            try FileManager.default.createDirectory(at: ConfigPaths.root, withIntermediateDirectories: true)
+            try writeGestures(bindings, to: ConfigPaths.gestures)
+        } catch {
+            NSLog("ALWM could not save gestures.toml: %@", String(describing: error))
+        }
+    }
+
+    private static func writeGestures(_ bindings: [GestureBinding], to url: URL) throws {
         var lines: [String] = []
         for b in bindings {
             lines.append("""
@@ -128,11 +193,20 @@ enum ConfigWriter {
             action = "\(b.action)"
             """)
         }
-        try? lines.joined(separator: "\n\n").write(to: ConfigPaths.gestures, atomically: true, encoding: .utf8)
+        try lines.joined(separator: "\n\n").write(to: url, atomically: true, encoding: .utf8)
     }
 
     static func writeWorkspaces(_ workspaces: [WorkspaceDefinition]) {
-        try? workspacesTOML(workspaces).write(to: ConfigPaths.workspaces, atomically: true, encoding: .utf8)
+        do {
+            try FileManager.default.createDirectory(at: ConfigPaths.root, withIntermediateDirectories: true)
+            try writeWorkspaces(workspaces, to: ConfigPaths.workspaces)
+        } catch {
+            NSLog("ALWM could not save workspaces.toml: %@", String(describing: error))
+        }
+    }
+
+    private static func writeWorkspaces(_ workspaces: [WorkspaceDefinition], to url: URL) throws {
+        try workspacesTOML(workspaces).write(to: url, atomically: true, encoding: .utf8)
     }
 
     static func workspacesTOML(_ workspaces: [WorkspaceDefinition]) -> String {
@@ -163,12 +237,20 @@ enum ConfigWriter {
     }
 
     static func writeRules(_ rules: [AppRule]) {
+        do {
+            try FileManager.default.createDirectory(at: ConfigPaths.root, withIntermediateDirectories: true)
+            try writeRules(rules, to: ConfigPaths.appRulesDir)
+        } catch {
+            NSLog("ALWM could not save app rules: %@", String(describing: error))
+        }
+    }
+
+    private static func writeRules(_ rules: [AppRule], to directory: URL) throws {
         let fm = FileManager.default
-        try? fm.createDirectory(at: ConfigPaths.appRulesDir, withIntermediateDirectories: true)
-        if let existing = try? fm.contentsOfDirectory(at: ConfigPaths.appRulesDir, includingPropertiesForKeys: nil) {
-            for url in existing where url.pathExtension == "toml" {
-                try? fm.removeItem(at: url)
-            }
+        try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+        let existing = try fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        for url in existing where url.pathExtension == "toml" {
+            try fm.removeItem(at: url)
         }
         for (index, rule) in rules.enumerated() {
             let slug = (rule.bundleID ?? rule.appName ?? "rule-\(index)")
@@ -186,8 +268,8 @@ enum ConfigWriter {
             if let h = rule.height { lines.append("height = \(h)") }
             if let x = rule.x { lines.append("x = \(x)") }
             if let y = rule.y { lines.append("y = \(y)") }
-            let url = ConfigPaths.appRulesDir.appendingPathComponent("\(slug).toml")
-            try? lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+            let url = directory.appendingPathComponent("\(slug).toml")
+            try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
         }
     }
 }

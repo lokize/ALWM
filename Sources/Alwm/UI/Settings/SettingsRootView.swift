@@ -138,20 +138,10 @@ struct SettingsRootView: View {
                 hotkeySearch = ""
             }
         }
-        .onChange(of: config) { _, _ in
+        .onChange(of: config) { oldConfig, newConfig in
             hasPendingLocalChanges = true
+            ConfigWriter.writeChanges(from: oldConfig, to: newConfig)
             schedulePersist()
-        }
-        // These settings must survive an immediate quit or package replacement.
-        // The full settings save below is debounced to avoid rewriting every config
-        // file while editing; persist these two independently at the change boundary.
-        .onChange(of: config.settings.wallpaper) { _, wallpaper in
-            var settings = config.settings
-            settings.wallpaper = wallpaper
-            ConfigWriter.writeSettings(settings)
-        }
-        .onChange(of: config.workspaces) { _, workspaces in
-            ConfigWriter.writeWorkspaces(workspaces)
         }
         .onChange(of: config.settings.language) { _, language in
             LocalizationController.shared.apply(language)

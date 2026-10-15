@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.6.5",
+      "items": [
+        "Persist all settings edits synchronously"
+      ]
+    },
+    {
       "version": "1.6.4",
       "items": [
         "Reconcile live windows with their assigned workspaces",
@@ -265,12 +271,6 @@
       "items": [
         "Window manager improvements",
         "UI updates"
-      ]
-    },
-    {
-      "version": "1.2.5",
-      "items": [
-        "Window manager improvements"
       ]
     }
   ]
