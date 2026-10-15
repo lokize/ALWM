@@ -10,6 +10,7 @@ struct SettingsRootView: View {
     @State var showWhatsNew = false
     @State var hotkeySearch = ""
     @State var persistTask: Task<Void, Never>?
+    @State var hasPendingLocalChanges = false
     @State var pluginOrderEpoch = 0
     @State var pluginOrderRows: [PluginOrderRowData] = []
     @ObservedObject var updates = AppUpdateService.shared
@@ -138,6 +139,7 @@ struct SettingsRootView: View {
             }
         }
         .onChange(of: config) { _, _ in
+            hasPendingLocalChanges = true
             schedulePersist()
         }
         // These settings must survive an immediate quit or package replacement.
@@ -156,10 +158,16 @@ struct SettingsRootView: View {
             PluginManager.shared.requestBarRefresh()
         }
         .onDisappear {
+            let shouldFlush = hasPendingLocalChanges
             persistTask?.cancel()
             persistTask = nil
-            // Flush pending edits when the window closes.
-            persist()
+            // Do not write the view's original snapshot when only another ALWM
+            // surface changed the live config while Settings was open.
+            if SettingsPersistencePolicy.shouldFlushOnDisappear(
+                hasPendingLocalChanges: shouldFlush
+            ) {
+                persist()
+            }
         }
         .sheet(isPresented: $showWhatsNew) {
             WhatsNewView()

@@ -36,6 +36,17 @@ enum OverlayWorkspaceVisibilityPolicy {
     }
 }
 
+enum VisibilityPassPolicy {
+    static func shouldSkip(
+        signatureMatches: Bool,
+        forceReveal: Bool,
+        needsOrphanRelayout: Bool,
+        liveStateMatchesPlan: Bool
+    ) -> Bool {
+        signatureMatches && !forceReveal && !needsOrphanRelayout && liveStateMatchesPlan
+    }
+}
+
 // MARK: - Layout — relayout, frames, visibility, geometry
 
 extension WindowManager {
@@ -2310,9 +2321,17 @@ extension WindowManager {
             visibleIDs: visibleIDs,
             target: target
         )
-        if signature == lastVisibilitySignature,
-           !visibilityForceReveal,
-           !needsOrphanRelayout {
+        let liveStateMatchesPlan = visibilityLiveStateMatchesPlan(
+            target: target,
+            visibleIDs: visibleIDs,
+            monitorFrames: allMonitorFrames
+        )
+        if VisibilityPassPolicy.shouldSkip(
+            signatureMatches: signature == lastVisibilitySignature,
+            forceReveal: visibilityForceReveal,
+            needsOrphanRelayout: needsOrphanRelayout,
+            liveStateMatchesPlan: liveStateMatchesPlan
+        ) {
             return
         }
         lastVisibilitySignature = signature
@@ -2545,6 +2564,30 @@ extension WindowManager {
             }
             persistRuntimeState(forceWorkspaceLayouts: floatStripped)
         }
+    }
+
+    /// Logical targets can stay unchanged while an app or WindowServer moves a live
+    /// window to another monitor. The signature fast path is safe only while AX still
+    /// agrees with both the intended frame and visibility.
+    func visibilityLiveStateMatchesPlan(
+        target: [WindowID: Rect],
+        visibleIDs: Set<WindowID>,
+        monitorFrames: [Rect]
+    ) -> Bool {
+        for (id, frame) in target {
+            guard windowsByID[id] != nil, let live = liveFrameForVisibility(id) else { return false }
+            if visibleIDs.contains(id) {
+                guard !ax.isMinimized(id), ax.isSettled(id: id, frame: frame, monitors: monitorFrames) else {
+                    return false
+                }
+                if let home = authoritativeHome(for: id), frameLeaksWrongMonitor(home: home, frame: live) {
+                    return false
+                }
+            } else if !ax.isMinimized(id), OffscreenParking.intersectsAnyMonitor(live, monitors: monitorFrames) {
+                return false
+            }
+        }
+        return true
     }
 
 }

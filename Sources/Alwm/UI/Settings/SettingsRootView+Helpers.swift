@@ -2,6 +2,12 @@ import AppKit
 import SwiftUI
 import AlwmPluginAPI
 
+enum SettingsPersistencePolicy {
+    static func shouldFlushOnDisappear(hasPendingLocalChanges: Bool) -> Bool {
+        hasPendingLocalChanges
+    }
+}
+
 // MARK: - SettingsRootView — Persist helpers
 
 extension SettingsRootView {
@@ -19,6 +25,8 @@ extension SettingsRootView {
 
 
     func persist() {
+        persistTask?.cancel()
+        persistTask = nil
         var synced = config
         synced.hotkeys = ConfigStore.syncWorkspaceHotkeys(
             workspaces: synced.workspaces,
@@ -29,6 +37,7 @@ extension SettingsRootView {
         }
         ConfigWriter.write(synced)
         onSave(synced)
+        hasPendingLocalChanges = false
     }
 
 

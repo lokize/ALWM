@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "1.6.4",
+      "items": [
+        "Reconcile live windows with their assigned workspaces",
+        "Preserve settings when closing an untouched Settings window"
+      ]
+    },
+    {
       "version": "1.6.3",
       "items": [
         "Apply app opening rules when macOS reuses a window token",
@@ -264,15 +271,6 @@
       "version": "1.2.5",
       "items": [
         "Window manager improvements"
-      ]
-    },
-    {
-      "version": "1.2.4",
-      "items": [
-        "GitHub plugin: notifications, PRs, issues, and stars on the workspace bar",
-        "Nintendo Price Watcher plugin updates",
-        "Plugins: quotes/Sources/QuotesStore.swift",
-        "Steam Price Watcher plugin updates"
       ]
     }
   ]
