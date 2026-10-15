@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.7.7",
+      "items": [
+        "Move menu action grid below controls"
+      ]
+    },
+    {
       "version": "1.7.6",
       "items": [
         "Reorganize status menu navigation"
@@ -254,12 +260,6 @@
       "version": "1.3.8",
       "items": [
         "Retry Launch Services failures and confirm the app starts after packaging"
-      ]
-    },
-    {
-      "version": "1.3.7",
-      "items": [
-        "Restore saved window workspaces and sizes after sleep or relaunch"
       ]
     }
   ]
