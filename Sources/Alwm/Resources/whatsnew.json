@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.6.7",
+      "items": [
+        "Hide workspace tiles leaking across monitors"
+      ]
+    },
+    {
       "version": "1.6.6",
       "items": [
         "Confirm settings survive updates and package restarts"
@@ -263,13 +269,6 @@
         "Workspace bar restores its position after display or window geometry changes",
         "Reject malformed Accessibility values safely",
         "Run Quake AppleScript on one queue with synchronized error reporting"
-      ]
-    },
-    {
-      "version": "1.2.7",
-      "items": [
-        "Localization updates",
-        "Plugins: calculator/Sources/CalculatorPanel.swift"
       ]
     }
   ]

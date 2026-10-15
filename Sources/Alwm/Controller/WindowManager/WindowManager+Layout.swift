@@ -47,6 +47,47 @@ enum VisibilityPassPolicy {
     }
 }
 
+enum WorkspaceMonitorLeakPolicy {
+    static func frameLeaksWrongMonitor(
+        home: String,
+        frame: Rect,
+        monitors: [MonitorInfo],
+        activeWorkspaceByMonitor: [CGDirectDisplayID: String]
+    ) -> Bool {
+        guard frame.width > 0, frame.height > 0 else { return false }
+        let monitorFrames = monitors.map(\.frame)
+        guard OffscreenParking.intersectsAnyMonitor(frame, monitors: monitorFrames) else { return false }
+
+        if OffscreenParking.isEdgeStrip(frame, monitors: monitorFrames) {
+            for monitor in monitors {
+                guard OffscreenParking.intersectsAnyMonitor(frame, monitors: [monitor.frame]) else { continue }
+                if activeWorkspaceByMonitor[monitor.id] != home { return true }
+            }
+            return false
+        }
+
+        if let monitor = monitors.first(where: {
+            $0.frame.contains(pointX: frame.midX, pointY: frame.midY)
+        }), activeWorkspaceByMonitor[monitor.id] != home {
+            return true
+        }
+
+        // Some apps keep their midpoint on the home display while drawing into a
+        // neighboring display. Any meaningful overlap with another workspace leaks.
+        for monitor in monitors {
+            guard activeWorkspaceByMonitor[monitor.id] != home else { continue }
+            let ix0 = max(frame.x, monitor.frame.x)
+            let iy0 = max(frame.y, monitor.frame.y)
+            let ix1 = min(frame.maxX, monitor.frame.maxX)
+            let iy1 = min(frame.maxY, monitor.frame.maxY)
+            if ix1 > ix0, iy1 > iy0, (ix1 - ix0) * (iy1 - iy0) >= 64 {
+                return true
+            }
+        }
+        return false
+    }
+}
+
 // MARK: - Layout — relayout, frames, visibility, geometry
 
 extension WindowManager {
@@ -1717,35 +1758,12 @@ extension WindowManager {
     }
 
     func frameLeaksWrongMonitor(home: String, frame: Rect) -> Bool {
-        guard frame.width > 0, frame.height > 0 else { return false }
-        let monitorFrames = monitors.monitors.map(\.frame)
-        guard OffscreenParking.intersectsAnyMonitor(frame, monitors: monitorFrames) else { return false }
-
-        if OffscreenParking.isEdgeStrip(frame, monitors: monitorFrames) {
-            for mon in monitors.monitors {
-                guard OffscreenParking.intersectsAnyMonitor(frame, monitors: [mon.frame]) else { continue }
-                if workspaces.activeWorkspaceByMonitor[mon.id] != home { return true }
-            }
-            return false
-        }
-
-        if let mon = monitors.monitorContaining(pointX: frame.midX, pointY: frame.midY),
-           workspaces.activeWorkspaceByMonitor[mon.id] != home {
-            return true
-        }
-
-        // Safari/Electron can keep the midpoint on the home monitor while drawing on another display.
-        for mon in monitors.monitors {
-            guard workspaces.activeWorkspaceByMonitor[mon.id] != home else { continue }
-            let ix0 = max(frame.x, mon.frame.x)
-            let iy0 = max(frame.y, mon.frame.y)
-            let ix1 = min(frame.maxX, mon.frame.maxX)
-            let iy1 = min(frame.maxY, mon.frame.maxY)
-            if ix1 > ix0, iy1 > iy0, (ix1 - ix0) * (iy1 - iy0) >= 64 {
-                return true
-            }
-        }
-        return false
+        WorkspaceMonitorLeakPolicy.frameLeaksWrongMonitor(
+            home: home,
+            frame: frame,
+            monitors: monitors.monitors,
+            activeWorkspaceByMonitor: workspaces.activeWorkspaceByMonitor
+        )
     }
 
     func liveFrameForVisibility(_ id: WindowID) -> Rect? {
@@ -2284,16 +2302,14 @@ extension WindowManager {
             }
         }
 
-        // Per-monitor leak: hide windows whose *target* is on a monitor not showing home.
-        // Never use the pre-layout live frame — a new Calendar/3rd tile still has its
-        // default size and looks like a leak, then hide+reveal loops forever.
+        // A workspace being active somewhere does not make a tile safe when its
+        // target crosses onto another monitor showing a different workspace.
+        // Never use the pre-layout live frame here: a new window's default size
+        // can look like a leak and cause hide/reveal loops.
         for id in Array(visibleIDs) {
             if isVisibilityRevealProtected(id) { continue }
             guard let home = authoritativeHome(for: id) else { continue }
             guard let planned = target[id] else { continue }
-            if windowsByID[id]?.isTiled == true, isHomeActiveOnAnyMonitor(home) {
-                continue
-            }
             guard frameLeaksWrongMonitor(home: home, frame: planned) else { continue }
             visibleIDs.remove(id)
             var f = planned
