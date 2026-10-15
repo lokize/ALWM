@@ -45,6 +45,10 @@ enum VisibilityPassPolicy {
     ) -> Bool {
         signatureMatches && !forceReveal && !needsOrphanRelayout && liveStateMatchesPlan
     }
+
+    static func shouldSkipLeakCorrection(isRevealProtected: Bool, isActiveHomeTile: Bool) -> Bool {
+        isRevealProtected && !isActiveHomeTile
+    }
 }
 
 enum WorkspaceMonitorLeakPolicy {
@@ -1848,8 +1852,12 @@ extension WindowManager {
     }
 
     func hideOutgoingWindow(_ id: WindowID, frame: Rect, allMonitorFrames: [Rect]) {
-        if isVisibilityRevealProtected(id) { return }
-        if isActiveHomeTile(id) {
+        let activeHomeTile = isActiveHomeTile(id)
+        if VisibilityPassPolicy.shouldSkipLeakCorrection(
+            isRevealProtected: isVisibilityRevealProtected(id),
+            isActiveHomeTile: activeHomeTile
+        ) { return }
+        if activeHomeTile {
             constrainActiveHomeTileIfLeaking(id)
             return
         }
@@ -1905,8 +1913,12 @@ extension WindowManager {
 
         ax.withMutation {
             for (id, win) in windowsByID where !win.isIgnored && id != quake.windowID {
-                if isVisibilityRevealProtected(id) { continue }
-                if isActiveHomeTile(id) {
+                let activeHomeTile = isActiveHomeTile(id)
+                if VisibilityPassPolicy.shouldSkipLeakCorrection(
+                    isRevealProtected: isVisibilityRevealProtected(id),
+                    isActiveHomeTile: activeHomeTile
+                ) { continue }
+                if activeHomeTile {
                     constrainActiveHomeTileIfLeaking(id)
                     continue
                 }
@@ -2352,11 +2364,15 @@ extension WindowManager {
         // Never use the pre-layout live frame here: a new window's default size
         // can look like a leak and cause hide/reveal loops.
         for id in Array(visibleIDs) {
-            if isVisibilityRevealProtected(id) { continue }
+            let activeHomeTile = isActiveHomeTile(id)
+            if VisibilityPassPolicy.shouldSkipLeakCorrection(
+                isRevealProtected: isVisibilityRevealProtected(id),
+                isActiveHomeTile: activeHomeTile
+            ) { continue }
             guard let home = authoritativeHome(for: id) else { continue }
             guard let planned = target[id] else { continue }
             guard frameLeaksWrongMonitor(home: home, frame: planned) else { continue }
-            if isActiveHomeTile(id) {
+            if activeHomeTile {
                 let homeMonitor = displayMonitor(forHome: home, fallback: layoutMonitor)
                 if let corrected = WorkspaceMonitorLeakPolicy.correctedActiveTileFrame(
                     home: home,
@@ -2487,8 +2503,12 @@ extension WindowManager {
 
                 // 4) Re-tuck any hide siblings still bleeding onto a display.
                 for (id, _) in hideList where id != self.quake.windowID {
-                    if self.isVisibilityRevealProtected(id) { continue }
-                    if self.isActiveHomeTile(id) {
+                    let activeHomeTile = self.isActiveHomeTile(id)
+                    if VisibilityPassPolicy.shouldSkipLeakCorrection(
+                        isRevealProtected: self.isVisibilityRevealProtected(id),
+                        isActiveHomeTile: activeHomeTile
+                    ) { continue }
+                    if activeHomeTile {
                         self.constrainActiveHomeTileIfLeaking(id)
                         continue
                     }
@@ -2511,8 +2531,12 @@ extension WindowManager {
                 // 5) Sweep: inactive windows still bleeding onto a display (not already parked).
                 for (id, win) in self.windowsByID where !visibleIDs.contains(id) && !win.isIgnored {
                     guard id != self.quake.windowID else { continue }
-                    if self.isVisibilityRevealProtected(id) { continue }
-                    if self.isActiveHomeTile(id) {
+                    let activeHomeTile = self.isActiveHomeTile(id)
+                    if VisibilityPassPolicy.shouldSkipLeakCorrection(
+                        isRevealProtected: self.isVisibilityRevealProtected(id),
+                        isActiveHomeTile: activeHomeTile
+                    ) { continue }
+                    if activeHomeTile {
                         self.constrainActiveHomeTileIfLeaking(id)
                         continue
                     }
@@ -2538,8 +2562,12 @@ extension WindowManager {
 
                 // 6) Same-PID windows still visible on the wrong monitor after reveal/activate.
                 for (id, _) in hideList where id != self.quake.windowID {
-                    if self.isVisibilityRevealProtected(id) { continue }
-                    if self.isActiveHomeTile(id) {
+                    let activeHomeTile = self.isActiveHomeTile(id)
+                    if VisibilityPassPolicy.shouldSkipLeakCorrection(
+                        isRevealProtected: self.isVisibilityRevealProtected(id),
+                        isActiveHomeTile: activeHomeTile
+                    ) { continue }
+                    if activeHomeTile {
                         self.constrainActiveHomeTileIfLeaking(id)
                         continue
                     }
@@ -2583,8 +2611,12 @@ extension WindowManager {
                         let activeNow = Set(self.workspaces.activeWorkspaceByMonitor.values)
                         self.ax.withMutation {
                             for id in leakIDs {
-                                if self.isVisibilityRevealProtected(id) { continue }
-                                if self.isActiveHomeTile(id) {
+                                let activeHomeTile = self.isActiveHomeTile(id)
+                                if VisibilityPassPolicy.shouldSkipLeakCorrection(
+                                    isRevealProtected: self.isVisibilityRevealProtected(id),
+                                    isActiveHomeTile: activeHomeTile
+                                ) { continue }
+                                if activeHomeTile {
                                     self.constrainActiveHomeTileIfLeaking(id)
                                     continue
                                 }

@@ -82,4 +82,16 @@ struct WorkspaceVisibilityReconciliationTests {
             liveStateMatchesPlan: true
         ))
     }
+
+    @Test("focus reveal protection does not exempt an active tile from leak correction")
+    func focusedActiveTileStillGetsLeakCorrection() {
+        #expect(!VisibilityPassPolicy.shouldSkipLeakCorrection(
+            isRevealProtected: true,
+            isActiveHomeTile: true
+        ))
+        #expect(VisibilityPassPolicy.shouldSkipLeakCorrection(
+            isRevealProtected: true,
+            isActiveHomeTile: false
+        ))
+    }
 }
