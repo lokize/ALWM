@@ -14,8 +14,8 @@ fi
 
 wait_until_stopped() {
   local count="$1"
-  local _
-  for ((_ = 0; _ < count; _++)); do
+  local poll_index
+  for ((poll_index = 0; poll_index < count; poll_index++)); do
     if ! pgrep -x "$PROCESS_NAME" >/dev/null 2>&1; then
       return 0
     fi
@@ -35,7 +35,7 @@ if ! wait_until_stopped 10; then
 fi
 
 for ((attempt = 1; attempt <= ATTEMPTS; attempt++)); do
-  if open "$APP_BUNDLE"; then
+  if open -n "$APP_BUNDLE"; then
     for ((poll = 0; poll < POLL_COUNT; poll++)); do
       if pgrep -x "$PROCESS_NAME" >/dev/null 2>&1; then
         echo "Relaunched $PROCESS_NAME (attempt $attempt/$ATTEMPTS)."

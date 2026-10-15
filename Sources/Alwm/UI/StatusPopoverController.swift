@@ -464,7 +464,6 @@ struct StatusMenuView: View {
                         VStack(spacing: 3) {
                             navRow(title: L10n.t("menu.settings"), systemImage: "gearshape", action: onSettings)
                             navRow(title: L10n.t("menu.plugins"), systemImage: "puzzlepiece.extension", action: onPlugins)
-                            navRow(title: L10n.t("menu.whats_new"), systemImage: "sparkles", action: onWhatsNew)
                         }
                         wallpaperSection
                         environmentProfileSection
@@ -539,6 +538,9 @@ struct StatusMenuView: View {
                 )
                 actionRow(title: L10n.t("menu.relayout"), systemImage: "rectangle.split.3x1", action: onRelayout)
             }
+
+            navRow(title: L10n.t("menu.whats_new"), systemImage: "sparkles", action: onWhatsNew)
+                .padding(.top, 3)
         }
     }
 
