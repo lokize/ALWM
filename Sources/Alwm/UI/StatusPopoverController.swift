@@ -452,12 +452,6 @@ struct StatusMenuView: View {
 
                 controlsSection
 
-                VStack(spacing: 3) {
-                    navRow(title: L10n.t("menu.settings"), systemImage: "gearshape", action: onSettings)
-                    navRow(title: L10n.t("menu.plugins"), systemImage: "puzzlepiece.extension", action: onPlugins)
-                    navRow(title: L10n.t("menu.whats_new"), systemImage: "sparkles", action: onWhatsNew)
-                }
-
                 if model.developerMode {
                     sectionBlock(title: L10n.t("menu.developer")) {
                         actionRow(title: L10n.t("menu.reset_runtime"), systemImage: "arrow.counterclockwise", action: onReset)
@@ -467,6 +461,11 @@ struct StatusMenuView: View {
 
                 HStack(alignment: .top, spacing: 8) {
                     VStack(alignment: .leading, spacing: StatusMenuTheme.sectionGap) {
+                        VStack(spacing: 3) {
+                            navRow(title: L10n.t("menu.settings"), systemImage: "gearshape", action: onSettings)
+                            navRow(title: L10n.t("menu.plugins"), systemImage: "puzzlepiece.extension", action: onPlugins)
+                            navRow(title: L10n.t("menu.whats_new"), systemImage: "sparkles", action: onWhatsNew)
+                        }
                         wallpaperSection
                         environmentProfileSection
                     }
@@ -1020,7 +1019,7 @@ struct StatusMenuView: View {
                     .frame(width: 22)
                 Text(title)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(.white)
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.system(size: 11, weight: .semibold))
@@ -1045,7 +1044,7 @@ struct StatusMenuView: View {
                     .frame(width: 18)
                 Text(title)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(.white)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)

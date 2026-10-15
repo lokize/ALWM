@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.7.4",
+      "items": [
+        "Settings links now sit beside the tools with white labels"
+      ]
+    },
+    {
       "version": "1.7.3",
       "items": [
         "Wider two-column status menu with content-sized height"
@@ -260,15 +266,6 @@
       "items": [
         "Keep workspace assignments when monitor order changes after wake",
         "Protect multiple tiled windows from transient accessibility drops"
-      ]
-    },
-    {
-      "version": "1.3.4",
-      "items": [
-        "Restore window positions and sizes after sleep or accessibility interruptions",
-        "Keep newly opened windows in the layout during accessibility updates",
-        "Preserve workspace selection when monitors disconnect or clamshell mode starts",
-        "Open returning app windows in their saved workspace"
       ]
     }
   ]
