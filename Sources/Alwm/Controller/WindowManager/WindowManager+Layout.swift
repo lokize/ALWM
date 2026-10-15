@@ -48,6 +48,24 @@ enum VisibilityPassPolicy {
 }
 
 enum WorkspaceMonitorLeakPolicy {
+    static func correctedActiveTileFrame(
+        home: String,
+        frame: Rect,
+        homeBounds: Rect,
+        monitors: [MonitorInfo],
+        activeWorkspaceByMonitor: [CGDirectDisplayID: String]
+    ) -> Rect? {
+        guard activeWorkspaceByMonitor.values.contains(home) else { return nil }
+        let corrected = frame.clamped(to: homeBounds)
+        guard !frameLeaksWrongMonitor(
+            home: home,
+            frame: corrected,
+            monitors: monitors,
+            activeWorkspaceByMonitor: activeWorkspaceByMonitor
+        ) else { return nil }
+        return corrected
+    }
+
     static func frameLeaksWrongMonitor(
         home: String,
         frame: Rect,
@@ -1808,9 +1826,33 @@ extension WindowManager {
         return workspaces.workspaceID(containing: id) == home
     }
 
+    @discardableResult
+    func constrainActiveHomeTileIfLeaking(_ id: WindowID) -> Bool {
+        guard isActiveHomeTile(id),
+              let home = authoritativeHome(for: id),
+              let live = liveFrameForVisibility(id),
+              frameLeaksWrongMonitor(home: home, frame: live) else { return false }
+        guard let fallback = primaryMonitor() ?? monitors.monitors.first else { return false }
+        let homeMonitor = displayMonitor(forHome: home, fallback: fallback)
+        guard let corrected = WorkspaceMonitorLeakPolicy.correctedActiveTileFrame(
+            home: home,
+            frame: live,
+            homeBounds: engine.usableArea(monitor: homeMonitor.layoutFrame),
+            monitors: monitors.monitors,
+            activeWorkspaceByMonitor: workspaces.activeWorkspaceByMonitor
+        ) else { return false }
+        ax.applyFrameOnly(frame: corrected, to: id)
+        savedFrames[id] = corrected
+        lastFrames[id] = corrected
+        return true
+    }
+
     func hideOutgoingWindow(_ id: WindowID, frame: Rect, allMonitorFrames: [Rect]) {
         if isVisibilityRevealProtected(id) { return }
-        if isActiveHomeTile(id) { return }
+        if isActiveHomeTile(id) {
+            constrainActiveHomeTileIfLeaking(id)
+            return
+        }
         if id == quake.windowID {
             ax.parkAndHide(frame: frame, id: id, monitors: allMonitorFrames)
             lastFrames[id] = frame
@@ -1864,7 +1906,10 @@ extension WindowManager {
         ax.withMutation {
             for (id, win) in windowsByID where !win.isIgnored && id != quake.windowID {
                 if isVisibilityRevealProtected(id) { continue }
-                if isActiveHomeTile(id) { continue }
+                if isActiveHomeTile(id) {
+                    constrainActiveHomeTileIfLeaking(id)
+                    continue
+                }
                 guard let home = authoritativeHome(for: id) else { continue }
                 guard let live = liveFrameForVisibility(id) else { continue }
                 guard frameLeaksWrongMonitor(home: home, frame: live) else { continue }
@@ -2311,6 +2356,19 @@ extension WindowManager {
             guard let home = authoritativeHome(for: id) else { continue }
             guard let planned = target[id] else { continue }
             guard frameLeaksWrongMonitor(home: home, frame: planned) else { continue }
+            if isActiveHomeTile(id) {
+                let homeMonitor = displayMonitor(forHome: home, fallback: layoutMonitor)
+                if let corrected = WorkspaceMonitorLeakPolicy.correctedActiveTileFrame(
+                    home: home,
+                    frame: planned,
+                    homeBounds: engine.usableArea(monitor: homeMonitor.layoutFrame),
+                    monitors: monitors.monitors,
+                    activeWorkspaceByMonitor: workspaces.activeWorkspaceByMonitor
+                ) {
+                    target[id] = corrected
+                    continue
+                }
+            }
             visibleIDs.remove(id)
             var f = planned
             f.x = park.x
@@ -2430,7 +2488,10 @@ extension WindowManager {
                 // 4) Re-tuck any hide siblings still bleeding onto a display.
                 for (id, _) in hideList where id != self.quake.windowID {
                     if self.isVisibilityRevealProtected(id) { continue }
-                    if self.isActiveHomeTile(id) { continue }
+                    if self.isActiveHomeTile(id) {
+                        self.constrainActiveHomeTileIfLeaking(id)
+                        continue
+                    }
                     guard let home = self.authoritativeHome(for: id),
                           let live = self.liveFrameForVisibility(id),
                           self.frameLeaksWrongMonitor(home: home, frame: live)
@@ -2451,7 +2512,10 @@ extension WindowManager {
                 for (id, win) in self.windowsByID where !visibleIDs.contains(id) && !win.isIgnored {
                     guard id != self.quake.windowID else { continue }
                     if self.isVisibilityRevealProtected(id) { continue }
-                    if self.isActiveHomeTile(id) { continue }
+                    if self.isActiveHomeTile(id) {
+                        self.constrainActiveHomeTileIfLeaking(id)
+                        continue
+                    }
                     guard let home = self.authoritativeHome(for: id) else { continue }
                     if let live = self.liveFrameForVisibility(id),
                        self.frameLeaksWrongMonitor(home: home, frame: live) {
@@ -2475,7 +2539,10 @@ extension WindowManager {
                 // 6) Same-PID windows still visible on the wrong monitor after reveal/activate.
                 for (id, _) in hideList where id != self.quake.windowID {
                     if self.isVisibilityRevealProtected(id) { continue }
-                    if self.isActiveHomeTile(id) { continue }
+                    if self.isActiveHomeTile(id) {
+                        self.constrainActiveHomeTileIfLeaking(id)
+                        continue
+                    }
                     guard self.samePidHasActiveSibling(id),
                           let home = self.authoritativeHome(for: id),
                           let live = self.liveFrameForVisibility(id),
@@ -2517,7 +2584,10 @@ extension WindowManager {
                         self.ax.withMutation {
                             for id in leakIDs {
                                 if self.isVisibilityRevealProtected(id) { continue }
-                                if self.isActiveHomeTile(id) { continue }
+                                if self.isActiveHomeTile(id) {
+                                    self.constrainActiveHomeTileIfLeaking(id)
+                                    continue
+                                }
                                 if let home = self.authoritativeHome(for: id), activeNow.contains(home),
                                    let live = self.liveFrameForVisibility(id),
                                    !self.frameLeaksWrongMonitor(home: home, frame: live) {
