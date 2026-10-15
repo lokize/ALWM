@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.7.2",
+      "items": [
+        "Wider, more compact status menu with adaptive sizing"
+      ]
+    },
+    {
       "version": "1.7.1",
       "items": [
         "Keep the interactive overview shortcut available while overlays capture keyboard focus",
@@ -263,12 +269,6 @@
       "version": "1.3.3",
       "items": [
         "Restore app windows to their saved workspaces when they reappear"
-      ]
-    },
-    {
-      "version": "1.3.2",
-      "items": [
-        "Restore app windows to saved workspaces after sleep"
       ]
     }
   ]
