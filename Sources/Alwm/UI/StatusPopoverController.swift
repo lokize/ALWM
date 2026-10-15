@@ -10,6 +10,7 @@ public final class StatusPopoverController {
     private var updateResizeCancellable: AnyCancellable?
     private var contentHeightCancellable: AnyCancellable?
     private var wallpaperCancellable: AnyCancellable?
+    private var upcomingWallpaperCancellable: AnyCancellable?
     private var wallpaperRotationCancellable: AnyCancellable?
     /// Survives workspace-bar re-renders so toggles don't dismiss the menu when the chip is rebuilt.
     private let anchorWindow: NSWindow
@@ -80,6 +81,13 @@ public final class StatusPopoverController {
             .sink { [weak self] payload in
                 guard let self else { return }
                 self.model.activeWallpaper = payload
+                if self.popover.isShown { self.resizeToFit() }
+            }
+        upcomingWallpaperCancellable = WallpaperController.shared.$upcomingWallpaper
+            .receive(on: RunLoop.main)
+            .sink { [weak self] payload in
+                guard let self else { return }
+                self.model.upcomingWallpaper = payload
                 if self.popover.isShown { self.resizeToFit() }
             }
         wallpaperRotationCancellable = WallpaperController.shared.$rotationStatus
@@ -396,6 +404,7 @@ final class StatusMenuModel: ObservableObject {
     @Published var isRecording = false
     @Published var recentNotes: [NotePreview] = []
     @Published var activeWallpaper: WallpaperNotificationContent.Payload?
+    @Published var upcomingWallpaper: WallpaperNotificationContent.Payload?
     @Published var rotationStatus = WallpaperController.shared.rotationStatus
     @Published var environmentProfiles: [EnvironmentProfileSummary] = []
     @Published var selectedEnvironmentProfileID = ""
@@ -639,6 +648,28 @@ struct StatusMenuView: View {
                     .controlSize(.small)
                     .disabled(model.activeWallpaper == nil)
                     .help("Passar para o próximo papel de parede")
+                }
+
+                if let wallpaper = model.upcomingWallpaper {
+                    HStack(spacing: 6) {
+                        Text("A seguir")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        WallpaperThumbnailView(url: wallpaper.wallpaperURL, side: 22)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(wallpaper.subtitle)
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                            Text(wallpaper.body)
+                                .font(.system(size: 10, weight: .semibold))
+                                .lineLimit(1)
+                                .help(wallpaper.wallpaperURL.path)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.leading, 2)
+                    .accessibilityElement(children: .combine)
                 }
 
                 Divider().opacity(0.5)

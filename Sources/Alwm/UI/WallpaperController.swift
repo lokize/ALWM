@@ -119,6 +119,18 @@ enum WallpaperCatalog {
         guard files.count > 1 else { return files[0] }
         return files.filter { $0 != previous }.randomElement() ?? files[0]
     }
+
+    static func selectAndPreview(
+        from files: [URL],
+        after current: URL?,
+        pending: URL?,
+        order: WallpaperOrder
+    ) -> (selected: URL?, upcoming: URL?) {
+        let selected = pending.flatMap { files.contains($0) ? $0 : nil }
+            ?? next(from: files, after: current, order: order)
+        guard let selected else { return (nil, nil) }
+        return (selected, next(from: files, after: selected, order: order))
+    }
 }
 
 enum WallpaperActiveSelection {
@@ -179,8 +191,10 @@ final class WallpaperController: ObservableObject {
     private var nextRotationDate: Date?
     private var videoSessions: [CGDirectDisplayID: VideoSession] = [:]
     private var previousByScreen: [String: URL] = [:]
+    private var pendingByScreen: [String: URL] = [:]
     private var observers: [NSObjectProtocol] = []
     @Published private(set) var activeWallpaper: WallpaperNotificationContent.Payload?
+    @Published private(set) var upcomingWallpaper: WallpaperNotificationContent.Payload?
     @Published private(set) var rotationStatus = WallpaperRotationStatus(
         rotationEnabled: WallpaperSettings.default.rotationEnabled,
         intervalSeconds: WallpaperSettings.default.intervalSeconds,
@@ -228,10 +242,12 @@ final class WallpaperController: ObservableObject {
         if !next.enabled {
             stopVideos()
             activeWallpaper = nil
+            upcomingWallpaper = nil
             updateRotationStatus()
             return
         }
         if shouldAdvance {
+            pendingByScreen.removeAll()
             advance(resetRotationTimer: false)
         } else if muteChanged {
             videoSessions.values.forEach { $0.setMuted(next.videoMuted) }
@@ -257,14 +273,30 @@ final class WallpaperController: ObservableObject {
         if settings.separatePerMonitor {
             var changedWallpapers: [WallpaperNotificationContent.Payload] = []
             var activeWallpapers: [CGDirectDisplayID: WallpaperNotificationContent.Payload] = [:]
+            var upcomingWallpapers: [CGDirectDisplayID: WallpaperNotificationContent.Payload] = [:]
             for screen in screens {
                 let id = Self.displayID(of: screen)
                 let key = String(id)
                 let directory = WallpaperCatalog.directory(settings: settings, displayID: id)
                 let files = WallpaperCatalog.files(in: directory, recursive: settings.recursive)
-                guard let url = WallpaperCatalog.next(from: files, after: previousByScreen[key], order: settings.order) else { continue }
+                let selection = WallpaperCatalog.selectAndPreview(
+                    from: files,
+                    after: previousByScreen[key],
+                    pending: pendingByScreen[key],
+                    order: settings.order
+                )
+                guard let url = selection.selected else {
+                    pendingByScreen.removeValue(forKey: key)
+                    continue
+                }
                 let changed = previousByScreen[key] != url
                 previousByScreen[key] = url
+                if let upcoming = selection.upcoming {
+                    pendingByScreen[key] = upcoming
+                    upcomingWallpapers[id] = notificationContent(for: upcoming, in: directory)
+                } else {
+                    pendingByScreen.removeValue(forKey: key)
+                }
                 if show(url, on: screen, id: id) {
                     let payload = notificationContent(for: url, in: directory)
                     activeWallpapers[id] = payload
@@ -275,12 +307,30 @@ final class WallpaperController: ObservableObject {
                 from: activeWallpapers,
                 primaryDisplayID: CGMainDisplayID()
             )
+            upcomingWallpaper = WallpaperActiveSelection.preferred(
+                from: upcomingWallpapers,
+                primaryDisplayID: CGMainDisplayID()
+            )
             WallpaperToastController.shared.show(changedWallpapers)
         } else {
             let files = WallpaperCatalog.files(in: settings.directory, recursive: settings.recursive)
-            guard let url = WallpaperCatalog.next(from: files, after: previousByScreen["all"], order: settings.order) else { return }
+            let selection = WallpaperCatalog.selectAndPreview(
+                from: files,
+                after: previousByScreen["all"],
+                pending: pendingByScreen["all"],
+                order: settings.order
+            )
+            guard let url = selection.selected else {
+                pendingByScreen.removeValue(forKey: "all")
+                upcomingWallpaper = nil
+                return
+            }
             let changed = previousByScreen["all"] != url
             previousByScreen["all"] = url
+            pendingByScreen["all"] = selection.upcoming
+            upcomingWallpaper = selection.upcoming.map {
+                notificationContent(for: $0, in: settings.directory)
+            }
             var didApply = false
             for screen in screens {
                 didApply = show(url, on: screen, id: Self.displayID(of: screen)) || didApply
@@ -372,7 +422,9 @@ final class WallpaperController: ObservableObject {
         stopVideos()
         settings = .default
         previousByScreen.removeAll()
+        pendingByScreen.removeAll()
         activeWallpaper = nil
+        upcomingWallpaper = nil
         updateRotationStatus()
     }
 

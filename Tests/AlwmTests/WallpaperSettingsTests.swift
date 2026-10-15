@@ -190,6 +190,41 @@ struct WallpaperSettingsTests {
         #expect(WallpaperCatalog.next(from: direct, after: direct[0], order: .random) == direct[1])
     }
 
+    @Test("wallpaper preview is exactly the next randomized selection")
+    func previewMatchesNextRandomSelection() {
+        let files = ["a.jpg", "b.jpg", "c.jpg"].map { URL(fileURLWithPath: "/wallpapers/\($0)") }
+        let first = WallpaperCatalog.selectAndPreview(
+            from: files,
+            after: nil,
+            pending: nil,
+            order: .random
+        )
+        #expect(first.selected != nil)
+        #expect(first.upcoming != nil)
+        #expect(first.upcoming != first.selected)
+
+        let second = WallpaperCatalog.selectAndPreview(
+            from: files,
+            after: first.selected,
+            pending: first.upcoming,
+            order: .random
+        )
+        #expect(second.selected == first.upcoming)
+    }
+
+    @Test("alphabetical wallpaper preview wraps around the catalog")
+    func alphabeticalPreviewWraps() {
+        let files = ["a.jpg", "b.jpg", "c.jpg"].map { URL(fileURLWithPath: "/wallpapers/\($0)") }
+        let selection = WallpaperCatalog.selectAndPreview(
+            from: files,
+            after: files[2],
+            pending: nil,
+            order: .alphabetical
+        )
+        #expect(selection.selected == files[0])
+        #expect(selection.upcoming == files[1])
+    }
+
     @Test("monitor overrides fall back to the shared wallpaper directory")
     func monitorDirectories() {
         var settings = WallpaperSettings.default
