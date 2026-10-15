@@ -732,9 +732,11 @@ struct StatusMenuView: View {
                         Label("Anterior", systemImage: "backward.end.fill")
                             .font(.system(size: 10, weight: .semibold))
                             .lineLimit(1)
+                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .frame(maxWidth: .infinity)
                     .disabled(!model.canGoToPreviousWallpaper)
                     .help("Voltar ao papel de parede anterior")
 
@@ -742,12 +744,15 @@ struct StatusMenuView: View {
                         Label("Próximo", systemImage: "forward.end.fill")
                             .font(.system(size: 10, weight: .semibold))
                             .lineLimit(1)
+                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .frame(maxWidth: .infinity)
                     .disabled(model.activeWallpaper == nil)
                     .help("Passar para o próximo papel de parede")
                 }
+                .frame(maxWidth: .infinity)
             }
             .padding(6)
             .frame(maxWidth: .infinity, alignment: .leading)

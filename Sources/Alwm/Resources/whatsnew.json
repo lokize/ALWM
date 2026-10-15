@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.8.0",
+      "items": [
+        "Make wallpaper navigation buttons fill the card"
+      ]
+    },
+    {
       "version": "1.7.9",
       "items": [
         "Add previous wallpaper navigation beside next"
@@ -251,15 +257,6 @@
       "items": [
         "Keep overlay focus and prevent outside clicks activating covered windows",
         "Add fullscreen controls to Notepad and Quake terminal"
-      ]
-    },
-    {
-      "version": "1.4.0",
-      "items": [
-        "Fix Quake and Notepad toggle hotkeys and persistent panel dismissal",
-        "Preserve workspace layout, scroll position, and stacked window sizes after sleep",
-        "Keep focus on open popups and place new windows in the active workspace",
-        "Protect note persistence and coalesce mouse focus checks"
       ]
     }
   ]
