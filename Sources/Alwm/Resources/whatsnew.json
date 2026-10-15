@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.7.5",
+      "items": [
+        "Maintenance release"
+      ]
+    },
+    {
       "version": "1.7.4",
       "items": [
         "Settings links now sit beside the tools with white labels"
@@ -259,13 +265,6 @@
         "Pause mouse focus changes while app popups are open",
         "Let users keep Quake and Notepad open after clicking outside",
         "Keep workspace monitor assignments stable when display order changes"
-      ]
-    },
-    {
-      "version": "1.3.5",
-      "items": [
-        "Keep workspace assignments when monitor order changes after wake",
-        "Protect multiple tiled windows from transient accessibility drops"
       ]
     }
   ]
