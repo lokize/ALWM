@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.8.3",
+      "items": [
+        "Center the Tools card heading like Recent Notes"
+      ]
+    },
+    {
       "version": "1.8.2",
       "items": [
         "Separate recent notes and tools cards"
@@ -250,12 +256,6 @@
         "Keep pending tasks above a collapsible completed section",
         "Add undo shortcuts and block editing tools",
         "Translate the Notepad interface into all supported languages"
-      ]
-    },
-    {
-      "version": "1.4.3",
-      "items": [
-        "Fix outside-click capture coordinates for overlays"
       ]
     }
   ]

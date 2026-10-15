@@ -546,10 +546,9 @@ struct StatusMenuView: View {
     private var toolsSection: some View {
         VStack(spacing: 2) {
             Text(L10n.t("menu.tools"))
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 4)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
 
             LazyVGrid(
                 columns: [GridItem(.flexible(), spacing: 3), GridItem(.flexible(), spacing: 3)],
