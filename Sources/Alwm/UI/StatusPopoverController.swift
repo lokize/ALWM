@@ -39,6 +39,9 @@ public final class StatusPopoverController {
     public var onQuit: (() -> Void)?
     public var onNextWallpaper: (() -> Void)?
     public var onWallpaperRotationChange: ((Bool, Double, WallpaperIntervalUnit) -> Void)?
+    public var onListEnvironmentProfiles: (() -> [EnvironmentProfileSummary])?
+    public var onSaveEnvironmentProfile: ((String) -> Bool)?
+    public var onApplyEnvironmentProfile: ((String) -> Bool)?
 
     public var isShown: Bool { popover.isShown }
 
@@ -99,8 +102,10 @@ public final class StatusPopoverController {
         developerMode: Bool,
         version: String,
         isRecording: Bool = false,
-        recentNotes: [NotePreview] = []
+        recentNotes: [NotePreview] = [],
+        environmentProfiles: [EnvironmentProfileSummary]? = nil
     ) {
+        let profiles = environmentProfiles ?? onListEnvironmentProfiles?() ?? model.environmentProfiles
         let changed =
             model.focusFollowsMouse != focusFollowsMouse
             || model.bordersEnabled != borders
@@ -110,6 +115,7 @@ public final class StatusPopoverController {
             || model.version != version
             || model.isRecording != isRecording
             || model.recentNotes != recentNotes
+            || model.environmentProfiles != profiles
         guard changed else { return }
         model.focusFollowsMouse = focusFollowsMouse
         model.bordersEnabled = borders
@@ -119,6 +125,10 @@ public final class StatusPopoverController {
         model.version = version
         model.isRecording = isRecording
         model.recentNotes = recentNotes
+        model.environmentProfiles = profiles
+        if !profiles.contains(where: { $0.id == model.selectedEnvironmentProfileID }) {
+            model.selectedEnvironmentProfileID = profiles.first?.id ?? ""
+        }
         resizeToFit()
     }
 
@@ -249,6 +259,12 @@ public final class StatusPopoverController {
             onWallpaperRotationChange: { [weak self] enabled, value, unit in
                 self?.onWallpaperRotationChange?(enabled, value, unit)
             },
+            onListEnvironmentProfiles: { [weak self] in self?.onListEnvironmentProfiles?() ?? [] },
+            onSaveEnvironmentProfile: { [weak self] name in self?.onSaveEnvironmentProfile?(name) ?? false },
+            onApplyEnvironmentProfile: { [weak self] id in
+                self?.close()
+                _ = self?.onApplyEnvironmentProfile?(id)
+            },
             onQuit: { [weak self] in self?.close(); self?.onQuit?() },
             onCloseMenu: { [weak self] in self?.close() }
         )
@@ -263,10 +279,10 @@ public final class StatusPopoverController {
     private func resizeToFit() {
         guard let hosting = hostingController else { return }
         let maxH = StatusMenuLayout.maxHeight
-        // Propose the screen cap so ScrollView can scroll when needed; fixedSize still hugs content.
-        let ideal = hosting.sizeThatFits(in: NSSize(width: 340, height: maxH))
+        // Propose the screen cap so the content remains scrollable on short displays.
+        let ideal = hosting.sizeThatFits(in: NSSize(width: 372, height: maxH))
         popover.contentSize = NSSize(
-            width: max(340, ceil(ideal.width)),
+            width: 372,
             height: max(1, min(ceil(ideal.height), maxH))
         )
     }
@@ -317,14 +333,18 @@ final class StatusMenuClickOutsideBridge: @unchecked Sendable {
     }
 }
 
-private enum StatusMenuLayout {
+enum StatusMenuLayout {
+    static func maxHeight(visibleFrameHeight: CGFloat) -> CGFloat {
+        max(1, floor(visibleFrameHeight - 16))
+    }
+
     static var maxHeight: CGFloat {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
             ?? NSScreen.main
             ?? NSScreen.screens.first
         let visible = screen?.visibleFrame.height ?? 700
-        return max(280, floor(visible - 16))
+        return maxHeight(visibleFrameHeight: visible)
     }
 }
 
@@ -340,6 +360,10 @@ final class StatusMenuModel: ObservableObject {
     @Published var recentNotes: [NotePreview] = []
     @Published var activeWallpaper: WallpaperNotificationContent.Payload?
     @Published var rotationStatus = WallpaperController.shared.rotationStatus
+    @Published var environmentProfiles: [EnvironmentProfileSummary] = []
+    @Published var selectedEnvironmentProfileID = ""
+    @Published var environmentProfileName = ""
+    @Published var environmentProfileStatus = ""
 }
 
 private enum StatusMenuTheme {
@@ -375,6 +399,9 @@ struct StatusMenuView: View {
     var onColorPalette: () -> Void
     var onNextWallpaper: () -> Void
     var onWallpaperRotationChange: (Bool, Double, WallpaperIntervalUnit) -> Void
+    var onListEnvironmentProfiles: () -> [EnvironmentProfileSummary]
+    var onSaveEnvironmentProfile: (String) -> Bool
+    var onApplyEnvironmentProfile: (String) -> Void
     var onQuit: () -> Void
     var onCloseMenu: () -> Void = {}
 
@@ -401,6 +428,8 @@ struct StatusMenuView: View {
                 }
 
                 wallpaperSection
+
+                environmentProfileSection
 
                 sectionBlock(title: L10n.t("menu.tools")) {
                     if !model.recentNotes.isEmpty {
@@ -455,11 +484,64 @@ struct StatusMenuView: View {
             .padding(10)
         }
         .frame(width: 372)
-        // Hug content on large screens; only grow up to the visible display height.
+        // Keep the scroll viewport inside the screen even when the menu content is taller.
         .frame(maxHeight: maxH, alignment: .top)
-        .fixedSize(horizontal: true, vertical: true)
+        .fixedSize(horizontal: true, vertical: false)
         .background(Color(nsColor: .windowBackgroundColor).opacity(0.92))
         .alwmLocalized()
+    }
+
+    private var environmentProfileSection: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            sectionTitle("Perfil de ambiente")
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Picker("Perfil", selection: $model.selectedEnvironmentProfileID) {
+                        ForEach(model.environmentProfiles) { profile in
+                            Text(profile.name).tag(profile.id)
+                        }
+                    }
+                    .labelsHidden()
+                    .disabled(model.environmentProfiles.isEmpty)
+                    Button("Carregar") { onApplyEnvironmentProfile(model.selectedEnvironmentProfileID) }
+                        .disabled(model.selectedEnvironmentProfileID.isEmpty)
+                }
+                HStack(spacing: 6) {
+                    Button("Salvar") {
+                        guard let profile = model.environmentProfiles.first(where: { $0.id == model.selectedEnvironmentProfileID }) else { return }
+                        let saved = onSaveEnvironmentProfile(profile.name)
+                        model.environmentProfileStatus = saved ? "Perfil atualizado." : "Não foi possível salvar o perfil."
+                        model.environmentProfiles = onListEnvironmentProfiles()
+                    }
+                    .disabled(model.selectedEnvironmentProfileID.isEmpty)
+                    TextField("Novo perfil", text: $model.environmentProfileName)
+                        .textFieldStyle(.roundedBorder)
+                    Button("Criar") {
+                        let name = model.environmentProfileName.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !name.isEmpty else { return }
+                        let id = name.lowercased().replacingOccurrences(of: " ", with: "-")
+                        guard !model.environmentProfiles.contains(where: { $0.id == id }) else {
+                            model.environmentProfileStatus = "Esse perfil já existe. Selecione-o e use Salvar para atualizá-lo."
+                            return
+                        }
+                        if onSaveEnvironmentProfile(name) {
+                            model.environmentProfiles = onListEnvironmentProfiles()
+                            model.selectedEnvironmentProfileID = id
+                            model.environmentProfileName = ""
+                            model.environmentProfileStatus = "Perfil criado com o ambiente atual."
+                        } else {
+                            model.environmentProfileStatus = "Não foi possível criar o perfil."
+                        }
+                    }
+                    .disabled(model.environmentProfileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                if !model.environmentProfileStatus.isEmpty {
+                    Text(model.environmentProfileStatus).font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            .padding(7)
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
+        }
     }
 
     private var wallpaperSection: some View {

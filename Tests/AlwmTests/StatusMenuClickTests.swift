@@ -4,6 +4,12 @@ import Testing
 
 @Suite("Status menu pointer interaction", .serialized)
 struct StatusMenuClickTests {
+    @Test("menu viewport never exceeds a short screen and leaves room for its edges")
+    func smallScreenHeightIsCapped() {
+        #expect(StatusMenuLayout.maxHeight(visibleFrameHeight: 240) == 224)
+        #expect(StatusMenuLayout.maxHeight(visibleFrameHeight: 120) == 104)
+    }
+
     @Test("outside-click monitor uses the clicked location when the pointer has moved")
     @MainActor
     func outsideMonitorUsesEventLocation() async throws {

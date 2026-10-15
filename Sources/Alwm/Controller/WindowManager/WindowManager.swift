@@ -542,26 +542,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
             }
         }
         settingsUI.onApplyEnvironmentProfile = { [weak self] id in
-            guard let self else { return false }
-            do {
-                try self.environmentProfiles.activate(id: id) {
-                    try self.configStore.load()
-                }
-                self.configStore.replaceConfig(self.configStore.config)
-                self.runtimeState.load()
-                self.applyConfig(self.configStore.config)
-                PluginManager.shared.settings.load()
-                PluginManager.shared.reloadFromSettings()
-                _ = self.repairWorkspaceState()
-                self.runLayoutRecoveryIfNeeded(force: true, delay: 1.2)
-                self.refreshChrome()
-                return true
-            } catch {
-                try? self.configStore.load()
-                self.configStore.replaceConfig(self.configStore.config)
-                NSLog("ALWM: environment profile activation failed: %@", error.localizedDescription)
-                return false
-            }
+            self?.activateEnvironmentProfile(id: id) ?? false
         }
         settingsUI.windowActionHistoryProvider = { [weak self] in
             self?.windowActionHistory.entries ?? []

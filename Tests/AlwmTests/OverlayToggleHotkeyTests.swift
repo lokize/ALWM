@@ -66,6 +66,32 @@ struct OverlayToggleHotkeyTests {
         #expect(hotkeys.keyboardCaptureBindings == bindings)
     }
 
+    @Test("Option O opens the interactive overview while an overlay owns the keyboard")
+    @MainActor
+    func overviewHotkeyRemainsActiveDuringCapture() async throws {
+        let hotkeys = HotkeyManager()
+        let overviewBinding = try #require(AlwmConfig.defaultHotkeys.first { $0.action == "overview.toggle" })
+        #expect(overviewBinding.key.lowercased() == "o")
+        #expect(overviewBinding.modifiers.contains("option"))
+        hotkeys.configureBindings([overviewBinding])
+        hotkeys.setOverlayKeyboardCapture(true)
+        defer { hotkeys.unregisterAll() }
+
+        let actions = AsyncStream<String>.makeStream()
+        hotkeys.onAction = { actions.continuation.yield($0) }
+        let keyCode = UInt16(try #require(HotkeyManager.keyCode(for: "o")))
+        let event = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: .option,
+            timestamp: 1, windowNumber: 0, context: nil,
+            characters: "o", charactersIgnoringModifiers: "o",
+            isARepeat: false, keyCode: keyCode
+        ))
+
+        #expect(hotkeys.handleNSEvent(event))
+        var iterator = actions.stream.makeAsyncIterator()
+        #expect(await iterator.next() == "overview.toggle")
+    }
+
     @Test("persistent Notepad toggles open, hidden, and open without creating or discarding notes")
     @MainActor
     func persistentNotepadTogglesWithoutDataLoss() throws {

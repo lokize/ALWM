@@ -145,6 +145,23 @@ extension WindowManager {
                 $0.wallpaper.intervalSeconds = min(86400, max(1, intervalSeconds))
             }
         }
+        statusPopover.onListEnvironmentProfiles = { [weak self] in
+            self?.environmentProfiles.list() ?? []
+        }
+        statusPopover.onSaveEnvironmentProfile = { [weak self] name in
+            guard let self else { return false }
+            do {
+                _ = try self.environmentProfiles.save(name: name)
+                self.refreshStatusPopover()
+                return true
+            } catch {
+                NSLog("ALWM: environment profile save failed: %@", error.localizedDescription)
+                return false
+            }
+        }
+        statusPopover.onApplyEnvironmentProfile = { [weak self] id in
+            self?.activateEnvironmentProfile(id: id) ?? false
+        }
 
         refreshStatusItem()
     }
@@ -159,7 +176,8 @@ extension WindowManager {
             developerMode: settings.developerMode,
             version: AlwmVersion.installed,
             isRecording: capture.isRecording,
-            recentNotes: notepad.store.recentPreviews()
+            recentNotes: notepad.store.recentPreviews(),
+            environmentProfiles: environmentProfiles.list()
         )
     }
 

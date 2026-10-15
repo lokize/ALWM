@@ -10,8 +10,8 @@ public final class HotkeyManager: @unchecked Sendable {
     public var onAction: ((String) -> Void)?
     /// When true, swallow layout hotkeys but still allow overlay toggle actions.
     public var shouldDeferHotkeys: (() -> Bool)?
-    /// Overlay toggles remain configurable; workspace switches are additionally allowed while capture is active.
-    public var overlayToggleActions: Set<String> = ["quake.toggle", "notepad.toggle", "notepad.new"]
+    /// Overlay toggles and the workspace overview remain available while a panel owns keyboard focus.
+    public var overlayToggleActions: Set<String> = ["quake.toggle", "notepad.toggle", "notepad.new", "overview.toggle"]
 
     private func isAllowedWhileOverlayActive(_ action: String) -> Bool {
         overlayToggleActions.contains(action)

@@ -18,6 +18,52 @@ enum SavedSessionRestorePolicy {
 }
 
 extension WindowManager {
+    @discardableResult
+    func activateEnvironmentProfile(id: String) -> Bool {
+        do {
+            try environmentProfiles.activate(id: id) {
+                try configStore.load()
+            }
+            configStore.replaceConfig(configStore.config)
+            runtimeState.load()
+            applyConfig(configStore.config)
+            PluginManager.shared.settings.load()
+            PluginManager.shared.reloadFromSettings()
+
+            // The profile snapshot is active before recovery starts. This launches missing
+            // saved windows and then reapplies their workspace, monitor, and geometry mapping.
+            if AXTracker.isTrusted {
+                _ = repairWorkspaceState()
+            } else {
+                restoreSavedSessionApps()
+                let activeIDs = Set(workspaces.activeWorkspaceByMonitor.values)
+                for definition in configStore.config.workspaces where activeIDs.contains(definition.id) {
+                    for bundleID in definition.sessionApps where !isSessionAppRunning(bundleID) {
+                        openSessionApp(bundleID: bundleID)
+                    }
+                }
+            }
+            runLayoutRecoveryIfNeeded(force: true, delay: 1.2)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) { [weak self] in
+                guard let self, AXTracker.isTrusted else { return }
+                self.ax.scanAll()
+                self.ingest(windows: self.ax.currentWindows)
+                self.runLayoutRecovery(force: true)
+                self.forceRelayoutActiveWorkspaces()
+                self.refreshChrome()
+            }
+            refreshChrome()
+            refreshStatusItem()
+            return true
+        } catch {
+            try? configStore.load()
+            configStore.replaceConfig(configStore.config)
+            runtimeState.load()
+            NSLog("ALWM: environment profile activation failed: %@", error.localizedDescription)
+            return false
+        }
+    }
+
     /// Launch applications represented by saved open windows after the initial AX scan.
     /// NSWorkspace deduplicates processes; running apps are left to AX rematching.
     func restoreSavedSessionApps() {
