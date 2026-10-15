@@ -8,6 +8,7 @@ public final class StatusPopoverController {
     private let model = StatusMenuModel()
     private var hostingController: NSHostingController<StatusMenuView>?
     private var updateResizeCancellable: AnyCancellable?
+    private var contentHeightCancellable: AnyCancellable?
     private var wallpaperCancellable: AnyCancellable?
     private var wallpaperRotationCancellable: AnyCancellable?
     /// Survives workspace-bar re-renders so toggles don't dismiss the menu when the chip is rebuilt.
@@ -87,6 +88,13 @@ public final class StatusPopoverController {
                 self?.model.rotationStatus = status
             }
         updateResizeCancellable = AppUpdateService.shared.$phase
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self, self.popover.isShown else { return }
+                self.resizeToFit()
+            }
+        contentHeightCancellable = model.$contentHeight
+            .removeDuplicates { abs($0 - $1) < 1 }
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 guard let self, self.popover.isShown else { return }
@@ -284,11 +292,9 @@ public final class StatusPopoverController {
         var root = hosting.rootView
         root.menuWidth = width
         hosting.rootView = root
-        // Propose the screen cap so the content remains scrollable on short displays.
-        let ideal = hosting.sizeThatFits(in: NSSize(width: width, height: maxH))
         popover.contentSize = NSSize(
             width: width,
-            height: max(1, min(ceil(ideal.height), maxH))
+            height: StatusMenuLayout.viewportHeight(contentHeight: model.contentHeight, maximum: maxH)
         )
     }
 }
@@ -340,7 +346,12 @@ final class StatusMenuClickOutsideBridge: @unchecked Sendable {
 
 enum StatusMenuLayout {
     static func width(visibleFrameWidth: CGFloat) -> CGFloat {
-        max(1, min(460, floor(visibleFrameWidth - 24)))
+        max(1, min(620, floor(visibleFrameWidth - 32)))
+    }
+
+    static func viewportHeight(contentHeight: CGFloat, maximum: CGFloat) -> CGFloat {
+        guard contentHeight.isFinite, contentHeight > 0 else { return max(1, maximum) }
+        return max(1, min(ceil(contentHeight), maximum))
     }
 
     static var menuWidth: CGFloat {
@@ -365,8 +376,17 @@ enum StatusMenuLayout {
     }
 }
 
+private struct StatusMenuContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 @MainActor
 final class StatusMenuModel: ObservableObject {
+    @Published var contentHeight: CGFloat = 0
     @Published var focusFollowsMouse = false
     @Published var bordersEnabled = true
     @Published var workspaceBarEnabled = true
@@ -445,68 +465,82 @@ struct StatusMenuView: View {
                     }
                 }
 
-                wallpaperSection
-
-                environmentProfileSection
-
-                sectionBlock(title: L10n.t("menu.tools")) {
-                    if !model.recentNotes.isEmpty {
-                        Text(L10n.t("menu.notepad.recent"))
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 4)
-                            .padding(.bottom, 1)
-
-                        LazyVGrid(
-                            columns: [
-                                GridItem(.flexible(), spacing: 6),
-                                GridItem(.flexible(), spacing: 6)
-                            ],
-                            spacing: 5
-                        ) {
-                            ForEach(model.recentNotes.prefix(4)) { note in
-                                notePreviewCard(note)
-                            }
-                        }
-                        .padding(.bottom, 4)
+                HStack(alignment: .top, spacing: 8) {
+                    VStack(alignment: .leading, spacing: StatusMenuTheme.sectionGap) {
+                        wallpaperSection
+                        environmentProfileSection
                     }
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
 
-                    LazyVGrid(
-                        columns: [
-                            GridItem(.flexible(), spacing: 4),
-                            GridItem(.flexible(), spacing: 4)
-                        ],
-                        spacing: 1
-                    ) {
-                        actionRow(title: L10n.t("menu.command_palette"), systemImage: "command", action: onPalette)
-                        actionRow(title: L10n.t("menu.quake"), systemImage: "terminal", action: onQuake)
-                        actionRow(title: L10n.t("menu.color_palette"), systemImage: "paintpalette", action: onColorPalette)
-                        actionRow(title: L10n.t("menu.notepad"), systemImage: "note.text", action: onNotepad)
-                        actionRow(title: L10n.t("menu.capture.region"), systemImage: "crop", action: onCaptureRegion)
-                        actionRow(title: L10n.t("menu.capture.display"), systemImage: "rectangle.dashed", action: onCaptureDisplay)
-                        actionRow(title: "Visão geral", systemImage: "rectangle.3.group", action: onOverview)
-                        actionRow(title: "Desfazer janela", systemImage: "arrow.uturn.backward", action: onUndo)
-                        actionRow(
-                            title: model.isRecording ? L10n.t("menu.capture.record_stop") : L10n.t("menu.capture.record"),
-                            systemImage: model.isRecording ? "stop.circle.fill" : "record.circle",
-                            action: onCaptureRecordToggle
-                        )
-                        actionRow(title: L10n.t("menu.relayout"), systemImage: "rectangle.split.3x1", action: onRelayout)
+                    VStack(alignment: .leading, spacing: StatusMenuTheme.sectionGap) {
+                        toolsSection
+                        supportSection
+                        quitButton
                     }
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
-
-                supportSection
-
-                quitButton
             }
             .padding(8)
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(key: StatusMenuContentHeightKey.self, value: proxy.size.height)
+                }
+            }
         }
-        .frame(width: menuWidth)
-        // Keep the scroll viewport inside the screen even when the menu content is taller.
-        .frame(maxHeight: maxH, alignment: .top)
+        .frame(width: menuWidth, height: viewportHeight(maxHeight: maxH), alignment: .top)
         .fixedSize(horizontal: true, vertical: false)
         .background(Color(nsColor: .windowBackgroundColor).opacity(0.92))
+        .onPreferenceChange(StatusMenuContentHeightKey.self) { height in
+            guard height.isFinite, height > 0, abs(model.contentHeight - height) >= 1 else { return }
+            model.contentHeight = height
+        }
         .alwmLocalized()
+    }
+
+    private func viewportHeight(maxHeight: CGFloat) -> CGFloat {
+        StatusMenuLayout.viewportHeight(contentHeight: model.contentHeight, maximum: maxHeight)
+    }
+
+    private var toolsSection: some View {
+        sectionBlock(title: L10n.t("menu.tools")) {
+            if !model.recentNotes.isEmpty {
+                Text(L10n.t("menu.notepad.recent"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 4)
+                    .padding(.bottom, 1)
+
+                LazyVGrid(
+                    columns: [GridItem(.flexible(), spacing: 5), GridItem(.flexible(), spacing: 5)],
+                    spacing: 4
+                ) {
+                    ForEach(model.recentNotes.prefix(4)) { note in
+                        notePreviewCard(note)
+                    }
+                }
+                .padding(.bottom, 3)
+            }
+
+            LazyVGrid(
+                columns: [GridItem(.flexible(), spacing: 3), GridItem(.flexible(), spacing: 3)],
+                spacing: 0
+            ) {
+                actionRow(title: L10n.t("menu.command_palette"), systemImage: "command", action: onPalette)
+                actionRow(title: L10n.t("menu.quake"), systemImage: "terminal", action: onQuake)
+                actionRow(title: L10n.t("menu.color_palette"), systemImage: "paintpalette", action: onColorPalette)
+                actionRow(title: L10n.t("menu.notepad"), systemImage: "note.text", action: onNotepad)
+                actionRow(title: L10n.t("menu.capture.region"), systemImage: "crop", action: onCaptureRegion)
+                actionRow(title: L10n.t("menu.capture.display"), systemImage: "rectangle.dashed", action: onCaptureDisplay)
+                actionRow(title: "Visão geral", systemImage: "rectangle.3.group", action: onOverview)
+                actionRow(title: "Desfazer janela", systemImage: "arrow.uturn.backward", action: onUndo)
+                actionRow(
+                    title: model.isRecording ? L10n.t("menu.capture.record_stop") : L10n.t("menu.capture.record"),
+                    systemImage: model.isRecording ? "stop.circle.fill" : "record.circle",
+                    action: onCaptureRecordToggle
+                )
+                actionRow(title: L10n.t("menu.relayout"), systemImage: "rectangle.split.3x1", action: onRelayout)
+            }
+        }
     }
 
     private var environmentProfileSection: some View {

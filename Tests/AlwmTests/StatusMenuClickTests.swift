@@ -12,9 +12,16 @@ struct StatusMenuClickTests {
 
     @Test("menu width expands while preserving safe margins on narrow displays")
     func menuWidthAdaptsToDisplay() {
-        #expect(StatusMenuLayout.width(visibleFrameWidth: 1920) == 460)
-        #expect(StatusMenuLayout.width(visibleFrameWidth: 800) == 460)
-        #expect(StatusMenuLayout.width(visibleFrameWidth: 400) == 376)
+        #expect(StatusMenuLayout.width(visibleFrameWidth: 1920) == 620)
+        #expect(StatusMenuLayout.width(visibleFrameWidth: 800) == 620)
+        #expect(StatusMenuLayout.width(visibleFrameWidth: 400) == 368)
+    }
+
+    @Test("menu height hugs its content and only scrolls when content exceeds the screen")
+    func viewportHeightHugsContent() {
+        #expect(StatusMenuLayout.viewportHeight(contentHeight: 760, maximum: 1200) == 760)
+        #expect(StatusMenuLayout.viewportHeight(contentHeight: 1400, maximum: 1200) == 1200)
+        #expect(StatusMenuLayout.viewportHeight(contentHeight: 0, maximum: 1200) == 1200)
     }
 
     @Test("outside-click monitor uses the clicked location when the pointer has moved")
