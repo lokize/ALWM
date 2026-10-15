@@ -225,6 +225,27 @@ struct WallpaperSettingsTests {
         #expect(selection.upcoming == files[1])
     }
 
+    @Test("wallpaper previous follows history and next replays forward history")
+    func wallpaperPreviousAndNextHistory() {
+        let files = ["a.jpg", "b.jpg", "c.jpg"].map { URL(fileURLWithPath: "/wallpapers/\($0)") }
+        var history = WallpaperNavigationHistory()
+        history.recordAdvance(from: nil, to: files[0])
+        history.recordAdvance(from: files[0], to: files[1])
+        history.recordAdvance(from: files[1], to: files[2])
+
+        #expect(history.moveBackward(from: files[2]) == files[1])
+        #expect(history.forward == [files[2]])
+        #expect(history.moveBackward(from: files[1]) == files[0])
+        #expect(history.forward == [files[2], files[1]])
+
+        let replay = history.forward.last
+        #expect(replay == files[1])
+        history.recordAdvance(from: files[0], to: files[1])
+        #expect(history.forward == [files[2]])
+        #expect(history.backward == [files[0]])
+        #expect(history.moveBackward(from: files[1]) == files[0])
+    }
+
     @Test("monitor overrides fall back to the shared wallpaper directory")
     func monitorDirectories() {
         var settings = WallpaperSettings.default

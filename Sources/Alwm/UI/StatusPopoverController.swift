@@ -12,6 +12,7 @@ public final class StatusPopoverController {
     private var wallpaperCancellable: AnyCancellable?
     private var upcomingWallpaperCancellable: AnyCancellable?
     private var wallpaperRotationCancellable: AnyCancellable?
+    private var wallpaperHistoryCancellable: AnyCancellable?
     /// Survives workspace-bar re-renders so toggles don't dismiss the menu when the chip is rebuilt.
     private let anchorWindow: NSWindow
     private let anchorView: NSView
@@ -40,6 +41,7 @@ public final class StatusPopoverController {
     public var onColorPalette: (() -> Void)?
     public var onQuit: (() -> Void)?
     public var onNextWallpaper: (() -> Void)?
+    public var onPreviousWallpaper: (() -> Void)?
     public var onWallpaperRotationChange: ((Bool, Double, WallpaperIntervalUnit) -> Void)?
     public var onListEnvironmentProfiles: (() -> [EnvironmentProfileSummary])?
     public var onSaveEnvironmentProfile: ((String) -> Bool)?
@@ -94,6 +96,11 @@ public final class StatusPopoverController {
             .receive(on: RunLoop.main)
             .sink { [weak self] status in
                 self?.model.rotationStatus = status
+            }
+        wallpaperHistoryCancellable = WallpaperController.shared.$canGoToPreviousWallpaper
+            .receive(on: RunLoop.main)
+            .sink { [weak self] canGoBack in
+                self?.model.canGoToPreviousWallpaper = canGoBack
             }
         updateResizeCancellable = AppUpdateService.shared.$phase
             .receive(on: RunLoop.main)
@@ -273,6 +280,7 @@ public final class StatusPopoverController {
             onUndo: { [weak self] in self?.close(); self?.onUndo?() },
             onColorPalette: { [weak self] in self?.close(); self?.onColorPalette?() },
             onNextWallpaper: { [weak self] in self?.onNextWallpaper?() },
+            onPreviousWallpaper: { [weak self] in self?.onPreviousWallpaper?() },
             onWallpaperRotationChange: { [weak self] enabled, value, unit in
                 self?.onWallpaperRotationChange?(enabled, value, unit)
             },
@@ -405,6 +413,7 @@ final class StatusMenuModel: ObservableObject {
     @Published var recentNotes: [NotePreview] = []
     @Published var activeWallpaper: WallpaperNotificationContent.Payload?
     @Published var upcomingWallpaper: WallpaperNotificationContent.Payload?
+    @Published var canGoToPreviousWallpaper = false
     @Published var rotationStatus = WallpaperController.shared.rotationStatus
     @Published var environmentProfiles: [EnvironmentProfileSummary] = []
     @Published var selectedEnvironmentProfileID = ""
@@ -445,6 +454,7 @@ struct StatusMenuView: View {
     var onUndo: () -> Void
     var onColorPalette: () -> Void
     var onNextWallpaper: () -> Void
+    var onPreviousWallpaper: () -> Void
     var onWallpaperRotationChange: (Bool, Double, WallpaperIntervalUnit) -> Void
     var onListEnvironmentProfiles: () -> [EnvironmentProfileSummary]
     var onSaveEnvironmentProfile: (String) -> Bool
@@ -638,16 +648,6 @@ struct StatusMenuView: View {
                         }
                     }
                     Spacer(minLength: 2)
-                    Button(action: onNextWallpaper) {
-                        Label("Próximo", systemImage: "forward.end.fill")
-                            .font(.system(size: 10, weight: .semibold))
-                            .labelStyle(.titleAndIcon)
-                            .lineLimit(1)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(model.activeWallpaper == nil)
-                    .help("Passar para o próximo papel de parede")
                 }
 
                 if let wallpaper = model.upcomingWallpaper {
@@ -726,6 +726,28 @@ struct StatusMenuView: View {
                 Text(rotationCountdownText)
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.secondary)
+
+                HStack(spacing: 6) {
+                    Button(action: onPreviousWallpaper) {
+                        Label("Anterior", systemImage: "backward.end.fill")
+                            .font(.system(size: 10, weight: .semibold))
+                            .lineLimit(1)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!model.canGoToPreviousWallpaper)
+                    .help("Voltar ao papel de parede anterior")
+
+                    Button(action: onNextWallpaper) {
+                        Label("Próximo", systemImage: "forward.end.fill")
+                            .font(.system(size: 10, weight: .semibold))
+                            .lineLimit(1)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(model.activeWallpaper == nil)
+                    .help("Passar para o próximo papel de parede")
+                }
             }
             .padding(6)
             .frame(maxWidth: .infinity, alignment: .leading)

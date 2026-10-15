@@ -138,6 +138,9 @@ extension WindowManager {
         statusPopover.onNextWallpaper = {
             WallpaperController.shared.advance()
         }
+        statusPopover.onPreviousWallpaper = {
+            WallpaperController.shared.retreat()
+        }
         statusPopover.onWallpaperRotationChange = { [weak self] enabled, intervalSeconds, unit in
             self?.mutateSettings {
                 $0.wallpaper.rotationEnabled = enabled

@@ -143,6 +143,28 @@ enum WallpaperActiveSelection {
     }
 }
 
+struct WallpaperNavigationHistory: Equatable {
+    private(set) var backward: [URL] = []
+    private(set) var forward: [URL] = []
+
+    mutating func recordAdvance(from current: URL?, to selected: URL) {
+        guard let current, current != selected else { return }
+        if forward.last == selected {
+            backward.append(current)
+            forward.removeLast()
+        } else {
+            backward.append(current)
+            forward.removeAll()
+        }
+    }
+
+    mutating func moveBackward(from current: URL?) -> URL? {
+        guard let previous = backward.popLast() else { return nil }
+        if let current, current != previous { forward.append(current) }
+        return previous
+    }
+}
+
 @MainActor
 final class WallpaperController: ObservableObject {
     static let shared = WallpaperController()
@@ -192,9 +214,11 @@ final class WallpaperController: ObservableObject {
     private var videoSessions: [CGDirectDisplayID: VideoSession] = [:]
     private var previousByScreen: [String: URL] = [:]
     private var pendingByScreen: [String: URL] = [:]
+    private var historyByScreen: [String: WallpaperNavigationHistory] = [:]
     private var observers: [NSObjectProtocol] = []
     @Published private(set) var activeWallpaper: WallpaperNotificationContent.Payload?
     @Published private(set) var upcomingWallpaper: WallpaperNotificationContent.Payload?
+    @Published private(set) var canGoToPreviousWallpaper = false
     @Published private(set) var rotationStatus = WallpaperRotationStatus(
         rotationEnabled: WallpaperSettings.default.rotationEnabled,
         intervalSeconds: WallpaperSettings.default.intervalSeconds,
@@ -248,6 +272,7 @@ final class WallpaperController: ObservableObject {
         }
         if shouldAdvance {
             pendingByScreen.removeAll()
+            historyByScreen.removeAll()
             advance(resetRotationTimer: false)
         } else if muteChanged {
             videoSessions.values.forEach { $0.setMuted(next.videoMuted) }
@@ -279,10 +304,11 @@ final class WallpaperController: ObservableObject {
                 let key = String(id)
                 let directory = WallpaperCatalog.directory(settings: settings, displayID: id)
                 let files = WallpaperCatalog.files(in: directory, recursive: settings.recursive)
+                var history = historyByScreen[key, default: WallpaperNavigationHistory()]
                 let selection = WallpaperCatalog.selectAndPreview(
                     from: files,
                     after: previousByScreen[key],
-                    pending: pendingByScreen[key],
+                    pending: history.forward.last ?? pendingByScreen[key],
                     order: settings.order
                 )
                 guard let url = selection.selected else {
@@ -290,8 +316,10 @@ final class WallpaperController: ObservableObject {
                     continue
                 }
                 let changed = previousByScreen[key] != url
+                history.recordAdvance(from: previousByScreen[key], to: url)
+                historyByScreen[key] = history
                 previousByScreen[key] = url
-                if let upcoming = selection.upcoming {
+                if let upcoming = history.forward.last ?? selection.upcoming {
                     pendingByScreen[key] = upcoming
                     upcomingWallpapers[id] = notificationContent(for: upcoming, in: directory)
                 } else {
@@ -314,10 +342,11 @@ final class WallpaperController: ObservableObject {
             WallpaperToastController.shared.show(changedWallpapers)
         } else {
             let files = WallpaperCatalog.files(in: settings.directory, recursive: settings.recursive)
+            var history = historyByScreen["all", default: WallpaperNavigationHistory()]
             let selection = WallpaperCatalog.selectAndPreview(
                 from: files,
                 after: previousByScreen["all"],
-                pending: pendingByScreen["all"],
+                pending: history.forward.last ?? pendingByScreen["all"],
                 order: settings.order
             )
             guard let url = selection.selected else {
@@ -326,9 +355,12 @@ final class WallpaperController: ObservableObject {
                 return
             }
             let changed = previousByScreen["all"] != url
+            history.recordAdvance(from: previousByScreen["all"], to: url)
+            historyByScreen["all"] = history
             previousByScreen["all"] = url
-            pendingByScreen["all"] = selection.upcoming
-            upcomingWallpaper = selection.upcoming.map {
+            let upcoming = history.forward.last ?? selection.upcoming
+            pendingByScreen["all"] = upcoming
+            upcomingWallpaper = upcoming.map {
                 notificationContent(for: $0, in: settings.directory)
             }
             var didApply = false
@@ -342,6 +374,62 @@ final class WallpaperController: ObservableObject {
                 WallpaperToastController.shared.show([notificationContent(for: url, in: settings.directory)])
             }
         }
+        updatePreviousAvailability()
+    }
+
+    func retreat() {
+        guard settings.enabled else { return }
+        defer { scheduleRotation() }
+        let screens = NSScreen.screens
+        guard !screens.isEmpty else { return }
+        if settings.separatePerMonitor {
+            var active: [CGDirectDisplayID: WallpaperNotificationContent.Payload] = [:]
+            var upcoming: [CGDirectDisplayID: WallpaperNotificationContent.Payload] = [:]
+            var changed: [WallpaperNotificationContent.Payload] = []
+            for screen in screens {
+                let id = Self.displayID(of: screen)
+                let key = String(id)
+                let directory = WallpaperCatalog.directory(settings: settings, displayID: id)
+                var history = historyByScreen[key, default: WallpaperNavigationHistory()]
+                guard let url = history.moveBackward(from: previousByScreen[key]) else { continue }
+                historyByScreen[key] = history
+                previousByScreen[key] = url
+                pendingByScreen[key] = history.forward.last
+                guard show(url, on: screen, id: id) else { continue }
+                let payload = notificationContent(for: url, in: directory)
+                active[id] = payload
+                changed.append(payload)
+                if let next = history.forward.last {
+                    upcoming[id] = notificationContent(for: next, in: directory)
+                }
+            }
+            activeWallpaper = WallpaperActiveSelection.preferred(from: active, primaryDisplayID: CGMainDisplayID())
+            upcomingWallpaper = WallpaperActiveSelection.preferred(from: upcoming, primaryDisplayID: CGMainDisplayID())
+            WallpaperToastController.shared.show(changed)
+        } else {
+            var history = historyByScreen["all", default: WallpaperNavigationHistory()]
+            guard let url = history.moveBackward(from: previousByScreen["all"]) else { return }
+            historyByScreen["all"] = history
+            previousByScreen["all"] = url
+            pendingByScreen["all"] = history.forward.last
+            var didApply = false
+            for screen in screens {
+                didApply = show(url, on: screen, id: Self.displayID(of: screen)) || didApply
+            }
+            if didApply {
+                activeWallpaper = notificationContent(for: url, in: settings.directory)
+                upcomingWallpaper = history.forward.last.map {
+                    notificationContent(for: $0, in: settings.directory)
+                }
+                WallpaperToastController.shared.show([activeWallpaper].compactMap { $0 })
+            }
+        }
+        updatePreviousAvailability()
+    }
+
+    private func updatePreviousAvailability() {
+        let key = settings.separatePerMonitor ? String(CGMainDisplayID()) : "all"
+        canGoToPreviousWallpaper = !(historyByScreen[key]?.backward.isEmpty ?? true)
     }
 
     private func scheduleRotation() {
@@ -423,8 +511,10 @@ final class WallpaperController: ObservableObject {
         settings = .default
         previousByScreen.removeAll()
         pendingByScreen.removeAll()
+        historyByScreen.removeAll()
         activeWallpaper = nil
         upcomingWallpaper = nil
+        canGoToPreviousWallpaper = false
         updateRotationStatus()
     }
 
