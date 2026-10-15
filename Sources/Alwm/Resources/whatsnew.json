@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.8.2",
+      "items": [
+        "Separate recent notes and tools cards"
+      ]
+    },
+    {
       "version": "1.8.1",
       "items": [
         "Move the Tools heading into its card"
@@ -250,12 +256,6 @@
       "version": "1.4.3",
       "items": [
         "Fix outside-click capture coordinates for overlays"
-      ]
-    },
-    {
-      "version": "1.4.2",
-      "items": [
-        "Allow workspace switching with Notepad or Quake open"
       ]
     }
   ]
