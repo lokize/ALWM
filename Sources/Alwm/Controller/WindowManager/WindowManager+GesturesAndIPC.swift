@@ -370,7 +370,8 @@ extension WindowManager {
                 return IPCResponse(id: request.id, ok: true, message: "resize \(dir)")
             }
         case "overview":
-            return IPCResponse(id: request.id, ok: false, message: "overview removido")
+            handleAction("overview.toggle")
+            return IPCResponse(id: request.id, ok: true, message: "overview toggled")
         case "quake":
             handleAction("quake.toggle")
             return IPCResponse(id: request.id, ok: true, message: "quake toggled")
@@ -442,6 +443,30 @@ extension WindowManager {
     }
 
     public func handleAction(_ action: String) {
+        if action == "undo.last" {
+            undoLastWindowAction()
+            return
+        }
+        if action == "overview.toggle" {
+            toggleOverview()
+            return
+        }
+        let historyKind: WindowActionKind? = {
+            if action.hasPrefix("resize.") { return .resize }
+            if ["move.left", "move.right", "move.up", "move.down"].contains(action) { return .move }
+            return nil
+        }()
+        let historyBefore = historyKind == nil ? nil : runtimeState.snapshot
+        defer {
+            if let historyKind, let historyBefore {
+                windowActionHistory.append(WindowActionHistoryEntry(
+                    kind: historyKind,
+                    summary: "\(action) on workspace \(workspaces.activeWorkspaceByMonitor[primaryMonitorID] ?? "?")",
+                    before: historyBefore,
+                    after: runtimeState.snapshot
+                ))
+            }
+        }
         let isFocusAction = action.hasPrefix("focus.")
         let isTileGeometryAction = [
             "move.left", "move.right", "move.up", "move.down",
@@ -612,8 +637,8 @@ extension WindowManager {
             dumpRuntimeState()
             return
         case "relayout":
-            forceRelayoutActiveWorkspaces()
-            refreshChrome()
+            let report = repairWorkspaceState()
+            showRepairSummary(report)
             return
         default:
             if action.hasPrefix("notepad.open.") {

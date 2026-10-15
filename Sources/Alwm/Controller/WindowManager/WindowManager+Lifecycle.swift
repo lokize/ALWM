@@ -126,6 +126,8 @@ extension WindowManager {
         statusPopover.onCaptureDisplay = { [weak self] in self?.handleAction("capture.display") }
         statusPopover.onCaptureRecordToggle = { [weak self] in self?.handleAction("capture.record.toggle") }
         statusPopover.onRelayout = { [weak self] in self?.handleAction("relayout") }
+        statusPopover.onOverview = { [weak self] in self?.handleAction("overview.toggle") }
+        statusPopover.onUndo = { [weak self] in self?.handleAction("undo.last") }
         statusPopover.onColorPalette = { [weak self] in
             self?.colorPalette.toggle(relativeTo: self?.statusItem?.button)
         }

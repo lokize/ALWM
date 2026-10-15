@@ -789,7 +789,18 @@ extension WindowManager {
             refreshChrome()
             return
         }
+        let before = runtimeState.snapshot
+        let window = windowsByID[id]
+        let home = authoritativeHome(for: id) ?? workspaces.workspaceID(containing: id)
         guard ax.closeWindow(id) else { return }
+        windowActionHistory.append(WindowActionHistoryEntry(
+            kind: .close,
+            summary: "Closed \(window?.appName ?? "window")",
+            targetBundleID: window?.bundleID,
+            targetWorkspaceID: home,
+            before: before,
+            after: runtimeState.snapshot
+        ))
         // AXPress can succeed while the app presents a Save/Cancel dialog.
         // Do not delete state or terminate the app until AX confirms destruction.
     }

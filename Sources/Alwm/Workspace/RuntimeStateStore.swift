@@ -193,6 +193,11 @@ public final class RuntimeStateStore: @unchecked Sendable {
         try? FileManager.default.removeItem(at: url)
     }
 
+    public func replaceSnapshot(_ snapshot: Snapshot, persist: Bool = true) {
+        self.snapshot = snapshot
+        if persist { save() }
+    }
+
     public func assignment(for window: WindowID) -> String? {
         snapshot.windowWorkspace[window.token]
     }

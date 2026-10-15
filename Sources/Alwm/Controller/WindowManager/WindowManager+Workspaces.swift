@@ -42,6 +42,16 @@ extension WindowManager {
             refreshChrome()
             return
         }
+        let historyBefore = runtimeState.snapshot
+        defer {
+            windowActionHistory.append(WindowActionHistoryEntry(
+                kind: .workspaceChange,
+                summary: "Workspace \(current ?? "?") → \(id)",
+                before: historyBefore,
+                after: runtimeState.snapshot
+            ))
+            rememberCurrentDisplayTopology()
+        }
 
         // Prevent AX focus / ingest / geometry loops during the switch.
         suppressWorkspaceFollowUntil = Date().addingTimeInterval(2.5)
@@ -978,6 +988,21 @@ extension WindowManager {
     }
 
     func moveWindow(requestedID: WindowID, to workspaceID: String, follow: Bool = false) {
+        let before = runtimeState.snapshot
+        let from = windowWorkspace[requestedID] ?? runtimeState.assignment(for: requestedID)
+        performMoveWindow(requestedID: requestedID, to: workspaceID, follow: follow)
+        let after = runtimeState.snapshot
+        windowActionHistory.append(WindowActionHistoryEntry(
+            kind: .move,
+            summary: "Window \(requestedID.token) moved to workspace \(workspaceID)",
+            targetBundleID: windowsByID[requestedID]?.bundleID,
+            targetWorkspaceID: from,
+            before: before,
+            after: after
+        ))
+    }
+
+    func performMoveWindow(requestedID: WindowID, to workspaceID: String, follow: Bool = false) {
         guard workspaces.workspaces[workspaceID] != nil else { return }
         let fromHint = windowWorkspace[requestedID]
             ?? runtimeState.assignment(for: requestedID)

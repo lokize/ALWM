@@ -17,7 +17,15 @@ struct ColumnWidthRestore {
 public final class WindowManager: NSObject, AXTrackerDelegate {
     public let configStore = ConfigStore()
 
+    public let environmentProfiles = EnvironmentProfileStore()
+
+    public let displayTopologyProfiles = DisplayTopologyProfileStore()
+
+    public let windowActionHistory = WindowActionHistory()
+
     public let monitors: MonitorStore
+
+    var lastTopologyMonitors: [MonitorInfo] = []
 
     public let workspaces = WorkspaceStore()
 
@@ -270,13 +278,32 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         monitors.startObserving()
         monitors.onChange = { [weak self] in
             Task { @MainActor in
-                self?.syncWorkspacesToMonitors()
-                self?.relayout(animated: false)
-                self?.refreshChrome()
+                guard let self else { return }
+                if !self.lastTopologyMonitors.isEmpty {
+                    self.displayTopologyProfiles.remember(
+                        monitors: self.lastTopologyMonitors,
+                        activeWorkspaceByMonitor: self.workspaces.activeWorkspaceByMonitor,
+                        logicalIndexByMonitor: self.workspaces.logicalMonitorIndices(for: self.lastTopologyMonitors)
+                    )
+                }
+                let topologyChanged = DisplayTopologyProfileStore.signature(for: self.lastTopologyMonitors)
+                    != DisplayTopologyProfileStore.signature(for: self.monitors.monitors)
+                let restored = topologyChanged
+                    && self.displayTopologyProfiles.restore(self.monitors.monitors, into: self.runtimeState)
+                self.syncWorkspacesToMonitors()
+                if restored { self.restorePersistedWorkspaces() }
+                self.lastTopologyMonitors = self.monitors.monitors
+                self.rememberCurrentDisplayTopology()
+                self.relayout(animated: false)
+                if topologyChanged { self.runLayoutRecoveryIfNeeded(force: true, delay: 0.6) }
+                self.refreshChrome()
             }
         }
+        _ = displayTopologyProfiles.restore(monitors.monitors, into: runtimeState)
         syncWorkspacesToMonitors()
         restorePersistedWorkspaces()
+        lastTopologyMonitors = monitors.monitors
+        rememberCurrentDisplayTopology()
         loadStickyAssignmentsFromDisk()
 
         // Grace BEFORE first ingest — mass AX delivery must rematch from disk, not snap to MSI/WS1.
@@ -429,6 +456,21 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
                 self.switchWorkspace(id: workspaceID, on: self.primaryMonitorID)
             }
         }
+        overview.onMoveWindow = { [weak self] windowID, workspaceID in
+            Task { @MainActor in self?.overviewMoveWindow(windowID, to: workspaceID) }
+        }
+        overview.onCloseWindow = { [weak self] windowID in
+            Task { @MainActor in self?.overviewCloseWindow(windowID) }
+        }
+        overview.onLaunchApp = { [weak self] bundleID, workspaceID in
+            Task { @MainActor in self?.overviewLaunchApp(bundleID: bundleID, workspaceID: workspaceID) }
+        }
+        overview.onReorderColumn = { [weak self] workspaceID, from, to in
+            Task { @MainActor in self?.overviewReorderColumn(workspaceID, from: from, to: to) }
+        }
+        overview.onMoveWindowToColumn = { [weak self] windowID, workspaceID, columnIndex in
+            Task { @MainActor in self?.overviewMoveWindow(windowID, to: workspaceID, columnIndex: columnIndex) }
+        }
         quake.onNeedRescan = { [weak self] in
             self?.ax.scanAll()
         }
@@ -479,6 +521,53 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         }
         settingsUI.onResetRuntime = { [weak self] in
             self?.resetRuntimeState()
+        }
+        settingsUI.onDiagnoseWindows = { [weak self] in
+            self?.diagnoseWorkspaceState()
+                ?? WorkspaceDiagnosticReport(scanComplete: false, windowCount: 0, issues: [])
+        }
+        settingsUI.onRepairWindows = { [weak self] in
+            self?.repairWorkspaceState()
+                ?? WorkspaceDiagnosticReport(scanComplete: false, windowCount: 0, issues: [])
+        }
+        settingsUI.environmentProfilesProvider = { [weak self] in self?.environmentProfiles.list() ?? [] }
+        settingsUI.onSaveEnvironmentProfile = { [weak self] name in
+            guard let self else { return false }
+            do {
+                _ = try self.environmentProfiles.save(name: name)
+                return true
+            } catch {
+                NSLog("ALWM: environment profile save failed: %@", error.localizedDescription)
+                return false
+            }
+        }
+        settingsUI.onApplyEnvironmentProfile = { [weak self] id in
+            guard let self else { return false }
+            do {
+                try self.environmentProfiles.activate(id: id) {
+                    try self.configStore.load()
+                }
+                self.configStore.replaceConfig(self.configStore.config)
+                self.runtimeState.load()
+                self.applyConfig(self.configStore.config)
+                PluginManager.shared.settings.load()
+                PluginManager.shared.reloadFromSettings()
+                _ = self.repairWorkspaceState()
+                self.runLayoutRecoveryIfNeeded(force: true, delay: 1.2)
+                self.refreshChrome()
+                return true
+            } catch {
+                try? self.configStore.load()
+                self.configStore.replaceConfig(self.configStore.config)
+                NSLog("ALWM: environment profile activation failed: %@", error.localizedDescription)
+                return false
+            }
+        }
+        settingsUI.windowActionHistoryProvider = { [weak self] in
+            self?.windowActionHistory.entries ?? []
+        }
+        settingsUI.onUndoWindowAction = { [weak self] in
+            _ = self?.undoLastWindowAction()
         }
         settingsUI.onRerunOnboarding = { [weak self] in
             self?.showPermissionsHelp()
@@ -707,6 +796,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
 /// NSEvent monitors without capturing MainActor self.
 final class AppKitEventMonitorBridge: @unchecked Sendable {
     let handler: @MainActor () -> Void
+    private let deliveryGate = EventMonitorCoalescingGate()
 
     init(handler: @escaping @MainActor () -> Void) {
         self.handler = handler
@@ -714,8 +804,10 @@ final class AppKitEventMonitorBridge: @unchecked Sendable {
 
     func installGlobal(matching mask: NSEvent.EventTypeMask) -> Any? {
         NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] _ in
-            guard let self else { return }
-            Task { @MainActor in
+            guard let self, self.deliveryGate.claim() else { return }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                defer { self.deliveryGate.release() }
                 self.handler()
             }
         }
@@ -723,12 +815,33 @@ final class AppKitEventMonitorBridge: @unchecked Sendable {
 
     func installLocal(matching mask: NSEvent.EventTypeMask) -> Any? {
         NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
-            guard let self else { return event }
-            Task { @MainActor in
+            guard let self, self.deliveryGate.claim() else { return event }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                defer { self.deliveryGate.release() }
                 self.handler()
             }
             return event
         }
+    }
+}
+
+final class EventMonitorCoalescingGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isPending = false
+
+    func claim() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !isPending else { return false }
+        isPending = true
+        return true
+    }
+
+    func release() {
+        lock.lock()
+        isPending = false
+        lock.unlock()
     }
 }
 

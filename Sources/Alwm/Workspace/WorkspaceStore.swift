@@ -8,12 +8,15 @@ public struct MonitorInfo: Equatable, Sendable {
     /// Area free of the menu bar / dock — use this for tiling usable area.
     public var visibleFrame: Rect
     public var name: String
+    /// Stable physical-display identity; unlike `id`, this survives many dock reconnects.
+    public var stableIdentity: String
 
-    public init(id: CGDirectDisplayID, frame: Rect, visibleFrame: Rect, name: String) {
+    public init(id: CGDirectDisplayID, frame: Rect, visibleFrame: Rect, name: String, stableIdentity: String? = nil) {
         self.id = id
         self.frame = frame
         self.visibleFrame = visibleFrame
         self.name = name
+        self.stableIdentity = stableIdentity ?? "display-\(id)"
     }
 
     /// Layout canvas: visible area (menu bar / dock already excluded).
@@ -29,6 +32,7 @@ public final class MonitorStore: @unchecked Sendable {
 
     public func refresh() {
         var result: [MonitorInfo] = []
+        var identityOccurrence: [String: Int] = [:]
         for screen in NSScreen.screens {
             let num = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
             let id = CGDirectDisplayID(num?.uint32Value ?? 0)
@@ -41,17 +45,33 @@ public final class MonitorStore: @unchecked Sendable {
                     height: f.height
                 )
             }
+            let identity = Self.stableDisplayIdentity(id: id, name: screen.localizedName, frame: screen.frame)
+            let occurrence = identityOccurrence[identity, default: 0]
+            identityOccurrence[identity] = occurrence + 1
             result.append(
                 MonitorInfo(
                     id: id,
                     frame: axRect(screen.frame),
                     visibleFrame: axRect(screen.visibleFrame),
-                    name: screen.localizedName
+                    name: screen.localizedName,
+                    stableIdentity: "\(identity)#\(occurrence)"
                 )
             )
         }
         monitors = result
         onChange?()
+    }
+
+    private static func stableDisplayIdentity(id: CGDirectDisplayID, name: String, frame: NSRect) -> String {
+        let vendor = CGDisplayVendorNumber(id)
+        let model = CGDisplayModelNumber(id)
+        let serial = CGDisplaySerialNumber(id)
+        if serial != 0 {
+            return "display:\(vendor):\(model):\(serial)"
+        }
+        // Without a serial number, keep a recognizable hardware key and distinguish
+        // duplicate displays by their current geometry. Topology matching uses the full set.
+        return "display:\(vendor):\(model):\(name.lowercased()):\(Int(frame.width))x\(Int(frame.height))"
     }
 
     public func monitorContaining(pointX: Double, pointY: Double) -> MonitorInfo? {

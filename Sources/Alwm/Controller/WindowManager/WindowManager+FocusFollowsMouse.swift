@@ -13,6 +13,24 @@ enum FocusFollowsMousePolicy {
     }
 }
 
+enum FocusBorderPolicy {
+    static func monitorID(
+        focusedWorkspace: String?,
+        activeWorkspaceByMonitor: [CGDirectDisplayID: String],
+        fallbackMonitorID: CGDirectDisplayID?
+    ) -> CGDirectDisplayID? {
+        if let focusedWorkspace,
+           let monitorID = activeWorkspaceByMonitor
+                .filter({ $0.value == focusedWorkspace })
+                .map(\.key)
+                .sorted()
+                .first {
+            return monitorID
+        }
+        return fallbackMonitorID ?? activeWorkspaceByMonitor.keys.sorted().first
+    }
+}
+
 extension WindowManager {
     func setupFocusFollowsMouse() {
         if let mouseMonitor {
@@ -88,7 +106,7 @@ extension WindowManager {
             return
         }
         let now = Date()
-        let minInterval: TimeInterval = 0.08
+        let minInterval: TimeInterval = 0.04
         if now.timeIntervalSince(ffmLastRun) >= minInterval {
             ffmWorkItem?.cancel()
             ffmWorkItem = nil
@@ -202,7 +220,14 @@ extension WindowManager {
                 let bb = (frameOf(b)?.width ?? 0) * (frameOf(b)?.height ?? 0)
                 return aa < bb
             }) {
-            if focusedWindowID() == hit || axFocusedWindowID == hit { return }
+            if let frame = frameOf(hit),
+               let monitor = monitors.monitorContaining(pointX: frame.midX, pointY: frame.midY) {
+                primaryMonitorID = monitor.id
+            }
+            if focusedWindowID() == hit || axFocusedWindowID == hit {
+                refreshBorder()
+                return
+            }
             focusSourceIsMouse = true
             focusWindow(hit, raise: true)
             return
@@ -224,7 +249,11 @@ extension WindowManager {
             }
         }
         guard let hit = best?.0 else { return }
-        if focusedWindowID() == hit || axFocusedWindowID == hit { return }
+        if let cursorMon { primaryMonitorID = cursorMon.id }
+        if focusedWindowID() == hit || axFocusedWindowID == hit {
+            refreshBorder()
+            return
+        }
         // Final guard: still over the focused app's chrome (race with CG list).
         if let focusedPID, hit.pid != focusedPID,
            cgOwnerPIDUnderPoint(axX: axX, axY: axY) == focusedPID {

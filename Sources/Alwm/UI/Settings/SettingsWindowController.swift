@@ -17,6 +17,13 @@ public final class SettingsWindowController {
     public var onDump: (() -> Void)?
     public var onRevealConfig: (() -> Void)?
     public var onResetRuntime: (() -> Void)?
+    public var onDiagnoseWindows: (() -> WorkspaceDiagnosticReport)?
+    public var onRepairWindows: (() -> WorkspaceDiagnosticReport)?
+    public var environmentProfilesProvider: (() -> [EnvironmentProfileSummary])?
+    public var onSaveEnvironmentProfile: ((String) -> Bool)?
+    public var onApplyEnvironmentProfile: ((String) -> Bool)?
+    public var windowActionHistoryProvider: (() -> [WindowActionHistoryEntry])?
+    public var onUndoWindowAction: (() -> Void)?
     public var onRerunOnboarding: (() -> Void)?
     public var monitorsProvider: (() -> [MonitorInfo])?
     public var monitorIndexByIDProvider: (() -> [CGDirectDisplayID: Int])?
@@ -48,6 +55,18 @@ public final class SettingsWindowController {
             onDump: { [weak self] in self?.onDump?() },
             onRevealConfig: { [weak self] in self?.onRevealConfig?() },
             onResetRuntime: { [weak self] in self?.onResetRuntime?() },
+            onDiagnoseWindows: { [weak self] in
+                self?.onDiagnoseWindows?() ?? WorkspaceDiagnosticReport(scanComplete: false, windowCount: 0, issues: [])
+            },
+            onRepairWindows: { [weak self] in
+                self?.onRepairWindows?() ?? WorkspaceDiagnosticReport(scanComplete: false, windowCount: 0, issues: [])
+            },
+            environmentProfiles: environmentProfilesProvider?() ?? [],
+            onListEnvironmentProfiles: { [weak self] in self?.environmentProfilesProvider?() ?? [] },
+            onSaveEnvironmentProfile: { [weak self] in self?.onSaveEnvironmentProfile?($0) ?? false },
+            onApplyEnvironmentProfile: { [weak self] in self?.onApplyEnvironmentProfile?($0) ?? false },
+            windowActionHistory: windowActionHistoryProvider?() ?? [],
+            onUndoWindowAction: { [weak self] in self?.onUndoWindowAction?() },
             onRerunOnboarding: { [weak self] in self?.onRerunOnboarding?() }
         )
         let hosting = NSHostingController(rootView: root)

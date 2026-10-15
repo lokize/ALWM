@@ -23,15 +23,22 @@ extension WindowManager {
             border.hide()
             return
         }
+        let focusedAXID = axFocusedWindowID ?? ax.frontmostFocusedWindowID()
+        let focusedWorkspace = focusedAXID.flatMap { authoritativeHome(for: $0) ?? workspaces.workspaceID(containing: $0) }
+        let borderMonitorID = FocusBorderPolicy.monitorID(
+            focusedWorkspace: focusedWorkspace,
+            activeWorkspaceByMonitor: workspaces.activeWorkspaceByMonitor,
+            fallbackMonitorID: primaryMonitorID
+        )
         let mainHeight = Double(NSScreen.screens.first?.frame.height ?? 900)
-        guard let mon = primaryMonitor() else {
+        guard let mon = monitors.monitors.first(where: { $0.id == borderMonitorID }) ?? primaryMonitor() else {
             border.hide()
             return
         }
 
         // Prefer AX focus when it is a float/dialog or belongs to the active workspace.
         let focused: WindowID? = {
-            if let axID = axFocusedWindowID ?? ax.frontmostFocusedWindowID(),
+            if let axID = focusedAXID,
                let win = windowsByID[axID],
                !win.isIgnored {
                 if win.isFloating || win.isScratchpad { return axID }

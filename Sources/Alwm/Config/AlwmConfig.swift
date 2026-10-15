@@ -201,6 +201,7 @@ public struct AlwmConfig: Equatable, Sendable {
         HotkeyBinding(action: "notepad.toggle", key: "n", modifiers: ["option"]),
         HotkeyBinding(action: "notepad.new", key: "n", modifiers: ["option", "shift"]),
         HotkeyBinding(action: "palette.toggle", key: "p", modifiers: ["option"]),
+        HotkeyBinding(action: "overview.toggle", key: "o", modifiers: ["option"]),
         HotkeyBinding(action: "capture.region", key: "4", modifiers: ["control", "command", "shift"]),
         HotkeyBinding(action: "capture.display", key: "3", modifiers: ["control", "command", "shift"]),
         HotkeyBinding(action: "capture.record.toggle", key: "5", modifiers: ["control", "command", "shift"]),

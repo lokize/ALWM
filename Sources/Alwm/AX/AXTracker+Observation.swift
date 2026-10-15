@@ -17,6 +17,18 @@ enum AXScanRetentionPolicy {
     }
 }
 
+enum AXScanPublishPolicy {
+    static func shouldPublish(previous: ManagedWindow, next: ManagedWindow) -> Bool {
+        previous.frame != next.frame
+            || previous.bundleID != next.bundleID
+            || previous.appName != next.appName
+            || previous.isFloating != next.isFloating
+            || previous.isMinimized != next.isMinimized
+            || previous.isIgnored != next.isIgnored
+            || previous.isScratchpad != next.isScratchpad
+    }
+}
+
 extension AXTracker {
 
     func observe(pid: pid_t) {
@@ -299,7 +311,8 @@ extension AXTracker {
                     bundleID: app.bundleIdentifier,
                     appName: app.localizedName ?? "App",
                     frame: ax.frame,
-                    isFloating: ax.prefersFloating
+                    isFloating: ax.prefersFloating,
+                    isMinimized: ax.isMinimized
                 )
                 observeTitle(on: winEl, pid: pid, token: id.token)
             }
@@ -376,12 +389,7 @@ extension AXTracker {
                 publish()
                 return
             }
-            if prev.frame != win.frame
-                || prev.bundleID != win.bundleID
-                || prev.appName != win.appName
-                || prev.isFloating != win.isFloating
-                || prev.isIgnored != win.isIgnored
-                || prev.isScratchpad != win.isScratchpad {
+            if AXScanPublishPolicy.shouldPublish(previous: prev, next: win) {
                 publish()
                 return
             }

@@ -9,6 +9,12 @@ public struct WindowID: Hashable, Sendable, Codable {
         self.windowNumber = windowNumber
     }
 
+    public init?(token: String) {
+        let parts = token.split(separator: ":", maxSplits: 1)
+        guard parts.count == 2, let pid = Int32(parts[0]), let number = Int(parts[1]) else { return nil }
+        self.init(pid: pid, windowNumber: number)
+    }
+
     public var token: String { "\(pid):\((windowNumber))" }
 }
 
@@ -19,6 +25,7 @@ public struct ManagedWindow: Equatable, Sendable {
     public var appName: String
     public var frame: Rect
     public var isFloating: Bool
+    public var isMinimized: Bool
     public var isIgnored: Bool
     public var isScratchpad: Bool
     public var minSize: Size
@@ -30,6 +37,7 @@ public struct ManagedWindow: Equatable, Sendable {
         appName: String,
         frame: Rect,
         isFloating: Bool = false,
+        isMinimized: Bool = false,
         isIgnored: Bool = false,
         isScratchpad: Bool = false,
         minSize: Size = Size(width: 200, height: 120)
@@ -40,6 +48,7 @@ public struct ManagedWindow: Equatable, Sendable {
         self.appName = appName
         self.frame = frame
         self.isFloating = isFloating
+        self.isMinimized = isMinimized
         self.isIgnored = isIgnored
         self.isScratchpad = isScratchpad
         self.minSize = minSize

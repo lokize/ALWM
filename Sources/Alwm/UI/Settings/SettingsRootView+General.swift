@@ -79,6 +79,11 @@ extension SettingsRootView {
             }
         }
         .formStyle(.grouped)
+        .onAppear {
+            if selectedEnvironmentProfileID.isEmpty {
+                selectedEnvironmentProfileID = environmentProfiles.first?.id ?? ""
+            }
+        }
     }
 
 
@@ -148,6 +153,107 @@ extension SettingsRootView {
 
     var diagnosticsPane: some View {
         Form {
+            Section("Perfis de ambiente") {
+                HStack {
+                    TextField("Nome do perfil (ex.: Trabalho)", text: $environmentProfileName)
+                    Button("Salvar ambiente atual") {
+                        let newName = environmentProfileName.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let saved = onSaveEnvironmentProfile(newName)
+                        environmentProfileStatus = saved ? "Perfil salvo com as configurações, workspaces, posições e sessões atuais." : "Não foi possível salvar o perfil. Confira o nome e o espaço em disco."
+                        if saved {
+                            environmentProfiles = onListEnvironmentProfiles()
+                            selectedEnvironmentProfileID = newName.lowercased().replacingOccurrences(of: " ", with: "-")
+                            environmentProfileName = ""
+                        }
+                    }
+                    .disabled(environmentProfileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                if !environmentProfiles.isEmpty {
+                    Picker("Perfil salvo", selection: $selectedEnvironmentProfileID) {
+                        ForEach(environmentProfiles) { profile in
+                            Text(profile.name).tag(profile.id)
+                        }
+                    }
+                    Button("Ativar perfil") {
+                        let applied = onApplyEnvironmentProfile(selectedEnvironmentProfileID)
+                        environmentProfileStatus = applied ? "Perfil ativado. Os apps listados foram restaurados quando estavam ausentes; os demais apps permaneceram abertos." : "Não foi possível ativar o perfil. A configuração anterior foi mantida."
+                    }
+                    .disabled(selectedEnvironmentProfileID.isEmpty)
+                } else {
+                    Text("Salve um perfil para alternar entre ambientes sem refazer as configurações.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if !environmentProfileStatus.isEmpty {
+                    Text(environmentProfileStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Section {
+                if windowActionHistoryEntries.isEmpty {
+                    Text("As próximas ações de mover, redimensionar, trocar de workspace ou fechar aparecerão aqui.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(windowActionHistoryEntries.suffix(8).reversed()) { entry in
+                        HStack {
+                            Text(entry.summary)
+                                .lineLimit(2)
+                            Spacer()
+                            Text(entry.timestamp, style: .time)
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Button("Desfazer última ação") {
+                        onUndoWindowAction()
+                        if !windowActionHistoryEntries.isEmpty { windowActionHistoryEntries.removeLast() }
+                    }
+                }
+            } header: {
+                Text("Histórico de janelas")
+            } footer: {
+                Text("O histórico do ALWM não captura Cmd-Z dentro dos aplicativos. Reverter fechamento pode reabrir o app, mas não recupera documentos não salvos.")
+            }
+            Section {
+                HStack {
+                    Button("Diagnosticar janelas") {
+                        windowDiagnosticReport = onDiagnoseWindows()
+                    }
+                    Button(isRepairingWindows ? "Corrigindo…" : "Corrigir janelas") {
+                        guard !isRepairingWindows else { return }
+                        isRepairingWindows = true
+                        defer { isRepairingWindows = false }
+                        windowDiagnosticReport = onRepairWindows()
+                    }
+                    .disabled(isRepairingWindows || !AXTracker.isTrusted)
+                }
+                if let report = windowDiagnosticReport {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(report.scanComplete
+                             ? "Verificação concluída: \(report.windowCount) janelas, \(report.issueCount) problemas."
+                             : "Verificação incompleta: permita Acessibilidade para analisar as janelas.")
+                            .font(.callout.weight(.medium))
+                        ForEach(report.issues) { issue in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(issue.appName ?? issue.workspaceID.map { "Workspace \($0)" } ?? "Estado do ALWM")
+                                    .font(.callout.weight(.semibold))
+                                Text([issue.detail, issue.expected.map { "Esperado: \($0)" }, issue.observed.map { "Atual: \($0)" }]
+                                    .compactMap { $0 }.joined(separator: " · "))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .padding(.vertical, 3)
+                        }
+                    }
+                }
+            } header: {
+                Text("Diagnóstico e reparo de janelas")
+            } footer: {
+                Text("Compara as janelas em execução com os workspaces, monitores e sessões salvas. A correção não fecha apps.")
+            }
             Section {
                 Toggle("Developer Mode", isOn: $config.settings.developerMode)
                     .toggleStyle(.switch)

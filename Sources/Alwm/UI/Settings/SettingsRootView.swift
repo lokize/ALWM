@@ -11,6 +11,13 @@ struct SettingsRootView: View {
     @State var hotkeySearch = ""
     @State var persistTask: Task<Void, Never>?
     @State var hasPendingLocalChanges = false
+    @State var windowDiagnosticReport: WorkspaceDiagnosticReport?
+    @State var isRepairingWindows = false
+    @State var environmentProfileName = ""
+    @State var selectedEnvironmentProfileID = ""
+    @State var environmentProfileStatus = ""
+    @State var windowActionHistoryEntries: [WindowActionHistoryEntry]
+    @State var environmentProfiles: [EnvironmentProfileSummary]
     @State var pluginOrderEpoch = 0
     @State var pluginOrderRows: [PluginOrderRowData] = []
     @ObservedObject var updates = AppUpdateService.shared
@@ -25,6 +32,12 @@ struct SettingsRootView: View {
     var onDump: () -> Void
     var onRevealConfig: () -> Void
     var onResetRuntime: () -> Void
+    var onDiagnoseWindows: () -> WorkspaceDiagnosticReport
+    var onRepairWindows: () -> WorkspaceDiagnosticReport
+    var onListEnvironmentProfiles: () -> [EnvironmentProfileSummary]
+    var onSaveEnvironmentProfile: (String) -> Bool
+    var onApplyEnvironmentProfile: (String) -> Bool
+    var onUndoWindowAction: () -> Void
     var onRerunOnboarding: () -> Void
 
     init(
@@ -39,11 +52,21 @@ struct SettingsRootView: View {
         onDump: @escaping () -> Void,
         onRevealConfig: @escaping () -> Void,
         onResetRuntime: @escaping () -> Void,
+        onDiagnoseWindows: @escaping () -> WorkspaceDiagnosticReport = { WorkspaceDiagnosticReport(scanComplete: false, windowCount: 0, issues: []) },
+        onRepairWindows: @escaping () -> WorkspaceDiagnosticReport = { WorkspaceDiagnosticReport(scanComplete: false, windowCount: 0, issues: []) },
+        environmentProfiles: [EnvironmentProfileSummary] = [],
+        onListEnvironmentProfiles: @escaping () -> [EnvironmentProfileSummary] = { [] },
+        onSaveEnvironmentProfile: @escaping (String) -> Bool = { _ in false },
+        onApplyEnvironmentProfile: @escaping (String) -> Bool = { _ in false },
+        windowActionHistory: [WindowActionHistoryEntry] = [],
+        onUndoWindowAction: @escaping () -> Void = {},
         onRerunOnboarding: @escaping () -> Void
     ) {
         _config = State(initialValue: config)
         _pane = State(initialValue: initialPane)
         _pluginOrderRows = State(initialValue: PluginOrderInline.loadRows())
+        _windowActionHistoryEntries = State(initialValue: windowActionHistory)
+        _environmentProfiles = State(initialValue: environmentProfiles)
         self.monitors = monitors
         self.monitorIndexByID = monitorIndexByID
         self.runningAppsProvider = runningAppsProvider
@@ -53,6 +76,12 @@ struct SettingsRootView: View {
         self.onDump = onDump
         self.onRevealConfig = onRevealConfig
         self.onResetRuntime = onResetRuntime
+        self.onDiagnoseWindows = onDiagnoseWindows
+        self.onRepairWindows = onRepairWindows
+        self.onListEnvironmentProfiles = onListEnvironmentProfiles
+        self.onSaveEnvironmentProfile = onSaveEnvironmentProfile
+        self.onApplyEnvironmentProfile = onApplyEnvironmentProfile
+        self.onUndoWindowAction = onUndoWindowAction
         self.onRerunOnboarding = onRerunOnboarding
     }
 

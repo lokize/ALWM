@@ -33,6 +33,8 @@ public final class StatusPopoverController {
     public var onCaptureDisplay: (() -> Void)?
     public var onCaptureRecordToggle: (() -> Void)?
     public var onRelayout: (() -> Void)?
+    public var onOverview: (() -> Void)?
+    public var onUndo: (() -> Void)?
     public var onColorPalette: (() -> Void)?
     public var onQuit: (() -> Void)?
     public var onNextWallpaper: (() -> Void)?
@@ -240,6 +242,8 @@ public final class StatusPopoverController {
                 // After popover dismiss — sync close + soft relayout used to no-op on settled frames.
                 DispatchQueue.main.async { self?.onRelayout?() }
             },
+            onOverview: { [weak self] in self?.close(); self?.onOverview?() },
+            onUndo: { [weak self] in self?.close(); self?.onUndo?() },
             onColorPalette: { [weak self] in self?.close(); self?.onColorPalette?() },
             onNextWallpaper: { [weak self] in self?.onNextWallpaper?() },
             onWallpaperRotationChange: { [weak self] enabled, value, unit in
@@ -341,7 +345,7 @@ final class StatusMenuModel: ObservableObject {
 private enum StatusMenuTheme {
     static let accent = Color(red: 0.31, green: 0.76, blue: 0.97) // #4FC3F7
     static let rowRadius: CGFloat = 10
-    static let sectionGap: CGFloat = 12
+    static let sectionGap: CGFloat = 8
 }
 
 struct StatusMenuView: View {
@@ -366,6 +370,8 @@ struct StatusMenuView: View {
     var onCaptureDisplay: () -> Void
     var onCaptureRecordToggle: () -> Void
     var onRelayout: () -> Void
+    var onOverview: () -> Void
+    var onUndo: () -> Void
     var onColorPalette: () -> Void
     var onNextWallpaper: () -> Void
     var onWallpaperRotationChange: (Bool, Double, WallpaperIntervalUnit) -> Void
@@ -431,6 +437,8 @@ struct StatusMenuView: View {
                         actionRow(title: L10n.t("menu.notepad"), systemImage: "note.text", action: onNotepad)
                         actionRow(title: L10n.t("menu.capture.region"), systemImage: "crop", action: onCaptureRegion)
                         actionRow(title: L10n.t("menu.capture.display"), systemImage: "rectangle.dashed", action: onCaptureDisplay)
+                        actionRow(title: "Visão geral", systemImage: "rectangle.3.group", action: onOverview)
+                        actionRow(title: "Desfazer janela", systemImage: "arrow.uturn.backward", action: onUndo)
                         actionRow(
                             title: model.isRecording ? L10n.t("menu.capture.record_stop") : L10n.t("menu.capture.record"),
                             systemImage: model.isRecording ? "stop.circle.fill" : "record.circle",
@@ -444,7 +452,7 @@ struct StatusMenuView: View {
 
                 quitButton
             }
-            .padding(14)
+            .padding(10)
         }
         .frame(width: 372)
         // Hug content on large screens; only grow up to the visible display height.
@@ -455,12 +463,12 @@ struct StatusMenuView: View {
     }
 
     private var wallpaperSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
             sectionTitle("Papel de parede")
-            VStack(alignment: .leading, spacing: 7) {
-                HStack(spacing: 9) {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 7) {
                     if let wallpaper = model.activeWallpaper {
-                        WallpaperThumbnailView(url: wallpaper.wallpaperURL, side: 48)
+                        WallpaperThumbnailView(url: wallpaper.wallpaperURL, side: 40)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(wallpaper.subtitle)
                                 .font(.system(size: 10, weight: .medium))
@@ -475,7 +483,7 @@ struct StatusMenuView: View {
                         Image(systemName: "photo.on.rectangle.angled")
                             .font(.system(size: 18, weight: .medium))
                             .foregroundStyle(.secondary)
-                            .frame(width: 48, height: 48)
+                            .frame(width: 40, height: 40)
                             .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Nenhum papel de parede ativo")
@@ -796,12 +804,12 @@ struct StatusMenuView: View {
     }
 
     private func sectionBlock<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
             sectionTitle(title)
             VStack(spacing: 2) {
                 content()
             }
-            .padding(6)
+            .padding(5)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(Color.primary.opacity(0.05))
@@ -825,12 +833,12 @@ struct StatusMenuView: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 7) {
                 HStack(alignment: .top) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .fill(isOn ? StatusMenuTheme.accent.opacity(0.2) : Color.primary.opacity(0.06))
-                            .frame(width: 30, height: 30)
+                            .frame(width: 26, height: 26)
                         Image(systemName: systemImage)
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(isOn ? StatusMenuTheme.accent : Color.secondary)
@@ -852,8 +860,8 @@ struct StatusMenuView: View {
                         .lineLimit(1)
                 }
             }
-            .padding(10)
-            .frame(maxWidth: .infinity, minHeight: 78, alignment: .topLeading)
+            .padding(8)
+            .frame(maxWidth: .infinity, minHeight: 68, alignment: .topLeading)
             .background(
                 RoundedRectangle(cornerRadius: StatusMenuTheme.rowRadius, style: .continuous)
                     .fill(Color.primary.opacity(isOn ? 0.08 : 0.045))
@@ -885,7 +893,7 @@ struct StatusMenuView: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 11)
+            .padding(.vertical, 7)
             .background(
                 RoundedRectangle(cornerRadius: StatusMenuTheme.rowRadius, style: .continuous)
                     .fill(Color.primary.opacity(0.05))
@@ -910,8 +918,8 @@ struct StatusMenuView: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 8)
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, minHeight: 31, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -921,7 +929,7 @@ struct StatusMenuView: View {
         Button {
             onOpenNote(note.id)
         } label: {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(note.title)
                     .font(.system(size: 11, weight: .semibold))
                     .lineLimit(1)
@@ -934,7 +942,7 @@ struct StatusMenuView: View {
                     .foregroundStyle(.tertiary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(8)
+            .padding(6)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color.primary.opacity(0.06))
@@ -954,7 +962,7 @@ struct StatusMenuView: View {
             }
             .foregroundStyle(Color.red.opacity(0.9))
             .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: StatusMenuTheme.rowRadius, style: .continuous)
                     .fill(Color.red.opacity(0.1))
@@ -982,7 +990,7 @@ struct StatusMenuView: View {
                     .frame(height: 44)
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 12)
+            .padding(.vertical, 9)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)

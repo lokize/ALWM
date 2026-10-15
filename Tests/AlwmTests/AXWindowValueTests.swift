@@ -4,6 +4,24 @@ import Testing
 
 @Suite("Accessibility window values")
 struct AXWindowValueTests {
+    @Test("AX scan publishes minimized-state changes even when the window frame is unchanged")
+    func publishesMinimizedStateChanges() {
+        let id = WindowID(pid: 42, windowNumber: 1)
+        let frame = Rect(x: 100, y: 80, width: 800, height: 600)
+        let visible = ManagedWindow(
+            id: id, title: "Editor", bundleID: "example.editor", appName: "Editor",
+            frame: frame, isMinimized: false
+        )
+        let minimized = ManagedWindow(
+            id: id, title: "Editor", bundleID: "example.editor", appName: "Editor",
+            frame: frame, isMinimized: true
+        )
+
+        #expect(AXScanPublishPolicy.shouldPublish(previous: visible, next: minimized))
+        #expect(AXScanPublishPolicy.shouldPublish(previous: minimized, next: visible))
+        #expect(!AXScanPublishPolicy.shouldPublish(previous: visible, next: visible))
+    }
+
     @Test("Accessibility elements reject values of the wrong CF type")
     func rejectsUnexpectedElementTypes() {
         #expect(AXBridge.element("not-an-AXUIElement" as NSString) == nil)

@@ -16,7 +16,7 @@ public enum HotkeyActions {
         "capture.region", "capture.display", "capture.record.toggle",
         "float.toggle", "float.on", "float.off",
         "column.maximize",
-        "settings.open", "relayout", "debug.dump"
+        "settings.open", "relayout", "overview.toggle", "undo.last", "debug.dump"
     ]
 
     /// Base catalog plus dynamic workspace switch/send actions for configured workspaces.
@@ -37,7 +37,7 @@ public enum HotkeyActions {
     }
 
     /// Actions that make sense for trackpad gesture bindings (includes continuous scroll).
-    public static let gestureActions: [String] = all
+    public static let gestureActions: [String] = all.filter { $0 != "undo.last" }
 
     public static func title(for action: String) -> String {
         switch action {
@@ -77,6 +77,7 @@ public enum HotkeyActions {
         case "column.maximize", "maximize.column": return L10n.t("action.column.maximize")
         case "settings.open": return L10n.t("action.settings.open")
         case "relayout": return L10n.t("action.relayout")
+        case "undo.last": return "Desfazer última ação de janela"
         case "debug.dump": return L10n.t("action.debug.dump")
         default:
             if action.hasPrefix("workspace.") {
@@ -113,6 +114,8 @@ public enum HotkeyActions {
             return "Ajusta a altura do tile focado na coluna; o vizinho (acima/abaixo) compensa."
         case "overview.toggle":
             return "Mostra o overview dos workspaces do monitor."
+        case "undo.last":
+            return "Reverte a última ação de mover, redimensionar, trocar de workspace ou fechar janela."
         case "quake.toggle":
             return "Mostra ou esconde o terminal Quake (sempre float)."
         case "notepad.toggle":

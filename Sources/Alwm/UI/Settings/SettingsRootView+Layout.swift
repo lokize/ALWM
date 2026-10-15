@@ -45,7 +45,7 @@ extension SettingsRootView {
                 }
             }
             Section("Tips") {
-                Text("For scrolling columns across multiple displays, prefer vertical monitor arrangement in System Settings and an auto-hiding Dock so parked windows do not bleed sideways.")
+                Text("ALWM saves each connected display combination automatically. When a dock disconnects, windows are recovered on the available displays; reconnecting a known display set restores its workspace mapping. For scrolling columns, prefer vertical monitor arrangement in System Settings and an auto-hiding Dock so parked windows do not bleed sideways.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }

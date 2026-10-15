@@ -835,6 +835,7 @@ extension WindowManager {
         for (id, win) in mapped {
             guard let prev = windowsByID[id] else { return false }
             if prev.isFloating != win.isFloating
+                || prev.isMinimized != win.isMinimized
                 || prev.isIgnored != win.isIgnored
                 || prev.isScratchpad != win.isScratchpad
                 || prev.frame != win.frame
