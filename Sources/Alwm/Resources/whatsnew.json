@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.8.4",
+      "items": [
+        "Place settings, plugins, and news side by side"
+      ]
+    },
+    {
       "version": "1.8.3",
       "items": [
         "Center the Tools card heading like Recent Notes"
@@ -248,14 +254,6 @@
       "version": "1.4.5",
       "items": [
         "Keep Notepad focus captured through its closing animation"
-      ]
-    },
-    {
-      "version": "1.4.4",
-      "items": [
-        "Keep pending tasks above a collapsible completed section",
-        "Add undo shortcuts and block editing tools",
-        "Translate the Notepad interface into all supported languages"
       ]
     }
   ]
