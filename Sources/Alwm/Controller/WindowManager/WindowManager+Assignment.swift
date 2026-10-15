@@ -25,6 +25,31 @@ enum InitialWorkspaceSelection {
 // MARK: - Window assignment — ingest homes, float/tile placement
 
 extension WindowManager {
+    /// Select placement for a newly discovered window. Token assignments alone are
+    /// not enough: macOS can reuse a window number after the previous window closed.
+    func initialWorkspaceForNewWindow(for win: ManagedWindow, on monitor: MonitorInfo) -> String? {
+        let savedHome = diskLayoutClaimsWindow(win.id, allowFuzzy: true)
+            ? savedHome(for: win, id: win.id)
+            : nil
+        let openingRule = AppRules.preferredWorkspaceForOpening(
+            rules: configStore.config.rules,
+            window: win
+        )
+        let monitorIndex = workspaces.monitorIndex(of: monitor.id, in: monitors.monitors) ?? 0
+        let allowed = Set(workspaces.definitionsVisible(onMonitorIndex: monitorIndex).map(\.id))
+        let active = workspaces.activeWorkspaceByMonitor[monitor.id].flatMap {
+            allowed.contains($0) ? $0 : nil
+        }
+        return InitialWorkspaceSelection.resolve(
+            rule: openingRule,
+            sticky: nil,
+            savedLayout: savedHome,
+            bundle: nil,
+            active: active,
+            existing: Set(workspaces.workspaces.keys)
+        ) ?? allowed.first ?? firstWorkspaceID()
+    }
+
     func resolveTargetWorkspace(for win: ManagedWindow, on monitor: MonitorInfo) -> String? {
         let rules = configStore.config.rules
         let sticky = windowWorkspace[win.id] ?? runtimeState.assignment(for: win.id)
@@ -125,8 +150,20 @@ extension WindowManager {
         }
         // Already in the right columns — never re-insert (that appends and destroys order).
         if workspaces.workspaceID(containing: id) == workspaceID {
+            let duplicateWorkspaces = workspaces.keepWindow(id, onlyIn: workspaceID)
+            for staleWorkspace in duplicateWorkspaces {
+                if let win = windowsByID[id] {
+                    removePersistedWindowRefs(.init(window: win), fromWorkspace: staleWorkspace)
+                }
+                if isHomeActiveOnAnyMonitor(staleWorkspace) {
+                    snapWorkspaceTilesAfterColumnChange(staleWorkspace)
+                }
+            }
             windowWorkspace[id] = workspaceID
             runtimeState.setAssignment(workspaceID, for: id)
+            if !duplicateWorkspaces.isEmpty {
+                persistRuntimeState(forceWorkspaceLayouts: duplicateWorkspaces)
+            }
             return
         }
         if placeWindowFromSnapshot(id, into: workspaceID, usable: usable) {
@@ -411,8 +448,11 @@ extension WindowManager {
             let mon = monitors.monitorContaining(pointX: win.frame.midX, pointY: win.frame.midY)
                 ?? monitors.monitors.first
             guard let mon else { continue }
-            guard let home = resolveTargetWorkspace(for: win, on: mon) else { continue }
-            assignWindow(id, to: home, on: mon)
+            let savedHome = diskLayoutClaimsWindow(id, allowFuzzy: true)
+                ? savedHome(for: win, id: id)
+                : nil
+            guard let home = savedHome ?? initialWorkspaceForNewWindow(for: win, on: mon) else { continue }
+            assignWindow(id, to: home, on: displayMonitor(forHome: home, fallback: mon))
         }
     }
 
@@ -580,12 +620,11 @@ extension WindowManager {
                 ?? primaryMonitor()
                 ?? monitors.monitors.first
             guard let monitor else { continue }
-            let home = windowWorkspace[id]
-                ?? runtimeState.assignment(for: id)
-                ?? resolveTargetWorkspace(for: win, on: monitor)
+            let home = workspaces.workspaceID(containing: id)
+                ?? initialWorkspaceForNewWindow(for: win, on: monitor)
             guard let home, workspaces.workspaces[home] != nil else { continue }
             if workspaces.workspaceID(containing: id) == nil {
-                assignWindow(id, to: home, on: monitor)
+                assignWindow(id, to: home, on: displayMonitor(forHome: home, fallback: monitor))
             }
         }
         let tileIDs = ids.subtracting(deferred)
@@ -658,12 +697,11 @@ extension WindowManager {
             ?? primaryMonitor()
             ?? monitors.monitors.first
         guard let monitor else { return }
-        let home = windowWorkspace[id]
-            ?? runtimeState.assignment(for: id)
-            ?? resolveTargetWorkspace(for: win, on: monitor)
+        let home = workspaces.workspaceID(containing: id)
+            ?? initialWorkspaceForNewWindow(for: win, on: monitor)
         guard let home, workspaces.workspaces[home] != nil else { return }
         if workspaces.workspaceID(containing: id) == nil {
-            assignWindow(id, to: home, on: monitor)
+            assignWindow(id, to: home, on: displayMonitor(forHome: home, fallback: monitor))
         }
         logMove("tile promote same-bundle sibling win=\(id.token) ws=\(home)")
         if isHomeActiveOnAnyMonitor(home) {

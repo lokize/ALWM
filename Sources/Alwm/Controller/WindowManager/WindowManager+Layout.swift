@@ -439,11 +439,17 @@ extension WindowManager {
             guard let monitor else { continue }
 
             let existingWorkspaces = Set(workspaces.workspaces.keys)
-            let stickyHome = (windowWorkspace[id] ?? runtimeState.assignment(for: id))
-                .flatMap { existingWorkspaces.contains($0) ? $0 : nil }
+            let liveColumnHome = workspaces.workspaceID(containing: id)
             let snapshotHome = diskLayoutClaimsWindow(id, allowFuzzy: true)
                 ? savedHome(for: win, id: id).flatMap { existingWorkspaces.contains($0) ? $0 : nil }
                 : nil
+            // A runtime token can outlive its AX window and be reused by macOS.
+            // Trust sticky state only when there is a live column or saved tile slot.
+            let stickyHome = liveColumnHome
+                ?? (snapshotHome == nil
+                    ? nil
+                    : (windowWorkspace[id] ?? runtimeState.assignment(for: id))
+                        .flatMap { existingWorkspaces.contains($0) ? $0 : nil })
             let openingRule = stickyHome == nil && snapshotHome == nil
                 ? AppRules.preferredWorkspaceForOpening(rules: rules, window: win)
                 : nil
@@ -457,7 +463,8 @@ extension WindowManager {
                 let rule = selectedHome == openingRule
                     ? AppRules.matching(rules: rules, window: win)
                     : nil
-                let targetMon = rule.flatMap { monitorForAppRule($0, window: win) } ?? monitor
+                let targetMon = rule.flatMap { monitorForAppRule($0, window: win) }
+                    ?? displayMonitor(forHome: selectedHome, fallback: monitor)
                 assignWindow(id, to: selectedHome, on: targetMon)
                 continue
             }
@@ -472,9 +479,9 @@ extension WindowManager {
             }
 
             if isBootstrapping || isInPostLaunchLayoutGrace() {
-                if let sticky = windowWorkspace[id] ?? runtimeState.assignment(for: id) ?? savedHome(for: win, id: id),
-                   workspaces.workspaces[sticky] != nil {
-                    assignWindow(id, to: sticky, on: monitor)
+                if let restoredHome = snapshotHome ?? stickyHome,
+                   workspaces.workspaces[restoredHome] != nil {
+                    assignWindow(id, to: restoredHome, on: displayMonitor(forHome: restoredHome, fallback: monitor))
                 }
                 // Leave unassigned for restoreWorkspaceLayouts — do not dump into active WS
                 // (that steals multi-window apps from their saved workspaces).
@@ -482,20 +489,22 @@ extension WindowManager {
             }
 
             if needsLayoutRecovery(force: false) {
-                if let home = savedHome(for: win, id: id) ?? windowWorkspace[id].flatMap({ workspaces.workspaces[$0] != nil ? $0 : nil })
-                    ?? runtimeState.assignment(for: id).flatMap({ workspaces.workspaces[$0] != nil ? $0 : nil }) {
-                    assignWindow(id, to: home, on: monitor)
+                if let home = snapshotHome ?? stickyHome {
+                    assignWindow(id, to: home, on: displayMonitor(forHome: home, fallback: monitor))
                     continue
                 }
             }
 
-            if let home = savedHome(for: win, id: id) {
-                assignWindow(id, to: home, on: monitor)
+            if let home = snapshotHome {
+                assignWindow(id, to: home, on: displayMonitor(forHome: home, fallback: monitor))
                 continue
             }
 
-            if let home = resolveTargetWorkspace(for: win, on: monitor) {
-                assignWindow(id, to: home, on: monitor)
+            if let home = initialWorkspaceForNewWindow(for: win, on: monitor) {
+                let rule = AppRules.matching(rules: rules, window: win)
+                let target = rule.flatMap { monitorForAppRule($0, window: win) }
+                    ?? displayMonitor(forHome: home, fallback: monitor)
+                assignWindow(id, to: home, on: target)
             }
         }
 

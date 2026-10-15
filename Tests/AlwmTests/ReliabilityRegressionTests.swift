@@ -40,6 +40,89 @@ struct ReliabilityRegressionTests {
         #expect(manager.resolveTargetWorkspace(for: window, on: monitor) == "2")
     }
 
+    @Test("a reused window token does not override an app rule on another monitor")
+    @MainActor
+    func reusedTokenUsesAppRuleWorkspace() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let msi = MonitorInfo(id: 2, frame: .init(x: 0, y: 0, width: 3440, height: 1440), visibleFrame: .init(x: 0, y: 0, width: 3440, height: 1440), name: "MSI")
+        let hdmi = MonitorInfo(id: 3, frame: .init(x: 3440, y: 0, width: 1920, height: 1080), visibleFrame: .init(x: 3440, y: 0, width: 1920, height: 1080), name: "HDMI")
+        let manager = WindowManager(
+            runtimeState: RuntimeStateStore(url: root.appendingPathComponent("runtime.json")),
+            notesStore: NotesStore(root: root.appendingPathComponent("notes")),
+            monitors: MonitorStore(monitors: [msi, hdmi])
+        )
+        manager.isBootstrapping = false
+        manager.workspaces.configure(definitions: [
+            .init(id: "2", name: "2", monitorIndex: 0),
+            .init(id: "5", name: "5", monitorIndex: 1),
+        ], monitors: [msi, hdmi])
+        manager.workspaces.switchWorkspace(id: "2", on: msi.id, monitors: [msi, hdmi])
+        manager.workspaces.switchWorkspace(id: "5", on: hdmi.id, monitors: [msi, hdmi])
+        var config = manager.configStore.config
+        config.rules.append(AppRule(bundleID: "net.whatsapp.WhatsApp", workspace: "5"))
+        manager.configStore.replaceConfig(config)
+
+        let id = WindowID(pid: 1087, windowNumber: 109)
+        manager.runtimeState.setAssignment("2", for: id) // stale assignment; no saved layout slot
+        let window = ManagedWindow(
+            id: id,
+            title: "WhatsApp",
+            bundleID: "net.whatsapp.WhatsApp",
+            appName: "WhatsApp",
+            frame: .init(x: 3500, y: 40, width: 1200, height: 900)
+        )
+
+        manager.ingest(windows: [window])
+
+        #expect(manager.workspaces.workspaceID(containing: id) == "5")
+        #expect(manager.windowWorkspace[id] == "5")
+    }
+
+    @Test("assigning a window to its current home removes copies on other workspaces")
+    @MainActor
+    func assignmentHealsDuplicateWorkspaceMembership() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let msi = MonitorInfo(id: 2, frame: .init(x: 0, y: 0, width: 3440, height: 1440), visibleFrame: .init(x: 0, y: 0, width: 3440, height: 1440), name: "MSI")
+        let hdmi = MonitorInfo(id: 3, frame: .init(x: 3440, y: 0, width: 1920, height: 1080), visibleFrame: .init(x: 3440, y: 0, width: 1920, height: 1080), name: "HDMI")
+        let manager = WindowManager(
+            runtimeState: RuntimeStateStore(url: root.appendingPathComponent("runtime.json")),
+            notesStore: NotesStore(root: root.appendingPathComponent("notes")),
+            monitors: MonitorStore(monitors: [msi, hdmi])
+        )
+        manager.workspaces.configure(definitions: [
+            .init(id: "2", name: "2", monitorIndex: 0),
+            .init(id: "5", name: "5", monitorIndex: 1),
+        ], monitors: [msi, hdmi])
+
+        let id = WindowID(pid: 42614, windowNumber: 666)
+        let window = ManagedWindow(
+            id: id,
+            title: "Restored Editor",
+            bundleID: "example.editor",
+            appName: "Editor",
+            frame: .init(x: 3500, y: 40, width: 1200, height: 900)
+        )
+        manager.windowsByID[id] = window
+        manager.workspaces.setWorkspace(WorkspaceState(id: "2", name: "2", columns: [.init(windows: [id], width: 1600)]))
+        manager.workspaces.setWorkspace(WorkspaceState(id: "5", name: "5", columns: [.init(windows: [id], width: 900)]))
+        // Resolve whichever copy WorkspaceStore currently treats as authoritative,
+        // then ask the normal assignment path to retain that home.
+        let home = manager.workspaces.workspaceID(containing: id)!
+        manager.windowWorkspace[id] = home
+        manager.runtimeState.setAssignment(home, for: id)
+        let monitor = home == "2" ? msi : hdmi
+
+        manager.assignWindow(id, to: home, on: monitor)
+
+        let memberships = manager.workspaces.workspaces.values
+            .flatMap(\.columns)
+            .flatMap(\.windows)
+            .filter { $0 == id }
+        #expect(memberships == [id])
+    }
+
     @Test("a visible Quake panel keeps overlay focus after macOS reports another window")
     @MainActor
     func visibleQuakeRetainsOverlayFocus() {

@@ -341,6 +341,41 @@ public final class WorkspaceStore: @unchecked Sendable {
         }
     }
 
+    /// Keep one tile membership for a window in its authoritative workspace and
+    /// remove stale copies from other workspaces before a no-op assignment returns.
+    @discardableResult
+    public func keepWindow(_ id: WindowID, onlyIn workspaceID: String) -> Set<String> {
+        var changed: Set<String> = []
+        var keptTarget = false
+        for key in workspaces.keys.sorted() {
+            guard var ws = workspaces[key] else { continue }
+            var wsChanged = false
+            for columnIndex in ws.columns.indices {
+                var filtered: [WindowID] = []
+                for window in ws.columns[columnIndex].windows {
+                    guard window == id else {
+                        filtered.append(window)
+                        continue
+                    }
+                    if key == workspaceID && !keptTarget {
+                        filtered.append(window)
+                        keptTarget = true
+                    } else {
+                        wsChanged = true
+                    }
+                }
+                ws.columns[columnIndex].windows = filtered
+            }
+            if wsChanged {
+                ws.columns.removeAll { $0.windows.isEmpty }
+                ws.focusedColumn = min(ws.focusedColumn, max(0, ws.columns.count - 1))
+                workspaces[key] = ws
+                changed.insert(key)
+            }
+        }
+        return changed
+    }
+
     public func insert(
         _ windowID: WindowID,
         into workspaceID: String,
