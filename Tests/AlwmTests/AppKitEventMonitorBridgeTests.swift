@@ -11,7 +11,18 @@ struct AppKitEventMonitorBridgeTests {
         for _ in 0..<100 {
             #expect(!gate.claim())
         }
-        gate.release()
+        #expect(gate.release())
+        #expect(!gate.release())
         #expect(gate.claim())
+    }
+
+    @Test("mouse moves during a focus check schedule one trailing check")
+    func schedulesTrailingCheckForLatestPointerPosition() {
+        let gate = EventMonitorCoalescingGate()
+
+        #expect(gate.claim())
+        #expect(!gate.claim())
+        #expect(gate.release())
+        #expect(!gate.release())
     }
 }

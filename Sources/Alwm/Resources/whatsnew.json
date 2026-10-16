@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.8.7",
+      "items": [
+        "Focus follows mouse uses the latest pointer position across displays"
+      ]
+    },
+    {
       "version": "1.8.6",
       "items": [
         "Attach pasted images to Notepad notes"
@@ -245,14 +251,6 @@
         "Reopen apps from saved workspace layouts after restarting ALWM",
         "Restore floating window positions and sizes across app relaunches",
         "Honor app rules after closed windows are reopened"
-      ]
-    },
-    {
-      "version": "1.4.7",
-      "items": [
-        "Restore windows and workspace geometry after sleep, including floating windows and temporary Accessibility drops",
-        "Preserve tile sizes when opening and closing windows, and improve mouse focus and compact window placement",
-        "Add rotating image and video wallpapers plus separate plugin badges in the workspace bar"
       ]
     }
   ]

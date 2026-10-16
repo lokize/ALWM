@@ -786,23 +786,29 @@ final class AppKitEventMonitorBridge: @unchecked Sendable {
     func installGlobal(matching mask: NSEvent.EventTypeMask) -> Any? {
         NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] _ in
             guard let self, self.deliveryGate.claim() else { return }
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                defer { self.deliveryGate.release() }
-                self.handler()
-            }
+            self.deliverOnMainActor()
         }
     }
 
     func installLocal(matching mask: NSEvent.EventTypeMask) -> Any? {
         NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
             guard let self, self.deliveryGate.claim() else { return event }
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                defer { self.deliveryGate.release() }
-                self.handler()
-            }
+            self.deliverOnMainActor()
             return event
+        }
+    }
+
+    private func deliverOnMainActor() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.handler()
+            guard self.deliveryGate.release() else { return }
+            // Give the main run loop a chance to process UI work between checks.
+            // Events received while the check was running collapse into this one
+            // trailing delivery, which samples the pointer's latest position.
+            DispatchQueue.main.async { [weak self] in
+                self?.deliverOnMainActor()
+            }
         }
     }
 }
@@ -814,16 +820,28 @@ final class EventMonitorCoalescingGate: @unchecked Sendable {
     func claim() -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        guard !isPending else { return false }
+        guard !isPending else {
+            needsTrailingDelivery = true
+            return false
+        }
         isPending = true
         return true
     }
 
-    func release() {
+    /// Returns true when a single trailing delivery is queued while this one
+    /// runs. Additional events coalesce into that delivery.
+    func release() -> Bool {
         lock.lock()
+        defer { lock.unlock() }
+        if needsTrailingDelivery {
+            needsTrailingDelivery = false
+            return true
+        }
         isPending = false
-        lock.unlock()
+        return false
     }
+
+    private var needsTrailingDelivery = false
 }
 
 /// Status item click target (nonisolated).
