@@ -255,7 +255,12 @@ extension WindowManager {
         return true
     }
 
-    func focusWorkspaceWindow(_ windowID: WindowID, workspaceID: String, on monitorID: CGDirectDisplayID) {
+    func focusWorkspaceWindow(
+        _ windowID: WindowID,
+        workspaceID: String,
+        on monitorID: CGDirectDisplayID,
+        fromMouse: Bool = false
+    ) {
         // Some windows (Electron/Safari) briefly disappear from AX during reveal/stack ops.
         // For bar/menu selection we should *not* treat this as a closed ghost; instead,
         // do one soft-rescan and then attempt reveal/focus.
@@ -345,7 +350,7 @@ extension WindowManager {
             || workspaces.workspaceID(containing: targetID) == nil
         markFloatRevealProtected(targetID)
 
-        focusSourceIsMouse = false
+        if !fromMouse { focusSourceIsMouse = false }
         revealBeforeFocus(targetID)
         focusWindow(targetID, raise: true)
         if isFloat {

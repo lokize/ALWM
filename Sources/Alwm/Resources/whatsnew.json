@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "1.8.8",
+      "items": [
+        "Focus follows mouse across displays",
+        "Rename wallpaper files without resolution prefixes"
+      ]
+    },
+    {
       "version": "1.8.7",
       "items": [
         "Focus follows mouse uses the latest pointer position across displays"
@@ -243,14 +250,6 @@
       "version": "1.4.9",
       "items": [
         "Status menu controls stay clickable when the pointer moves during a click."
-      ]
-    },
-    {
-      "version": "1.4.8",
-      "items": [
-        "Reopen apps from saved workspace layouts after restarting ALWM",
-        "Restore floating window positions and sizes across app relaunches",
-        "Honor app rules after closed windows are reopened"
       ]
     }
   ]

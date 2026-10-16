@@ -11,6 +11,21 @@ enum FocusFollowsMousePolicy {
     static func shouldKeepCurrentFocus(pointerInside: Bool, focusedPID: pid_t?, topPID: pid_t?) -> Bool {
         pointerInside && (topPID == nil || focusedPID == topPID)
     }
+
+    static func shouldKeepCurrentWindow(
+        pointerInside: Bool,
+        focusedWindowNumber: Int,
+        topWindowNumber: Int?
+    ) -> Bool {
+        guard pointerInside else { return false }
+        guard let topWindowNumber else { return true }
+        return focusedWindowNumber == topWindowNumber
+    }
+
+    static func shouldActivateHomeWorkspace(windowHome: String?, activeWorkspaces: Set<String>) -> Bool {
+        guard let windowHome else { return false }
+        return !activeWorkspaces.contains(windowHome)
+    }
 }
 
 enum FocusBorderPolicy {
@@ -128,7 +143,7 @@ extension WindowManager {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
-    func cgOwnerPIDUnderPoint(axX: Double, axY: Double) -> pid_t? {
+    func cgWindowUnderPoint(axX: Double, axY: Double) -> (pid: pid_t, windowNumber: Int)? {
         guard let infos = CGWindowListCopyWindowInfo(
             [.optionOnScreenOnly, .excludeDesktopElements],
             kCGNullWindowID
@@ -154,10 +169,17 @@ extension WindowManager {
             guard w > 8, h > 8, x.isFinite, y.isFinite else { continue }
             let rect = CGRect(x: x, y: y, width: w, height: h)
             if rect.contains(point) {
-                return pid
+                guard let windowNumber = (info[kCGWindowNumber as String] as? NSNumber)?.intValue else {
+                    return (pid, 0)
+                }
+                return (pid, windowNumber)
             }
         }
         return nil
+    }
+
+    func cgOwnerPIDUnderPoint(axX: Double, axY: Double) -> pid_t? {
+        cgWindowUnderPoint(axX: axX, axY: axY)?.pid
     }
 
     func focusWindowUnderMouse() {
@@ -184,11 +206,14 @@ extension WindowManager {
 
         // 1) Pointer still inside the AX-focused window → never steal to a tile behind it
         //    (Finder/float “sem workspace” overlapping Discord, etc.).
-        let topPID = cgOwnerPIDUnderPoint(axX: axX, axY: axY)
+        let topWindow = cgWindowUnderPoint(axX: axX, axY: axY)
+        let topPID = topWindow?.pid
         if let current = currentFocus,
            current != quake.windowID || quake.isVisible,
-           FocusFollowsMousePolicy.shouldKeepCurrentFocus(
-               pointerInside: containsMouse(current), focusedPID: current.pid, topPID: topPID
+           FocusFollowsMousePolicy.shouldKeepCurrentWindow(
+               pointerInside: containsMouse(current),
+               focusedWindowNumber: current.windowNumber,
+               topWindowNumber: topWindow?.windowNumber == 0 ? nil : topWindow?.windowNumber
            ) {
             return
         }
@@ -200,7 +225,11 @@ extension WindowManager {
             ?? NSWorkspace.shared.frontmostApplication?.processIdentifier
         if let focusedPID,
            let underPID = topPID,
-           underPID == focusedPID {
+           let topWindow,
+           underPID == focusedPID,
+           !windowsByID.keys.contains(where: {
+               $0.pid == underPID && $0.windowNumber == topWindow.windowNumber
+           }) {
             return
         }
 
@@ -210,6 +239,8 @@ extension WindowManager {
             guard let win = windowsByID[id], !win.isIgnored else { return false }
             if id == quake.windowID || isQuakeOwned(id) { return false }
             if let topPID, id.pid != topPID { return false }
+            if let topWindow, topWindow.windowNumber != 0,
+               id.windowNumber != topWindow.windowNumber { return false }
             let loose = win.isFloating || win.isScratchpad
                 || workspaces.workspaceID(containing: id) == nil
             return loose && containsMouse(id)
@@ -229,7 +260,7 @@ extension WindowManager {
                 return
             }
             focusSourceIsMouse = true
-            focusWindow(hit, raise: true)
+            focusMouseTarget(hit, cursorMonitorID: monitorUnderMouse()?.id)
             return
         }
 
@@ -240,8 +271,12 @@ extension WindowManager {
         for (id, frame) in lastFrames {
             guard let win = windowsByID[id], win.isTiled, !win.isIgnored else { continue }
             if let topPID, id.pid != topPID { continue }
+            if let topWindow, topWindow.windowNumber != 0,
+               id.windowNumber != topWindow.windowNumber { continue }
             let home = authoritativeHome(for: id)
-            guard let home, let activeOnCursor, home == activeOnCursor else { continue }
+            guard let home else { continue }
+            if topWindow?.windowNumber == nil || topWindow?.windowNumber == 0,
+               home != activeOnCursor { continue }
             guard frame.contains(pointX: axX, pointY: axY) else { continue }
             let area = frame.width * frame.height
             if best == nil || area < best!.1 {
@@ -260,7 +295,23 @@ extension WindowManager {
             return
         }
         focusSourceIsMouse = true
-        focusWindow(hit)
+        focusMouseTarget(hit, cursorMonitorID: cursorMon?.id)
+    }
+
+    func focusMouseTarget(_ id: WindowID, cursorMonitorID: CGDirectDisplayID?) {
+        let activeWorkspaces = Set(workspaces.activeWorkspaceByMonitor.values)
+        if let home = authoritativeHome(for: id),
+           FocusFollowsMousePolicy.shouldActivateHomeWorkspace(
+               windowHome: home,
+               activeWorkspaces: activeWorkspaces
+           ),
+           let monitor = workspaces.preferredMonitor(forWorkspace: home, monitors: monitors.monitors) {
+            let cursorMonitor = cursorMonitorID.map { String($0) } ?? "?"
+            logMove("ffm activate-home win=\(id.token) ws=\(home) mon=\(monitor.id) cursorMon=\(cursorMonitor)")
+            focusWorkspaceWindow(id, workspaceID: home, on: monitor.id, fromMouse: true)
+            return
+        }
+        focusWindow(id, raise: true)
     }
 
     func maybeWarpCursor(to id: WindowID) {
