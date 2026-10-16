@@ -17,6 +17,12 @@ struct StatusMenuClickTests {
         #expect(StatusMenuLayout.width(visibleFrameWidth: 400) == 368)
     }
 
+    @Test("full-width menu actions span the content area inside the menu margins")
+    func fullWidthActionUsesEntireContentArea() {
+        #expect(StatusMenuLayout.contentWidth(menuWidth: 620) == 604)
+        #expect(StatusMenuLayout.contentWidth(menuWidth: 400) == 384)
+    }
+
     @Test("menu height hugs its content and only scrolls when content exceeds the screen")
     func viewportHeightHugsContent() {
         #expect(StatusMenuLayout.viewportHeight(contentHeight: 760, maximum: 1200) == 760)

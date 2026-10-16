@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.9.4",
+      "items": [
+        "Make quit action span full menu width"
+      ]
+    },
+    {
       "version": "1.9.3",
       "items": [
         "Follow mouse focus across workspace boundaries and expand quit button"
@@ -243,13 +249,6 @@
       "version": "1.5.5",
       "items": [
         "Show nested wallpaper folders in change notifications"
-      ]
-    },
-    {
-      "version": "1.5.4",
-      "items": [
-        "Keep workspace assignments aligned with the primary display",
-        "Center the workspace bar when horizontal offset is zero"
       ]
     }
   ]

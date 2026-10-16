@@ -361,6 +361,10 @@ final class StatusMenuClickOutsideBridge: @unchecked Sendable {
 }
 
 enum StatusMenuLayout {
+    static func contentWidth(menuWidth: CGFloat) -> CGFloat {
+        max(1, menuWidth - 16)
+    }
+
     static func width(visibleFrameWidth: CGFloat) -> CGFloat {
         max(1, min(620, floor(visibleFrameWidth - 32)))
     }
@@ -490,10 +494,12 @@ struct StatusMenuView: View {
 
                     VStack(alignment: .leading, spacing: StatusMenuTheme.sectionGap) {
                         supportSection
-                        quitButton
                     }
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
+
+                quitButton
+                    .frame(width: StatusMenuLayout.contentWidth(menuWidth: menuWidth), alignment: .leading)
             }
             .padding(8)
             .background {
