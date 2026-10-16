@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.9.5",
+      "items": [
+        "Prioritize exact hover hits over slow AX focus lookup"
+      ]
+    },
+    {
       "version": "1.9.4",
       "items": [
         "Make quit action span full menu width"
@@ -243,12 +249,6 @@
       "version": "1.5.6",
       "items": [
         "Show wallpaper folder and filename in separate notification fields"
-      ]
-    },
-    {
-      "version": "1.5.5",
-      "items": [
-        "Show nested wallpaper folders in change notifications"
       ]
     }
   ]

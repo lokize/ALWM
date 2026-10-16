@@ -73,6 +73,28 @@ struct AlwmChromeFocusTests {
         ))
     }
 
+    @Test("an exact managed WindowServer hit selects the direct focus path")
+    func managedTopWindowTakesTheFastFocusPath() {
+        let hovered = WindowID(pid: 43, windowNumber: 201)
+        let action = FocusFollowsMousePolicy.topWindowAction(
+            windowNumber: hovered.windowNumber,
+            hit: hovered,
+            isManagedWindow: true
+        )
+
+        #expect(action == .focus(hovered))
+        #expect(FocusFollowsMousePolicy.topWindowAction(
+            windowNumber: hovered.windowNumber,
+            hit: hovered,
+            isManagedWindow: false
+        ) == .ignore)
+        #expect(FocusFollowsMousePolicy.topWindowAction(
+            windowNumber: 0,
+            hit: nil,
+            isManagedWindow: false
+        ) == .fallback)
+    }
+
     @Test("mouse focus uses Quartz coordinates directly on vertically offset displays")
     func quartzPointerCoordinatesWinOverPrimaryScreenConversion() {
         let lowerDisplayQuartzPoint = CGPoint(x: 900, y: 1_800)
@@ -87,17 +109,16 @@ struct AlwmChromeFocusTests {
 
     @Test("an unmanaged popup under the pointer prevents focusing a window behind it")
     func unmanagedTopWindowDoesNotFocusWindowBehindPopup() {
-        #expect(FocusFollowsMousePolicy.shouldIgnoreUnmanagedTopWindow(
-            topWindowNumber: 200,
+        let popup = WindowID(pid: 43, windowNumber: 200)
+        #expect(FocusFollowsMousePolicy.topWindowAction(
+            windowNumber: popup.windowNumber,
+            hit: popup,
             isManagedWindow: false
-        ))
-        #expect(!FocusFollowsMousePolicy.shouldIgnoreUnmanagedTopWindow(
-            topWindowNumber: 200,
-            isManagedWindow: true
-        ))
-        #expect(!FocusFollowsMousePolicy.shouldIgnoreUnmanagedTopWindow(
-            topWindowNumber: nil,
+        ) == .ignore)
+        #expect(FocusFollowsMousePolicy.topWindowAction(
+            windowNumber: nil,
+            hit: nil,
             isManagedWindow: false
-        ))
+        ) == .fallback)
     }
 }

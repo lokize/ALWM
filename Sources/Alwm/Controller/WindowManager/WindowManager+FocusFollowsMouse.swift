@@ -8,13 +8,24 @@ import AlwmPluginAPI
 // MARK: - Focus-follows-mouse
 
 enum FocusFollowsMousePolicy {
-    static func mouseAXPoint(quartzPoint: CGPoint?, cocoaPoint: CGPoint, mainScreenHeight: CGFloat) -> CGPoint {
-        quartzPoint ?? CGPoint(x: cocoaPoint.x, y: mainScreenHeight - cocoaPoint.y)
+    enum TopWindowAction: Equatable {
+        case focus(WindowID)
+        case ignore
+        case fallback
     }
 
-    static func shouldIgnoreUnmanagedTopWindow(topWindowNumber: Int?, isManagedWindow: Bool) -> Bool {
-        guard let topWindowNumber, topWindowNumber > 0 else { return false }
-        return !isManagedWindow
+    static func topWindowAction(
+        windowNumber: Int?,
+        hit: WindowID?,
+        isManagedWindow: Bool
+    ) -> TopWindowAction {
+        guard let windowNumber, windowNumber > 0 else { return .fallback }
+        guard let hit, isManagedWindow else { return .ignore }
+        return .focus(hit)
+    }
+
+    static func mouseAXPoint(quartzPoint: CGPoint?, cocoaPoint: CGPoint, mainScreenHeight: CGFloat) -> CGPoint {
+        quartzPoint ?? CGPoint(x: cocoaPoint.x, y: mainScreenHeight - cocoaPoint.y)
     }
 
     static func shouldKeepCurrentFocus(pointerInside: Bool, focusedPID: pid_t?, topPID: pid_t?) -> Bool {
@@ -206,53 +217,32 @@ extension WindowManager {
         let axX = Double(pointer.x)
         let axY = Double(pointer.y)
 
-        func frameOf(_ id: WindowID) -> Rect? {
-            // Hidden quake must never use a stale on-screen lastFrames hit target.
-            if id == quake.windowID, !quake.isVisible { return nil }
-            return ax.currentFrame(of: id) ?? lastFrames[id] ?? windowsByID[id]?.frame
-        }
-        func containsMouse(_ id: WindowID) -> Bool {
-            guard let f = frameOf(id), f.width > 20, f.height > 20 else { return false }
-            return f.contains(pointX: axX, pointY: axY)
-        }
-
-        let currentFocus = axFocusedWindowID ?? ax.frontmostFocusedWindowID() ?? focusedWindowID()
         let cursorMonitor = monitorUnderMouse() ?? primaryMonitor()
         let activeWorkspaceOnCursor = cursorMonitor.flatMap {
             workspaces.activeWorkspaceByMonitor[$0.id]
         }
-
-        // 1) Pointer still inside the AX-focused window → never steal to a tile behind it
-        //    (Finder/float “sem workspace” overlapping Discord, etc.).
         let topWindow = cgWindowUnderPoint(axX: axX, axY: axY)
         let topPID = topWindow?.pid
-        if let current = currentFocus,
-           current != quake.windowID || quake.isVisible,
-           FocusFollowsMousePolicy.shouldKeepCurrentWindow(
-               pointerInside: containsMouse(current),
-               focusedWindowNumber: current.windowNumber,
-               topWindowNumber: topWindow?.windowNumber == 0 ? nil : topWindow?.windowNumber,
-               currentWindowHome: authoritativeHome(for: current),
-               activeWorkspaceOnCursor: activeWorkspaceOnCursor
-           ) {
-            return
-        }
 
-        // A precise WindowServer hit avoids per-window AX frame reads, which block the
-        // main thread on apps with slow accessibility trees. It also resolves a hit
-        // even when its home workspace is not currently active on this display.
-        if let topWindow, topWindow.windowNumber > 0 {
-            let hit = WindowID(pid: topWindow.pid, windowNumber: topWindow.windowNumber)
-            let trackedWindow = windowsByID[hit]
-            guard !FocusFollowsMousePolicy.shouldIgnoreUnmanagedTopWindow(
-                    topWindowNumber: topWindow.windowNumber,
-                    isManagedWindow: trackedWindow != nil
-                  ),
-                  let win = trackedWindow, !win.isIgnored,
+        // Resolve the exact WindowServer hit before asking AX for the previously
+        // focused window's frame. Some apps stall that synchronous AX read, delaying
+        // hover focus even though WindowServer already identified the target.
+        let topWindowHit: WindowID? = topWindow.flatMap { window in
+            window.windowNumber > 0
+                ? WindowID(pid: window.pid, windowNumber: window.windowNumber)
+                : nil
+        }
+        let topWindowAction = FocusFollowsMousePolicy.topWindowAction(
+            windowNumber: topWindow?.windowNumber,
+            hit: topWindowHit,
+            isManagedWindow: topWindowHit.flatMap { windowsByID[$0] } != nil
+        )
+        switch topWindowAction {
+        case .focus(let hit):
+            guard let win = windowsByID[hit], !win.isIgnored,
                   hit != quake.windowID || quake.isVisible,
                   !isQuakeOwned(hit) || quake.isVisible else {
-                // The exact topmost surface is unmanaged (popup, sheet, utility
-                // window, etc.). Never fall through to a tiled window behind it.
+                // Don't focus a popup/sheet's managed owner or a parked Quake window.
                 return
             }
             if let cursorMonitor { primaryMonitorID = cursorMonitor.id }
@@ -268,6 +258,37 @@ extension WindowManager {
             }
             focusSourceIsMouse = true
             focusMouseTarget(hit, cursorMonitorID: cursorMonitor?.id)
+            return
+        case .ignore:
+            // The exact topmost surface is unmanaged. Never fall through to a tile behind it.
+            return
+        case .fallback:
+            break
+        }
+
+        func frameOf(_ id: WindowID) -> Rect? {
+            // Hidden quake must never use a stale on-screen lastFrames hit target.
+            if id == quake.windowID, !quake.isVisible { return nil }
+            return ax.currentFrame(of: id) ?? lastFrames[id] ?? windowsByID[id]?.frame
+        }
+        func containsMouse(_ id: WindowID) -> Bool {
+            guard let f = frameOf(id), f.width > 20, f.height > 20 else { return false }
+            return f.contains(pointX: axX, pointY: axY)
+        }
+
+        let currentFocus = axFocusedWindowID ?? ax.frontmostFocusedWindowID() ?? focusedWindowID()
+
+        // 1) Pointer still inside the AX-focused window → never steal to a tile behind it
+        //    (Finder/float “sem workspace” overlapping Discord, etc.).
+        if let current = currentFocus,
+           current != quake.windowID || quake.isVisible,
+           FocusFollowsMousePolicy.shouldKeepCurrentWindow(
+               pointerInside: containsMouse(current),
+               focusedWindowNumber: current.windowNumber,
+               topWindowNumber: topWindow?.windowNumber == 0 ? nil : topWindow?.windowNumber,
+               currentWindowHome: authoritativeHome(for: current),
+               activeWorkspaceOnCursor: activeWorkspaceOnCursor
+           ) {
             return
         }
 

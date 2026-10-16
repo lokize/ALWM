@@ -216,14 +216,16 @@ struct ReliabilityRegressionTests {
 
     @Test("an unmanaged app popup blocks focus only when it is the top window under the pointer")
     func popupHitPreventsFocusingWindowBehindIt() {
-        #expect(FocusFollowsMousePolicy.shouldIgnoreUnmanagedTopWindow(
-            topWindowNumber: 2,
+        #expect(FocusFollowsMousePolicy.topWindowAction(
+            windowNumber: 2,
+            hit: WindowID(pid: 42, windowNumber: 2),
             isManagedWindow: false
-        ))
-        #expect(!FocusFollowsMousePolicy.shouldIgnoreUnmanagedTopWindow(
-            topWindowNumber: 1,
+        ) == .ignore)
+        #expect(FocusFollowsMousePolicy.topWindowAction(
+            windowNumber: 1,
+            hit: WindowID(pid: 42, windowNumber: 1),
             isManagedWindow: true
-        ))
+        ) == .focus(WindowID(pid: 42, windowNumber: 1)))
     }
 
     @Test("wake recovery cannot finish with changed stack heights or scroll position")
