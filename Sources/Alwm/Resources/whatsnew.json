@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.9.2",
+      "items": [
+        "Avoid workspace rematch during visibility transitions"
+      ]
+    },
+    {
       "version": "1.9.1",
       "items": [
         "Route mouse focus using the workspace under the pointer"
@@ -245,12 +251,6 @@
       "items": [
         "Wallpaper change notifications include folder and filename",
         "Automatic rotation supports seconds and minutes"
-      ]
-    },
-    {
-      "version": "1.5.2",
-      "items": [
-        "Use Ghostty's native action to keep the visible Quake window above other apps."
       ]
     }
   ]

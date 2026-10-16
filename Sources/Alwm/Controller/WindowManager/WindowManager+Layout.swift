@@ -22,9 +22,16 @@ enum AXDropClassification {
     static func isMassDisappear(
         removedTiledWindows: Int,
         forgottenWindows: Int,
-        strippedWorkspaceCount: Int
+        strippedWorkspaceCount: Int,
+        isApplyingVisibility: Bool = false,
+        isWorkspaceTransition: Bool = false
     ) -> Bool {
-        removedTiledWindows >= 2
+        // Visibility and workspace changes temporarily remove AX windows from
+        // enumeration. Treating that expected churn as sleep/wake loss starts a
+        // disk rematch while the user is switching spaces, which can flash or
+        // reveal windows from another workspace.
+        guard !isApplyingVisibility, !isWorkspaceTransition else { return false }
+        return removedTiledWindows >= 2
             || forgottenWindows >= 2
             || strippedWorkspaceCount >= 2
     }
@@ -230,6 +237,7 @@ extension WindowManager {
         clearStaleLayoutMutationFreezeIfNeeded()
         let rules = configStore.config.rules
         let blockingReassign = Date() < suppressIngestReassignUntil
+        let isWorkspaceTransition = blockingReassign || Date() < suppressWorkspaceFollowUntil
         let alreadyKnown = Set(windowsByID.keys)
         var mapped: [WindowID: ManagedWindow] = [:]
         for w in windows {
@@ -281,7 +289,14 @@ extension WindowManager {
         }
         // Freeze before processing the first missing window. Otherwise the loop below
         // treats the first AX dropout as a red-X close and discards its saved slot.
-        if !isBootstrapping, removedTiledWindows >= 2 {
+        let initialMassDisappear = AXDropClassification.isMassDisappear(
+            removedTiledWindows: removedTiledWindows,
+            forgottenWindows: 0,
+            strippedWorkspaceCount: 0,
+            isApplyingVisibility: isApplyingVisibility,
+            isWorkspaceTransition: isWorkspaceTransition
+        )
+        if !isBootstrapping, initialMassDisappear {
             noteAXMassDropForRecovery()
         }
 
@@ -699,7 +714,9 @@ extension WindowManager {
         let massDisappear = AXDropClassification.isMassDisappear(
             removedTiledWindows: removedTiledWindows,
             forgottenWindows: forgotten.count,
-            strippedWorkspaceCount: strippedLayouts.count
+            strippedWorkspaceCount: strippedLayouts.count,
+            isApplyingVisibility: isApplyingVisibility,
+            isWorkspaceTransition: isWorkspaceTransition
         )
         if massDisappear {
             noteAXMassDropForRecovery()
