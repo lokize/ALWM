@@ -35,6 +35,15 @@ struct NotepadEditorView: View {
             reloadDraft()
         }
         .onChange(of: store.undoRevision) { _, _ in syncDraftAfterUndo() }
+        .onReceive(store.$loadedPages) { pages in
+            guard let id = store.activePageID,
+                  let savedPage = pages[id],
+                  var currentDraft = draftPage,
+                  currentDraft.id == id,
+                  currentDraft.attachments != savedPage.attachments else { return }
+            currentDraft.attachments = savedPage.attachments
+            draftPage = currentDraft
+        }
         .onAppear { reloadDraft() }
     }
 
@@ -47,6 +56,8 @@ struct NotepadEditorView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 6) {
+                    attachmentGallery(page: page)
+
                     TextField(L10n.t("notepad.title_placeholder"), text: titleBinding(page: page))
                         .font(.system(size: 28, weight: .bold))
                         .textFieldStyle(.plain)
@@ -70,6 +81,55 @@ struct NotepadEditorView: View {
                 .frame(maxWidth: 760, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .center)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func attachmentGallery(page: NotePage) -> some View {
+        if !page.attachments.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(L10n.t("notepad.attachments"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 92, maximum: 132), spacing: 8)],
+                    alignment: .leading,
+                    spacing: 8
+                ) {
+                    ForEach(page.attachments) { attachment in
+                        if let image = NSImage(contentsOf: store.imageURL(for: attachment, in: page.id)) {
+                            Image(nsImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 112, height: 76)
+                                .clipped()
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                .overlay(alignment: .topTrailing) {
+                                    Button {
+                                        store.removeImageAttachment(attachment.id, fromPageID: page.id)
+                                        draftPage = store.page(page.id)
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.system(size: 17, weight: .semibold))
+                                            .symbolRenderingMode(.palette)
+                                            .foregroundStyle(.white, Color.black.opacity(0.72))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding(3)
+                                    .help(L10n.t("notepad.attachment.remove"))
+                                    .accessibilityLabel(L10n.t("notepad.attachment.remove"))
+                                }
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+                                        .allowsHitTesting(false)
+                                }
+                        }
+                    }
+                }
+            }
+            .padding(.bottom, 8)
         }
     }
 

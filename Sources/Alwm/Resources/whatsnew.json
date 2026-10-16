@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.8.6",
+      "items": [
+        "Attach pasted images to Notepad notes"
+      ]
+    },
+    {
       "version": "1.8.5",
       "items": [
         "Fix scrolling in Plugins and keep Settings scroll positions when editing workspaces or plugin order"
@@ -247,13 +253,6 @@
         "Restore windows and workspace geometry after sleep, including floating windows and temporary Accessibility drops",
         "Preserve tile sizes when opening and closing windows, and improve mouse focus and compact window placement",
         "Add rotating image and video wallpapers plus separate plugin badges in the workspace bar"
-      ]
-    },
-    {
-      "version": "1.4.6",
-      "items": [
-        "New windows enter the workspace layout without triggering an unnecessary full restore",
-        "Notepad Enter duplicates the current block type and popups outside the panel remain clickable"
       ]
     }
   ]

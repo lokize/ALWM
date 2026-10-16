@@ -21,6 +21,7 @@ public final class NotesStore: ObservableObject {
     private let root: URL
     private var indexURL: URL { root.appendingPathComponent("index.json") }
     private var pagesDirectory: URL { root.appendingPathComponent("pages", isDirectory: true) }
+    private var attachmentsDirectory: URL { root.appendingPathComponent("attachments", isDirectory: true) }
     private func pageURL(_ id: UUID) -> URL {
         pagesDirectory.appendingPathComponent("\(id.uuidString).json")
     }
@@ -165,6 +166,45 @@ public final class NotesStore: ObservableObject {
         commitPage(p)
     }
 
+    @discardableResult
+    public func addImageAttachment(_ pngData: Data, toPageID pageID: UUID) -> UUID? {
+        let pngSignature = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+        guard pngData.starts(with: pngSignature),
+              pngData.count <= 25 * 1024 * 1024,
+              var page = page(pageID) else { return nil }
+
+        let attachment = NoteImageAttachment()
+        let destination = imageURL(for: attachment, in: pageID)
+        do {
+            try FileManager.default.createDirectory(
+                at: destination.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try pngData.write(to: destination, options: .atomic)
+            page.attachments.append(attachment)
+            updatePage(page, registerUndo: true)
+            return attachment.id
+        } catch {
+            recordPersistenceError(error)
+            return nil
+        }
+    }
+
+    public func removeImageAttachment(_ attachmentID: UUID, fromPageID pageID: UUID) {
+        guard var page = page(pageID), page.attachments.contains(where: { $0.id == attachmentID }) else {
+            return
+        }
+        page.attachments.removeAll { $0.id == attachmentID }
+        // Keep the file while the undo manager can still restore its metadata.
+        updatePage(page, registerUndo: true)
+    }
+
+    public func imageURL(for attachment: NoteImageAttachment, in pageID: UUID) -> URL {
+        attachmentsDirectory
+            .appendingPathComponent(pageID.uuidString, isDirectory: true)
+            .appendingPathComponent("\(attachment.id.uuidString).png")
+    }
+
     private func restorePage(_ snapshot: NotePage) {
         guard let current = page(snapshot.id) else { return }
         undoManager.registerUndo(withTarget: self) { store in
@@ -194,6 +234,7 @@ public final class NotesStore: ObservableObject {
 
     private static func hasContentChanges(from old: NotePage, to new: NotePage) -> Bool {
         old.title != new.title || old.categoryID != new.categoryID || old.blocks != new.blocks
+            || old.attachments != new.attachments
     }
 
     public func deletePage(_ id: UUID) {
@@ -205,6 +246,7 @@ public final class NotesStore: ObservableObject {
         openTabIDs.removeAll { $0 == id }
         if activePageID == id { activePageID = openTabIDs.last }
         try? FileManager.default.removeItem(at: pageURL(id))
+        try? FileManager.default.removeItem(at: attachmentsDirectory.appendingPathComponent(id.uuidString, isDirectory: true))
         persistIndex()
         onIndexChanged?()
     }

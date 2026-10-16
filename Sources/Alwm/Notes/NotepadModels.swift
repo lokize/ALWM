@@ -111,19 +111,44 @@ public struct NotePage: Identifiable, Codable, Equatable, Sendable {
     public var categoryID: UUID
     public var updatedAt: Date
     public var blocks: [NoteBlock]
+    public var attachments: [NoteImageAttachment]
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, categoryID, updatedAt, blocks, attachments
+    }
 
     public init(
         id: UUID = UUID(),
         title: String = "",
         categoryID: UUID,
         updatedAt: Date = Date(),
-        blocks: [NoteBlock] = [NoteBlock.empty()]
+        blocks: [NoteBlock] = [NoteBlock.empty()],
+        attachments: [NoteImageAttachment] = []
     ) {
         self.id = id
         self.title = title
         self.categoryID = categoryID
         self.updatedAt = updatedAt
         self.blocks = blocks
+        self.attachments = attachments
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        categoryID = try container.decode(UUID.self, forKey: .categoryID)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        blocks = try container.decodeIfPresent([NoteBlock].self, forKey: .blocks) ?? [NoteBlock.empty()]
+        attachments = try container.decodeIfPresent([NoteImageAttachment].self, forKey: .attachments) ?? []
+    }
+}
+
+public struct NoteImageAttachment: Identifiable, Codable, Equatable, Sendable {
+    public var id: UUID
+
+    public init(id: UUID = UUID()) {
+        self.id = id
     }
 }
 

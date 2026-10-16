@@ -178,6 +178,12 @@ public final class NotepadController {
         )
         Self.configurePanelPresentation(p)
         p.notepadUndoManager = store.undoManager
+        p.onPasteImageData = { [weak self] images in
+            guard let self, let pageID = self.store.activePageID else { return }
+            for image in images {
+                self.store.addImageAttachment(image, toPageID: pageID)
+            }
+        }
         p.onKeyboardFocusChanged = { [weak self] in self?.onKeyboardFocusChanged?() }
 
         let root = NotepadRootView(
@@ -245,6 +251,7 @@ public final class NotepadController {
         guard gen == presentationGeneration else { return }
         isVisible = visible
         if visible {
+            (panel as? NotepadKeyPanel)?.installImagePasteMonitor()
             panel?.orderFrontRegardless()
             NSApp.activate(ignoringOtherApps: true)
             panel?.makeKeyAndOrderFront(nil)
@@ -257,6 +264,7 @@ public final class NotepadController {
                 }
             }
         } else {
+            (panel as? NotepadKeyPanel)?.removeImagePasteMonitor()
             panel?.orderOut(nil)
             blurPanel?.orderOut(nil)
             isVisible = false
@@ -302,9 +310,11 @@ public final class NotepadController {
 }
 
 /// Borderless floating panel that still accepts keyboard focus (search + editor).
-private final class NotepadKeyPanel: NSPanel {
+final class NotepadKeyPanel: NSPanel {
     var onKeyboardFocusChanged: (() -> Void)?
+    var onPasteImageData: (([Data]) -> Void)?
     var notepadUndoManager: UndoManager?
+    private var imagePasteMonitor: Any?
     override var undoManager: UndoManager? { notepadUndoManager }
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
@@ -315,6 +325,36 @@ private final class NotepadKeyPanel: NSPanel {
     override func resignKey() {
         super.resignKey()
         onKeyboardFocusChanged?()
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if handleImagePaste(event) { return true }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    func installImagePasteMonitor() {
+        guard imagePasteMonitor == nil else { return }
+        imagePasteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, event.windowNumber == self.windowNumber,
+                  self.handleImagePaste(event) else { return event }
+            return nil
+        }
+    }
+
+    func removeImagePasteMonitor() {
+        guard let imagePasteMonitor else { return }
+        NSEvent.removeMonitor(imagePasteMonitor)
+        self.imagePasteMonitor = nil
+    }
+
+    @discardableResult
+    func handleImagePaste(_ event: NSEvent, from pasteboard: NSPasteboard = .general) -> Bool {
+        guard event.modifierFlags.contains(.command),
+              event.charactersIgnoringModifiers?.lowercased() == "v" else { return false }
+        let images = NotepadImagePasteboard.readImageData(from: pasteboard)
+        guard !images.isEmpty else { return false }
+        onPasteImageData?(images)
+        return true
     }
 }
 
