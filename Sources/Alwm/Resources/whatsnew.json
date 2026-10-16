@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.9.8",
+      "items": [
+        "Show clipboard action feedback and fix attachment controls"
+      ]
+    },
+    {
       "version": "1.9.7",
       "items": [
         "Center quit button title"
@@ -243,12 +249,6 @@
       "items": [
         "Show the active wallpaper and advance it from the status menu",
         "Keep the workspace bar centered at zero offset when workspace content changes"
-      ]
-    },
-    {
-      "version": "1.5.8",
-      "items": [
-        "Show wallpaper thumbnails in the on-screen badge"
       ]
     }
   ]

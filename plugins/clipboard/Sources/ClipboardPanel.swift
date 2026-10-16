@@ -121,6 +121,8 @@ enum ClipboardPanelController {
 
 struct ClipboardPanelView: View {
     @ObservedObject private var store = ClipboardStore.shared
+    @State private var feedbackMessage: String?
+    @State private var feedbackTask: Task<Void, Never>?
 
     private var loc: String { store.localeCode() }
     private func t(_ key: String) -> String { PluginL10n.t(key, locale: loc) }
@@ -131,6 +133,16 @@ struct ClipboardPanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
+            if let feedbackMessage {
+                Text(feedbackMessage)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 5)
+                    .background(Color.teal.opacity(0.18), in: RoundedRectangle(cornerRadius: 7))
+                    .accessibilityAddTraits(.updatesFrequently)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
             searchRow
             filterRow
             list
@@ -260,20 +272,29 @@ struct ClipboardPanelView: View {
     private func itemRow(_ item: ClipboardItem) -> some View {
         let selected = store.selectedID == item.id
         return HStack(alignment: .center, spacing: 10) {
-            kindIcon(item)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.preview)
-                    .font(.callout)
-                    .lineLimit(3)
-                    .multilineTextAlignment(.leading)
-                Text(kindAndTime(item))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+            Button {
+                store.selectedID = item.id
+                store.pasteItem(item)
+            } label: {
+                HStack(alignment: .center, spacing: 10) {
+                    kindIcon(item)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.preview)
+                            .font(.callout)
+                            .lineLimit(3)
+                            .multilineTextAlignment(.leading)
+                        Text(kindAndTime(item))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
-            Spacer(minLength: 0)
+            .buttonStyle(.plain)
             Button {
                 store.togglePin(item)
+                showFeedback(t(item.pinned ? "plugin.clipboard.feedback.unpinned" : "plugin.clipboard.feedback.pinned"))
             } label: {
                 Image(systemName: item.pinned ? "pin.fill" : "pin")
                     .foregroundStyle(item.pinned ? Color.orange : Color.secondary)
@@ -283,6 +304,7 @@ struct ClipboardPanelView: View {
 
             Button {
                 store.copyItem(item)
+                showFeedback(t("plugin.clipboard.feedback.copied"))
             } label: {
                 Image(systemName: "doc.on.doc")
             }
@@ -301,6 +323,7 @@ struct ClipboardPanelView: View {
 
             Button {
                 store.deleteItem(item)
+                showFeedback(t("plugin.clipboard.feedback.deleted"))
             } label: {
                 Image(systemName: "trash")
                     .foregroundStyle(.secondary)
@@ -318,9 +341,15 @@ struct ClipboardPanelView: View {
                 .strokeBorder(selected ? Color.teal.opacity(0.55) : Color.clear, lineWidth: 1)
         )
         .contentShape(Rectangle())
-        .onTapGesture {
-            store.selectedID = item.id
-            store.pasteItem(item)
+    }
+
+    private func showFeedback(_ message: String) {
+        feedbackTask?.cancel()
+        withAnimation(.easeOut(duration: 0.15)) { feedbackMessage = message }
+        feedbackTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.8))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeIn(duration: 0.15)) { feedbackMessage = nil }
         }
     }
 
@@ -380,7 +409,11 @@ struct ClipboardPanelView: View {
                 .font(.caption)
                 Spacer()
                 Button(t("plugin.clipboard.clear")) {
+                    let removedCount = store.items.filter { !$0.pinned }.count
                     store.clearUnpinned()
+                    if removedCount > 0 {
+                        showFeedback(t("plugin.clipboard.feedback.deleted"))
+                    }
                 }
                 .font(.caption)
             }
