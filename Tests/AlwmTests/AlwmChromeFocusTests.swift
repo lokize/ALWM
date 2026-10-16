@@ -24,6 +24,24 @@ struct AlwmChromeFocusTests {
         ))
     }
 
+    @Test("a stale focused window from another workspace cannot block hover focus")
+    func staleFocusedWindowDoesNotBlockOtherWorkspace() {
+        #expect(!FocusFollowsMousePolicy.shouldKeepCurrentWindow(
+            pointerInside: true,
+            focusedWindowNumber: 100,
+            topWindowNumber: 100,
+            currentWindowHome: "5",
+            activeWorkspaceOnCursor: "2"
+        ))
+        #expect(FocusFollowsMousePolicy.shouldKeepCurrentWindow(
+            pointerInside: true,
+            focusedWindowNumber: 100,
+            topWindowNumber: 100,
+            currentWindowHome: "2",
+            activeWorkspaceOnCursor: "2"
+        ))
+    }
+
     @Test("a mouse hit in an inactive workspace routes through workspace activation")
     func inactiveHomeWorkspaceRequiresActivation() {
         #expect(FocusFollowsMousePolicy.shouldActivateHomeWorkspace(windowHome: "2", activeWorkspaceOnCursor: "6"))

@@ -1176,6 +1176,7 @@ struct StatusMenuView: View {
                     .font(.system(size: 13, weight: .semibold))
                 Spacer()
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .foregroundStyle(Color.red.opacity(0.9))
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
@@ -1188,6 +1189,7 @@ struct StatusMenuView: View {
                     .strokeBorder(Color.red.opacity(0.18), lineWidth: 1)
             )
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .buttonStyle(.plain)
     }
 

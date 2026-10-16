@@ -24,9 +24,15 @@ enum FocusFollowsMousePolicy {
     static func shouldKeepCurrentWindow(
         pointerInside: Bool,
         focusedWindowNumber: Int,
-        topWindowNumber: Int?
+        topWindowNumber: Int?,
+        currentWindowHome: String? = nil,
+        activeWorkspaceOnCursor: String? = nil
     ) -> Bool {
         guard pointerInside else { return false }
+        if let activeWorkspaceOnCursor,
+           currentWindowHome != activeWorkspaceOnCursor {
+            return false
+        }
         guard let topWindowNumber else { return true }
         return focusedWindowNumber == topWindowNumber
     }
@@ -211,6 +217,10 @@ extension WindowManager {
         }
 
         let currentFocus = axFocusedWindowID ?? ax.frontmostFocusedWindowID() ?? focusedWindowID()
+        let cursorMonitor = monitorUnderMouse() ?? primaryMonitor()
+        let activeWorkspaceOnCursor = cursorMonitor.flatMap {
+            workspaces.activeWorkspaceByMonitor[$0.id]
+        }
 
         // 1) Pointer still inside the AX-focused window → never steal to a tile behind it
         //    (Finder/float “sem workspace” overlapping Discord, etc.).
@@ -221,7 +231,9 @@ extension WindowManager {
            FocusFollowsMousePolicy.shouldKeepCurrentWindow(
                pointerInside: containsMouse(current),
                focusedWindowNumber: current.windowNumber,
-               topWindowNumber: topWindow?.windowNumber == 0 ? nil : topWindow?.windowNumber
+               topWindowNumber: topWindow?.windowNumber == 0 ? nil : topWindow?.windowNumber,
+               currentWindowHome: authoritativeHome(for: current),
+               activeWorkspaceOnCursor: activeWorkspaceOnCursor
            ) {
             return
         }
@@ -243,11 +255,10 @@ extension WindowManager {
                 // window, etc.). Never fall through to a tiled window behind it.
                 return
             }
-            let cursorMonitor = monitorUnderMouse() ?? primaryMonitor()
             if let cursorMonitor { primaryMonitorID = cursorMonitor.id }
             if FocusFollowsMousePolicy.shouldSkipAlreadyFocusedHit(
                 hitHome: authoritativeHome(for: hit),
-                activeWorkspaceOnCursor: cursorMonitor.flatMap { workspaces.activeWorkspaceByMonitor[$0.id] },
+                activeWorkspaceOnCursor: activeWorkspaceOnCursor,
                 focusedWindowOnCursor: cursorMonitor.flatMap { workspaces.activeWorkspace(for: $0.id)?.focusedWindowID },
                 axFocusedWindow: axFocusedWindowID,
                 hit: hit
@@ -297,10 +308,9 @@ extension WindowManager {
                let monitor = monitors.monitorContaining(pointX: frame.midX, pointY: frame.midY) {
                 primaryMonitorID = monitor.id
             }
-            let cursorMonitor = monitorUnderMouse()
             if FocusFollowsMousePolicy.shouldSkipAlreadyFocusedHit(
                 hitHome: authoritativeHome(for: hit),
-                activeWorkspaceOnCursor: cursorMonitor.flatMap { workspaces.activeWorkspaceByMonitor[$0.id] },
+                activeWorkspaceOnCursor: activeWorkspaceOnCursor,
                 focusedWindowOnCursor: cursorMonitor.flatMap { workspaces.activeWorkspace(for: $0.id)?.focusedWindowID },
                 axFocusedWindow: axFocusedWindowID,
                 hit: hit
@@ -314,7 +324,7 @@ extension WindowManager {
         }
 
         // 3) Tiled windows on the active workspace of the monitor under the cursor.
-        let cursorMon = monitorUnderMouse() ?? primaryMonitor()
+        let cursorMon = cursorMonitor
         let activeOnCursor = cursorMon.flatMap { workspaces.activeWorkspaceByMonitor[$0.id] }
         var best: (WindowID, Double)?
         for (id, frame) in lastFrames {

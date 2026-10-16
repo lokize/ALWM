@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.9.3",
+      "items": [
+        "Follow mouse focus across workspace boundaries and expand quit button"
+      ]
+    },
+    {
       "version": "1.9.2",
       "items": [
         "Avoid workspace rematch during visibility transitions"
@@ -244,13 +250,6 @@
       "items": [
         "Keep workspace assignments aligned with the primary display",
         "Center the workspace bar when horizontal offset is zero"
-      ]
-    },
-    {
-      "version": "1.5.3",
-      "items": [
-        "Wallpaper change notifications include folder and filename",
-        "Automatic rotation supports seconds and minutes"
       ]
     }
   ]
