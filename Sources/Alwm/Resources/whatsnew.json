@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "1.8.9",
+      "items": [
+        "Fix mouse focus across vertically offset monitors and inactive workspaces",
+        "Improve wallpaper filenames with character and artwork names"
+      ]
+    },
+    {
       "version": "1.8.8",
       "items": [
         "Focus follows mouse across displays",
@@ -244,12 +251,6 @@
       "version": "1.5.0",
       "items": [
         "Persistent Quake and Notepad panels allow clicks and text selection in other apps."
-      ]
-    },
-    {
-      "version": "1.4.9",
-      "items": [
-        "Status menu controls stay clickable when the pointer moves during a click."
       ]
     }
   ]

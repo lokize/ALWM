@@ -8,6 +8,15 @@ import AlwmPluginAPI
 // MARK: - Focus-follows-mouse
 
 enum FocusFollowsMousePolicy {
+    static func mouseAXPoint(quartzPoint: CGPoint?, cocoaPoint: CGPoint, mainScreenHeight: CGFloat) -> CGPoint {
+        quartzPoint ?? CGPoint(x: cocoaPoint.x, y: mainScreenHeight - cocoaPoint.y)
+    }
+
+    static func shouldIgnoreUnmanagedTopWindow(topWindowNumber: Int?, isManagedWindow: Bool) -> Bool {
+        guard let topWindowNumber, topWindowNumber > 0 else { return false }
+        return !isManagedWindow
+    }
+
     static func shouldKeepCurrentFocus(pointerInside: Bool, focusedPID: pid_t?, topPID: pid_t?) -> Bool {
         pointerInside && (topPID == nil || focusedPID == topPID)
     }
@@ -22,9 +31,9 @@ enum FocusFollowsMousePolicy {
         return focusedWindowNumber == topWindowNumber
     }
 
-    static func shouldActivateHomeWorkspace(windowHome: String?, activeWorkspaces: Set<String>) -> Bool {
+    static func shouldActivateHomeWorkspace(windowHome: String?, activeWorkspaceOnCursor: String?) -> Bool {
         guard let windowHome else { return false }
-        return !activeWorkspaces.contains(windowHome)
+        return windowHome != activeWorkspaceOnCursor
     }
 }
 
@@ -32,8 +41,10 @@ enum FocusBorderPolicy {
     static func monitorID(
         focusedWorkspace: String?,
         activeWorkspaceByMonitor: [CGDirectDisplayID: String],
+        focusedWindowMonitorID: CGDirectDisplayID? = nil,
         fallbackMonitorID: CGDirectDisplayID?
     ) -> CGDirectDisplayID? {
+        if let focusedWindowMonitorID { return focusedWindowMonitorID }
         if let focusedWorkspace,
            let monitorID = activeWorkspaceByMonitor
                 .filter({ $0.value == focusedWorkspace })
@@ -47,6 +58,16 @@ enum FocusBorderPolicy {
 }
 
 extension WindowManager {
+    func mouseLocationInAXCoordinates() -> CGPoint {
+        let cocoaPoint = NSEvent.mouseLocation
+        let mainHeight = NSScreen.screens.first?.frame.height ?? cocoaPoint.y
+        return FocusFollowsMousePolicy.mouseAXPoint(
+            quartzPoint: CGEvent(source: nil)?.location,
+            cocoaPoint: cocoaPoint,
+            mainScreenHeight: mainHeight
+        )
+    }
+
     func setupFocusFollowsMouse() {
         if let mouseMonitor {
             NSEvent.removeMonitor(mouseMonitor)
@@ -68,49 +89,8 @@ extension WindowManager {
             paletteVisible: palette.isVisible,
             overviewVisible: overview.isVisible,
             settingsVisible: settingsUI.isVisible,
-            statusPopoverVisible: statusPopover.isShown,
-            appTransientPopupOpen: focusedAppHasTransientPopupOpen()
+            statusPopoverVisible: statusPopover.isShown
         )
-    }
-
-    func focusedAppHasTransientPopupOpen() -> Bool {
-        guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? axFocusedWindowID?.pid else { return false }
-        return focusedAppHasTransientPopupOpen(pid: pid) {
-            computeFocusedAppHasTransientPopupOpen(pid: pid)
-        }
-    }
-
-    func focusedAppHasTransientPopupOpen(pid: pid_t, query: () -> Bool) -> Bool {
-        // Positive results can linger briefly after dismissal. Negative results
-        // only cover duplicate checks in this frame, never the next 80ms FFM tick.
-        if let cached = appPopupOpenCache, cached.pid == pid,
-           Date().timeIntervalSince(cached.at) < (cached.value ? 0.15 : 0.016) {
-            return cached.value
-        }
-        let value = query()
-        appPopupOpenCache = (Date(), pid, value)
-        return value
-    }
-
-    func computeFocusedAppHasTransientPopupOpen(pid: pid_t) -> Bool {
-
-        let monitorFrames = monitors.monitors.map(\.frame)
-        for (id, win) in windowsByID {
-            guard id.pid == pid, !win.isIgnored else { continue }
-            if id == quake.windowID || isQuakeOwned(id) || win.isScratchpad { continue }
-            guard win.isFloating || floatingOverrides.contains(id) else { continue }
-            let frame = lastFrames[id] ?? win.frame
-            guard OffscreenParking.isUsableOnscreenFrame(frame, monitors: monitorFrames) else { continue }
-            let usable = usableAreaNear(frame)
-            // Small / non-main floats = sticker pickers, emoji panels, context menus.
-            if !looksLikeMainTiledWindow(frame, usable: usable) {
-                return true
-            }
-        }
-
-        let knownWindows = Set(windowsByID.keys.filter { $0.pid == pid }.map(\.windowNumber))
-        return AlwmChromeFocus.cgProcessHasPopupLayerWindow(pid: pid, managedWindowNumbers: knownWindows)
-            || AlwmChromeFocus.axProcessHasTransientPopup(pid: pid)
     }
 
     func scheduleFocusWindowUnderMouse() {
@@ -121,7 +101,9 @@ extension WindowManager {
             return
         }
         let now = Date()
-        let minInterval: TimeInterval = 0.04
+        // Keep cross-display/workspace focus responsive while coalescing high-rate
+        // mouse events. A 40 ms gate made workspace activation feel a beat late.
+        let minInterval: TimeInterval = 0.016
         if now.timeIntervalSince(ffmLastRun) >= minInterval {
             ffmWorkItem?.cancel()
             ffmWorkItem = nil
@@ -187,10 +169,9 @@ extension WindowManager {
         // Column pan moves tiles under the cursor — FFM + snapView would yank offset back.
         if isColumnPanActive { return }
 
-        let loc = NSEvent.mouseLocation
-        let mainHeight = Double(NSScreen.screens.first?.frame.height ?? loc.y)
-        let axX = Double(loc.x)
-        let axY = mainHeight - Double(loc.y)
+        let pointer = mouseLocationInAXCoordinates()
+        let axX = Double(pointer.x)
+        let axY = Double(pointer.y)
 
         func frameOf(_ id: WindowID) -> Rect? {
             // Hidden quake must never use a stale on-screen lastFrames hit target.
@@ -215,6 +196,34 @@ extension WindowManager {
                focusedWindowNumber: current.windowNumber,
                topWindowNumber: topWindow?.windowNumber == 0 ? nil : topWindow?.windowNumber
            ) {
+            return
+        }
+
+        // A precise WindowServer hit avoids per-window AX frame reads, which block the
+        // main thread on apps with slow accessibility trees. It also resolves a hit
+        // even when its home workspace is not currently active on this display.
+        if let topWindow, topWindow.windowNumber > 0 {
+            let hit = WindowID(pid: topWindow.pid, windowNumber: topWindow.windowNumber)
+            let trackedWindow = windowsByID[hit]
+            guard !FocusFollowsMousePolicy.shouldIgnoreUnmanagedTopWindow(
+                    topWindowNumber: topWindow.windowNumber,
+                    isManagedWindow: trackedWindow != nil
+                  ),
+                  let win = trackedWindow, !win.isIgnored,
+                  hit != quake.windowID || quake.isVisible,
+                  !isQuakeOwned(hit) || quake.isVisible else {
+                // The exact topmost surface is unmanaged (popup, sheet, utility
+                // window, etc.). Never fall through to a tiled window behind it.
+                return
+            }
+            let cursorMonitor = monitorUnderMouse() ?? primaryMonitor()
+            if let cursorMonitor { primaryMonitorID = cursorMonitor.id }
+            if focusedWindowID() == hit || axFocusedWindowID == hit {
+                refreshBorder()
+                return
+            }
+            focusSourceIsMouse = true
+            focusMouseTarget(hit, cursorMonitorID: cursorMonitor?.id)
             return
         }
 
@@ -299,11 +308,11 @@ extension WindowManager {
     }
 
     func focusMouseTarget(_ id: WindowID, cursorMonitorID: CGDirectDisplayID?) {
-        let activeWorkspaces = Set(workspaces.activeWorkspaceByMonitor.values)
+        let activeWorkspaceOnCursor = cursorMonitorID.flatMap { workspaces.activeWorkspaceByMonitor[$0] }
         if let home = authoritativeHome(for: id),
            FocusFollowsMousePolicy.shouldActivateHomeWorkspace(
                windowHome: home,
-               activeWorkspaces: activeWorkspaces
+               activeWorkspaceOnCursor: activeWorkspaceOnCursor
            ),
            let monitor = workspaces.preferredMonitor(forWorkspace: home, monitors: monitors.monitors) {
             let cursorMonitor = cursorMonitorID.map { String($0) } ?? "?"

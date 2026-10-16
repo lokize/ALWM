@@ -28,4 +28,18 @@ struct FocusBorderPolicyTests {
 
         #expect(selected == msi)
     }
+
+    @Test("the focus ring follows the focused window when the workspace is active on multiple displays")
+    func focusedWindowDisplayWinsWhenWorkspaceIsShared() {
+        let upper: CGDirectDisplayID = 2
+        let lower: CGDirectDisplayID = 3
+        let selected = FocusBorderPolicy.monitorID(
+            focusedWorkspace: "2",
+            activeWorkspaceByMonitor: [upper: "2", lower: "2"],
+            focusedWindowMonitorID: lower,
+            fallbackMonitorID: upper
+        )
+
+        #expect(selected == lower)
+    }
 }

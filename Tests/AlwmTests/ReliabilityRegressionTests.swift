@@ -214,22 +214,16 @@ struct ReliabilityRegressionTests {
         #expect(!AlwmChromeFocus.processHasPopupWindow(pid: 42, infos: [main], managedWindowNumbers: [1]))
     }
 
-    @Test("a closed-popup cache cannot mask a popup opened before the next mouse focus interval")
-    @MainActor
-    func staleNegativePopupCacheCannotStealFocus() {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-test-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = manager(root: root)
-        manager.appPopupOpenCache = (Date().addingTimeInterval(-0.08), 42, false)
-        let popup: [String: Any] = [
-            kCGWindowOwnerPID as String: 42, kCGWindowNumber as String: 2,
-            kCGWindowLayer as String: 0,
-            kCGWindowBounds as String: ["X": 500, "Y": 100, "Width": 300, "Height": 400],
-        ]
-        let blocksFocus = manager.focusedAppHasTransientPopupOpen(pid: 42) {
-            AlwmChromeFocus.processHasPopupWindow(pid: 42, infos: [popup], managedWindowNumbers: [1])
-        }
-        #expect(blocksFocus)
+    @Test("an unmanaged app popup blocks focus only when it is the top window under the pointer")
+    func popupHitPreventsFocusingWindowBehindIt() {
+        #expect(FocusFollowsMousePolicy.shouldIgnoreUnmanagedTopWindow(
+            topWindowNumber: 2,
+            isManagedWindow: false
+        ))
+        #expect(!FocusFollowsMousePolicy.shouldIgnoreUnmanagedTopWindow(
+            topWindowNumber: 1,
+            isManagedWindow: true
+        ))
     }
 
     @Test("wake recovery cannot finish with changed stack heights or scroll position")

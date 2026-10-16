@@ -1252,11 +1252,8 @@ extension WindowManager {
     }
 
     func monitorForWorkspaceCycle() -> MonitorInfo {
-        let loc = NSEvent.mouseLocation
-        let mainHeight = Double(NSScreen.screens.first?.frame.height ?? loc.y)
-        let axX = Double(loc.x)
-        let axY = mainHeight - Double(loc.y)
-        if let under = monitors.monitorContaining(pointX: axX, pointY: axY) {
+        let point = mouseLocationInAXCoordinates()
+        if let under = monitors.monitorContaining(pointX: Double(point.x), pointY: Double(point.y)) {
             primaryMonitorID = under.id
             return under
         }

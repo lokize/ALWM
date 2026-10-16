@@ -12,14 +12,12 @@ enum AlwmChromeFocus {
         paletteVisible: Bool,
         overviewVisible: Bool,
         settingsVisible: Bool,
-        statusPopoverVisible: Bool = false,
-        appTransientPopupOpen: Bool = false
+        statusPopoverVisible: Bool = false
     ) -> Bool {
         if overlaysCaptureFocus { return true }
         if paletteVisible || overviewVisible || settingsVisible { return true }
         if statusPopoverVisible { return true }
         if PluginPanelOutsideClick.hasVisiblePanel { return true }
-        if appTransientPopupOpen { return true }
         //  menu and File/Edit/… app menus — moving the mouse must not raise tiles underneath.
         if menuBarMenuIsOpen() { return true }
         if let key = NSApp.keyWindow, key.isVisible, !key.isMiniaturized, isInteractiveChrome(key) {

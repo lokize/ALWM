@@ -1,20 +1,9 @@
+import CoreGraphics
 import Testing
 @testable import Alwm
 
 @Suite("Application popup focus handling")
 struct AlwmChromeFocusTests {
-    @Test("focus follows mouse pauses while an application popup is open")
-    @MainActor
-    func popupBlocksFocusFollowsMouse() {
-        #expect(AlwmChromeFocus.blocksFocusFollowsMouse(
-            overlaysCaptureFocus: false,
-            paletteVisible: false,
-            overviewVisible: false,
-            settingsVisible: false,
-            appTransientPopupOpen: true
-        ))
-    }
-
     @Test("a top window covering the focused tile lets focus follow the mouse")
     func topWindowBeatsFocusedTileFrame() {
         #expect(!FocusFollowsMousePolicy.shouldKeepCurrentFocus(pointerInside: true, focusedPID: 42, topPID: 43))
@@ -37,17 +26,40 @@ struct AlwmChromeFocusTests {
 
     @Test("a mouse hit in an inactive workspace routes through workspace activation")
     func inactiveHomeWorkspaceRequiresActivation() {
-        #expect(FocusFollowsMousePolicy.shouldActivateHomeWorkspace(
-            windowHome: "2",
-            activeWorkspaces: ["5", "6"]
-        ))
+        #expect(FocusFollowsMousePolicy.shouldActivateHomeWorkspace(windowHome: "2", activeWorkspaceOnCursor: "6"))
+        #expect(FocusFollowsMousePolicy.shouldActivateHomeWorkspace(windowHome: "2", activeWorkspaceOnCursor: nil))
         #expect(!FocusFollowsMousePolicy.shouldActivateHomeWorkspace(
             windowHome: "6",
-            activeWorkspaces: ["5", "6"]
+            activeWorkspaceOnCursor: "6"
         ))
-        #expect(!FocusFollowsMousePolicy.shouldActivateHomeWorkspace(
-            windowHome: nil,
-            activeWorkspaces: ["5", "6"]
+        #expect(!FocusFollowsMousePolicy.shouldActivateHomeWorkspace(windowHome: nil, activeWorkspaceOnCursor: "6"))
+    }
+
+    @Test("mouse focus uses Quartz coordinates directly on vertically offset displays")
+    func quartzPointerCoordinatesWinOverPrimaryScreenConversion() {
+        let lowerDisplayQuartzPoint = CGPoint(x: 900, y: 1_800)
+        let mistakenPrimaryScreenConversion = CGPoint(x: 900, y: -360)
+        #expect(FocusFollowsMousePolicy.mouseAXPoint(
+            quartzPoint: lowerDisplayQuartzPoint,
+            cocoaPoint: CGPoint(x: 900, y: 1_800),
+            mainScreenHeight: 1_440
+        ) == lowerDisplayQuartzPoint)
+        #expect(lowerDisplayQuartzPoint != mistakenPrimaryScreenConversion)
+    }
+
+    @Test("an unmanaged popup under the pointer prevents focusing a window behind it")
+    func unmanagedTopWindowDoesNotFocusWindowBehindPopup() {
+        #expect(FocusFollowsMousePolicy.shouldIgnoreUnmanagedTopWindow(
+            topWindowNumber: 200,
+            isManagedWindow: false
+        ))
+        #expect(!FocusFollowsMousePolicy.shouldIgnoreUnmanagedTopWindow(
+            topWindowNumber: 200,
+            isManagedWindow: true
+        ))
+        #expect(!FocusFollowsMousePolicy.shouldIgnoreUnmanagedTopWindow(
+            topWindowNumber: nil,
+            isManagedWindow: false
         ))
     }
 }

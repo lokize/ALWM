@@ -2744,7 +2744,6 @@ extension WindowManager {
     public nonisolated func axTrackerFocusedWindowDidChange(_ id: WindowID?) {
         Task { @MainActor in
             self.axFocusedWindowID = id
-            self.appPopupOpenCache = nil
             self.updateOverlayInputMode()
             // Quake / notepad own the interaction — ignore AX focus noise from tiles underneath
             // (same idea as plugin panels / menu bar).

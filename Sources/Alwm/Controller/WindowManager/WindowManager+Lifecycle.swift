@@ -263,11 +263,8 @@ extension WindowManager {
     }
 
     func monitorUnderMouse() -> MonitorInfo? {
-        let p = NSEvent.mouseLocation
-        let mainH = Double(NSScreen.screens.first?.frame.height ?? 0)
-        // Cocoa bottom-left → AX top-left used by MonitorStore frames.
-        let axY = mainH - Double(p.y)
-        return monitors.monitorContaining(pointX: Double(p.x), pointY: axY)
+        let point = mouseLocationInAXCoordinates()
+        return monitors.monitorContaining(pointX: Double(point.x), pointY: Double(point.y))
     }
 
     func mutateSettings(_ body: (inout LayoutSettings) -> Void) {

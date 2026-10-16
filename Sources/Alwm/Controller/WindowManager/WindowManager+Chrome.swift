@@ -25,9 +25,16 @@ extension WindowManager {
         }
         let focusedAXID = axFocusedWindowID ?? ax.frontmostFocusedWindowID()
         let focusedWorkspace = focusedAXID.flatMap { authoritativeHome(for: $0) ?? workspaces.workspaceID(containing: $0) }
+        let focusedWindowMonitorID = focusedAXID.flatMap { id -> CGDirectDisplayID? in
+            guard let frame = lastFrames[id] ?? windowsByID[id]?.frame else { return nil }
+            return monitors.monitors.first(where: {
+                $0.frame.contains(pointX: frame.midX, pointY: frame.midY)
+            })?.id
+        }
         let borderMonitorID = FocusBorderPolicy.monitorID(
             focusedWorkspace: focusedWorkspace,
             activeWorkspaceByMonitor: workspaces.activeWorkspaceByMonitor,
+            focusedWindowMonitorID: focusedWindowMonitorID,
             fallbackMonitorID: primaryMonitorID
         )
         let mainHeight = Double(NSScreen.screens.first?.frame.height ?? 900)

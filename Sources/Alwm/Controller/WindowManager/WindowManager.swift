@@ -75,7 +75,6 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
 
     var ffmLastRun = Date.distantPast
 
-    var appPopupOpenCache: (at: Date, pid: pid_t, value: Bool)?
 
     let overlayClickCapture = OverlayClickCapture()
 
