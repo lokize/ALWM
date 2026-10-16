@@ -14,6 +14,8 @@ struct PluginsSettingsPane: View {
     @State var tick = 0
     @State var searchText = ""
     @State var categoryFilter: PluginCategory? = nil
+    @State var catalogRevision = 0
+    var skipCatalogRefresh = false
 
     let contentInset: CGFloat = 20
     let cardGap: CGFloat = 12
@@ -30,9 +32,12 @@ struct PluginsSettingsPane: View {
     }
 
     var body: some View {
-        GeometryReader { geo in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+        MacAlwaysScrollView(contentID: [
+            String(loc.revision), String(catalogRevision), searchText,
+            categoryFilter?.rawValue ?? "", String(installer.isRestoring),
+            installer.lastError ?? ""
+        ]) {
+            VStack(alignment: .leading, spacing: 20) {
                     publishBlock
 
                     if installer.isRestoring {
@@ -93,27 +98,32 @@ struct PluginsSettingsPane: View {
                             .foregroundStyle(.secondary)
                             .padding(.top, 2)
                     }
-                }
-                .padding(.horizontal, contentInset)
-                .padding(.vertical, 16)
-                .padding(.bottom, 8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .focusEffectDisabled()
             }
-            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
-            .scrollIndicators(.visible)
-            .background(ForceLegacyVerticalScroller())
+            .padding(.horizontal, contentInset)
+            .padding(.vertical, 16)
+            .padding(.bottom, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .focusEffectDisabled()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .id(loc.revision)
         .onAppear {
-            Task { await reloadAsync() }
-            PluginManager.shared.reloadFromSettings()
+            if !skipCatalogRefresh {
+                Task { await reloadAsync() }
+                PluginManager.shared.reloadFromSettings()
+            }
         }
-        .onChange(of: tick) { _, _ in Task { await reloadAsync() } }
-        .onChange(of: installer.remoteCatalog) { _, _ in rebuildItems() }
-        .onChange(of: installer.busyIDs) { _, _ in rebuildItems() }
+        .onChange(of: tick) { _, _ in
+            if !skipCatalogRefresh { Task { await reloadAsync() } }
+        }
+        .onChange(of: installer.remoteCatalog) { _, _ in
+            if !skipCatalogRefresh { rebuildItems() }
+        }
+        .onChange(of: installer.busyIDs) { _, _ in
+            if !skipCatalogRefresh { rebuildItems() }
+        }
         .onChange(of: installer.isRestoring) { _, _ in
+            guard !skipCatalogRefresh else { return }
             rebuildItems()
             if !installer.isRestoring {
                 PluginManager.shared.reloadFromSettings()
@@ -324,6 +334,7 @@ struct PluginsSettingsPane: View {
         items = byID.values.sorted {
             $0.manifest.name.localizedCaseInsensitiveCompare($1.manifest.name) == .orderedAscending
         }
+        catalogRevision &+= 1
     }
 
     func download(_ item: SettingsPluginItem) async {

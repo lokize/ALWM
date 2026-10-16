@@ -39,6 +39,7 @@ struct SettingsRootView: View {
     var onApplyEnvironmentProfile: (String) -> Bool
     var onUndoWindowAction: () -> Void
     var onRerunOnboarding: () -> Void
+    let pluginsPreviewItems: [SettingsPluginItem]?
 
     init(
         config: AlwmConfig,
@@ -60,6 +61,7 @@ struct SettingsRootView: View {
         onApplyEnvironmentProfile: @escaping (String) -> Bool = { _ in false },
         windowActionHistory: [WindowActionHistoryEntry] = [],
         onUndoWindowAction: @escaping () -> Void = {},
+        pluginsPreviewItems: [SettingsPluginItem]? = nil,
         onRerunOnboarding: @escaping () -> Void
     ) {
         _config = State(initialValue: config)
@@ -82,6 +84,7 @@ struct SettingsRootView: View {
         self.onSaveEnvironmentProfile = onSaveEnvironmentProfile
         self.onApplyEnvironmentProfile = onApplyEnvironmentProfile
         self.onUndoWindowAction = onUndoWindowAction
+        self.pluginsPreviewItems = pluginsPreviewItems
         self.onRerunOnboarding = onRerunOnboarding
     }
 
@@ -283,7 +286,7 @@ struct SettingsRootView: View {
         case .quake: quakePane
         case .capture: capturePane
         case .notepad: notepadPane
-        case .plugins: PluginsSettingsPane()
+        case .plugins: PluginsSettingsPane(items: pluginsPreviewItems ?? [], skipCatalogRefresh: pluginsPreviewItems != nil)
         }
     }
 }

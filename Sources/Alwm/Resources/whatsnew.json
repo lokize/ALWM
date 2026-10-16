@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.8.5",
+      "items": [
+        "Fix scrolling in Plugins and keep Settings scroll positions when editing workspaces or plugin order"
+      ]
+    },
+    {
       "version": "1.8.4",
       "items": [
         "Place settings, plugins, and news side by side"
@@ -248,12 +254,6 @@
       "items": [
         "New windows enter the workspace layout without triggering an unnecessary full restore",
         "Notepad Enter duplicates the current block type and popups outside the panel remain clickable"
-      ]
-    },
-    {
-      "version": "1.4.5",
-      "items": [
-        "Keep Notepad focus captured through its closing animation"
       ]
     }
   ]

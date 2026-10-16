@@ -56,7 +56,7 @@ extension SettingsRootView {
 
     var workspacesPane: some View {
         WorkspacesSettingsPane(
-            config: $config,
+            config: FormScrollPin.preservingScroll($config),
             monitors: monitors,
             monitorIndexByID: monitorIndexByID,
             runningApps: runningAppsProvider()

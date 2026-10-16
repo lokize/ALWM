@@ -47,36 +47,106 @@ private final class ScrollerProbeView: NSView {
 /// Captures / restores the Settings Form `NSScrollView` clip origin across SwiftUI updates.
 @MainActor
 enum FormScrollPin {
+    static func preservingScroll<Value>(_ binding: Binding<Value>) -> Binding<Value> {
+        Binding(
+            get: { binding.wrappedValue },
+            set: { updated in
+                let snapshot = capture()
+                binding.wrappedValue = updated
+                restoreAcrossLayout(snapshot)
+            }
+        )
+    }
+
+    final class Entry {
+        weak var scroll: NSScrollView?
+        let origin: NSPoint
+        let frame: NSRect
+
+        init(scroll: NSScrollView) {
+            self.scroll = scroll
+            self.origin = scroll.contentView.bounds.origin
+            self.frame = scroll.frame
+        }
+    }
+
     struct Snapshot {
-        var origin: NSPoint
+        var entries: [Entry]
         weak var window: NSWindow?
 
-        init(origin: NSPoint, window: NSWindow? = nil) {
-            self.origin = origin
+        init(entries: [Entry], window: NSWindow? = nil) {
+            self.entries = entries
             self.window = window
         }
     }
 
     static func capture(from view: NSView? = nil) -> Snapshot? {
-        guard let scroll = findScrollView(startingAt: view) ?? findScrollViewInKeyWindow() else {
+        let settingsWindow = NSApp.windows.first {
+            $0.isVisible &&
+            $0.identifier?.rawValue == SettingsWindowController.windowIdentifier
+        }
+        let window = view?.window ?? settingsWindow ?? NSApp.keyWindow
+        let scrolls = scrollViews(in: window).filter {
+            $0.hasVerticalScroller && $0.documentView != nil
+        }
+        if !scrolls.isEmpty {
+            return Snapshot(entries: scrolls.map(Entry.init), window: window)
+        }
+        guard let scroll = findScrollView(startingAt: view) else {
             return nil
         }
-        return Snapshot(origin: scroll.contentView.bounds.origin, window: view?.window ?? scroll.window)
+        return Snapshot(entries: [Entry(scroll: scroll)], window: scroll.window)
     }
 
     static func restore(_ snapshot: Snapshot?) {
-        guard let snapshot,
-              let scroll = findScrollView(in: snapshot.window) ?? findScrollViewInKeyWindow() else { return }
-        restore(snapshot, using: scroll)
+        guard let snapshot else { return }
+        let candidates = scrollViews(in: snapshot.window ?? NSApp.keyWindow).filter {
+            $0.hasVerticalScroller && $0.documentView != nil
+        }
+        var claimed: Set<ObjectIdentifier> = []
+        for entry in snapshot.entries {
+            let scroll: NSScrollView?
+            if let original = entry.scroll, original.window != nil {
+                scroll = original
+            } else {
+                scroll = candidates
+                    .filter { !claimed.contains(ObjectIdentifier($0)) }
+                    .min { lhs, rhs in
+                        distance(lhs.frame, entry.frame) < distance(rhs.frame, entry.frame)
+                    }
+            }
+            guard let scroll else { continue }
+            claimed.insert(ObjectIdentifier(scroll))
+            restore(entry.origin, using: scroll)
+        }
     }
 
-    static func restore(_ snapshot: Snapshot, using scroll: NSScrollView) {
+    private static func restore(_ origin: NSPoint, using scroll: NSScrollView) {
         let docHeight = scroll.documentView?.frame.height ?? scroll.contentView.bounds.height
         let maxY = max(0, docHeight - scroll.contentView.bounds.height)
-        let y = min(max(0, snapshot.origin.y), maxY)
-        let point = NSPoint(x: 0, y: y)
+        let y = min(max(0, origin.y), maxY)
+        let point = NSPoint(x: origin.x, y: y)
         scroll.contentView.setBoundsOrigin(point)
         scroll.reflectScrolledClipView(scroll.contentView)
+    }
+
+    private static func distance(_ lhs: NSRect, _ rhs: NSRect) -> CGFloat {
+        abs(lhs.minX - rhs.minX) + abs(lhs.minY - rhs.minY)
+            + abs(lhs.width - rhs.width) + abs(lhs.height - rhs.height)
+    }
+
+    private static func scrollViews(in window: NSWindow?) -> [NSScrollView] {
+        guard let root = window?.contentView else { return [] }
+        var result: [NSScrollView] = []
+        func walk(_ view: NSView) {
+            if let scroll = view as? NSScrollView,
+               !(scroll is FormScrollPinIgnoredScrollView) {
+                result.append(scroll)
+            }
+            for child in view.subviews { walk(child) }
+        }
+        walk(root)
+        return result
     }
 
     /// Restore now and after the next layout passes (Form often jumps asynchronously).
@@ -100,32 +170,6 @@ enum FormScrollPin {
         return nil
     }
 
-    private static func findScrollViewInKeyWindow() -> NSScrollView? {
-        findScrollView(in: NSApp.keyWindow)
-    }
-
-    private static func findScrollView(in window: NSWindow?) -> NSScrollView? {
-        guard let root = window?.contentView else { return nil }
-        var best: NSScrollView?
-        var bestArea: CGFloat = 0
-        func walk(_ view: NSView) {
-            if let scroll = view as? NSScrollView,
-               scroll.hasVerticalScroller,
-               scroll.documentView != nil,
-               !(scroll is FormScrollPinIgnoredScrollView) {
-                let area = scroll.bounds.width * scroll.bounds.height
-                if area > bestArea {
-                    bestArea = area
-                    best = scroll
-                }
-            }
-            for child in view.subviews {
-                walk(child)
-            }
-        }
-        walk(root)
-        return best
-    }
 }
 
 /// Marker so Form scroll pin ignores nested list scrollers (plugin order footer).

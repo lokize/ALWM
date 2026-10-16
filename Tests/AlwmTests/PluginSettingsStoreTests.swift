@@ -59,6 +59,35 @@ struct PluginSettingsStoreTests {
 
 @Suite("Settings scroll preservation")
 struct SettingsScrollPreservationTests {
+    @Test("reordering preserves both the page and the plugin list positions")
+    @MainActor
+    func restoresNestedPluginListPosition() {
+        _ = NSApplication.shared
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        let page = makeScrollView()
+        page.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        page.documentView?.frame.size.height = 1500
+        let pluginList = makeScrollView()
+        pluginList.frame = NSRect(x: 0, y: 0, width: 600, height: 150)
+        page.documentView?.addSubview(pluginList)
+        window.contentView?.addSubview(page)
+        page.contentView.setBoundsOrigin(NSPoint(x: 0, y: 240))
+        pluginList.contentView.setBoundsOrigin(NSPoint(x: 0, y: 120))
+
+        let snapshot = FormScrollPin.capture(from: pluginList)
+        page.contentView.setBoundsOrigin(.zero)
+        pluginList.contentView.setBoundsOrigin(.zero)
+        FormScrollPin.restore(snapshot)
+
+        #expect(page.contentView.bounds.origin.y == 240)
+        #expect(pluginList.contentView.bounds.origin.y == 120)
+    }
+
     @Test("restoring after a view replacement keeps the page position")
     @MainActor
     func restoresPositionIntoReplacementScrollView() {
