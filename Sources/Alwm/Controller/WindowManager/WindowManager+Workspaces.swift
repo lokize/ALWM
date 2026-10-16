@@ -1454,6 +1454,11 @@ extension WindowManager {
             return
         }
         axFocusedWindowID = id
+        if focusSourceIsMouse {
+            mouseFocusedWindowID = id
+        } else {
+            mouseFocusedWindowID = nil
+        }
         var needsLayout = false
         for mon in monitors.monitors {
             workspaces.updateActiveWorkspace(for: mon.id) { ws in

@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.9.9",
+      "items": [
+        "Keep the focus border on the window under the pointer across monitors and workspaces"
+      ]
+    },
+    {
       "version": "1.9.8",
       "items": [
         "Show clipboard action feedback and fix attachment controls"
@@ -242,13 +248,6 @@
       "version": "1.6.0",
       "items": [
         "Show wallpaper names without extensions in the menu and on-screen badge"
-      ]
-    },
-    {
-      "version": "1.5.9",
-      "items": [
-        "Show the active wallpaper and advance it from the status menu",
-        "Keep the workspace bar centered at zero offset when workspace content changes"
       ]
     }
   ]

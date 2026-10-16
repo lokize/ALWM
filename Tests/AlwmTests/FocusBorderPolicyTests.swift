@@ -4,6 +4,18 @@ import Testing
 
 @Suite("Focus follows mouse border routing")
 struct FocusBorderPolicyTests {
+    @Test("the border follows the mouse-focused window while AX focus is stale")
+    func mouseFocusWinsOverStaleAccessibilityFocus() {
+        let oldAXWindow = WindowID(pid: 10, windowNumber: 100)
+        let hoveredWindow = WindowID(pid: 20, windowNumber: 200)
+        #expect(FocusBorderPolicy.focusedWindow(
+            mouseFocusedWindow: hoveredWindow,
+            accessibilityFocusedWindow: oldAXWindow,
+            logicalWorkspaceFocusedWindow: oldAXWindow,
+            focusSourceIsMouse: true
+        ) == hoveredWindow)
+    }
+
     @Test("the focus ring follows the active workspace display instead of a stale primary display")
     func borderUsesDisplayHostingFocusedWorkspace() {
         let msi: CGDirectDisplayID = 2

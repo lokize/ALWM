@@ -105,6 +105,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
     var statusMarquee = StatusMarqueeController()
 
     var focusSourceIsMouse = false
+    var mouseFocusedWindowID: WindowID?
 
     var floatingOverrides: Set<WindowID> = []
 

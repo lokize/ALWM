@@ -69,6 +69,16 @@ enum FocusFollowsMousePolicy {
 }
 
 enum FocusBorderPolicy {
+    static func focusedWindow(
+        mouseFocusedWindow: WindowID?,
+        accessibilityFocusedWindow: WindowID?,
+        logicalWorkspaceFocusedWindow: WindowID?,
+        focusSourceIsMouse: Bool
+    ) -> WindowID? {
+        if focusSourceIsMouse, let mouseFocusedWindow { return mouseFocusedWindow }
+        return accessibilityFocusedWindow ?? logicalWorkspaceFocusedWindow
+    }
+
     static func windowMonitorID(
         liveFrame: Rect?,
         cachedFrame: Rect?,
@@ -253,6 +263,8 @@ extension WindowManager {
                 axFocusedWindow: axFocusedWindowID,
                 hit: hit
             ) {
+                focusSourceIsMouse = true
+                mouseFocusedWindowID = hit
                 refreshBorder()
                 return
             }
@@ -336,6 +348,8 @@ extension WindowManager {
                 axFocusedWindow: axFocusedWindowID,
                 hit: hit
             ) {
+                focusSourceIsMouse = true
+                mouseFocusedWindowID = hit
                 refreshBorder()
                 return
             }
@@ -372,6 +386,8 @@ extension WindowManager {
             axFocusedWindow: axFocusedWindowID,
             hit: hit
         ) {
+            focusSourceIsMouse = true
+            mouseFocusedWindowID = hit
             refreshBorder()
             return
         }

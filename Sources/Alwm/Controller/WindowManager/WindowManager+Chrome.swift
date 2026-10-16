@@ -23,7 +23,15 @@ extension WindowManager {
             border.hide()
             return
         }
-        let focusedAXID = axFocusedWindowID ?? ax.frontmostFocusedWindowID()
+        let focusedAXID = FocusBorderPolicy.focusedWindow(
+            mouseFocusedWindow: mouseFocusedWindowID.flatMap { id in
+                guard let window = windowsByID[id], !window.isIgnored else { return nil }
+                return id
+            },
+            accessibilityFocusedWindow: axFocusedWindowID ?? ax.frontmostFocusedWindowID(),
+            logicalWorkspaceFocusedWindow: focusedWindowID(),
+            focusSourceIsMouse: focusSourceIsMouse
+        )
         let focusedWorkspace = focusedAXID.flatMap { authoritativeHome(for: $0) ?? workspaces.workspaceID(containing: $0) }
         let focusedWindowMonitorID = focusedAXID.flatMap { id -> CGDirectDisplayID? in
             FocusBorderPolicy.windowMonitorID(
