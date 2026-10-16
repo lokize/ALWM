@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.9.1",
+      "items": [
+        "Route mouse focus using the workspace under the pointer"
+      ]
+    },
+    {
       "version": "1.9.0",
       "items": [
         "Keep focus borders on the window's live display after cross-monitor moves"
@@ -245,12 +251,6 @@
       "version": "1.5.2",
       "items": [
         "Use Ghostty's native action to keep the visible Quake window above other apps."
-      ]
-    },
-    {
-      "version": "1.5.1",
-      "items": [
-        "Keep Settings, wallpaper picker, Notepad and Ghostty Quake above workspace windows."
       ]
     }
   ]

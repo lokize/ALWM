@@ -35,6 +35,20 @@ enum FocusFollowsMousePolicy {
         guard let windowHome else { return false }
         return windowHome != activeWorkspaceOnCursor
     }
+
+    static func shouldSkipAlreadyFocusedHit(
+        hitHome: String?,
+        activeWorkspaceOnCursor: String?,
+        focusedWindowOnCursor: WindowID?,
+        axFocusedWindow: WindowID?,
+        hit: WindowID
+    ) -> Bool {
+        // A window can still be AX-focused while it is visible on a different
+        // display/space. Only skip activation when it is already focused in the
+        // workspace active under the pointer.
+        guard let hitHome, hitHome == activeWorkspaceOnCursor else { return false }
+        return focusedWindowOnCursor == hit || axFocusedWindow == hit
+    }
 }
 
 enum FocusBorderPolicy {
@@ -231,7 +245,13 @@ extension WindowManager {
             }
             let cursorMonitor = monitorUnderMouse() ?? primaryMonitor()
             if let cursorMonitor { primaryMonitorID = cursorMonitor.id }
-            if focusedWindowID() == hit || axFocusedWindowID == hit {
+            if FocusFollowsMousePolicy.shouldSkipAlreadyFocusedHit(
+                hitHome: authoritativeHome(for: hit),
+                activeWorkspaceOnCursor: cursorMonitor.flatMap { workspaces.activeWorkspaceByMonitor[$0.id] },
+                focusedWindowOnCursor: cursorMonitor.flatMap { workspaces.activeWorkspace(for: $0.id)?.focusedWindowID },
+                axFocusedWindow: axFocusedWindowID,
+                hit: hit
+            ) {
                 refreshBorder()
                 return
             }
@@ -277,12 +297,19 @@ extension WindowManager {
                let monitor = monitors.monitorContaining(pointX: frame.midX, pointY: frame.midY) {
                 primaryMonitorID = monitor.id
             }
-            if focusedWindowID() == hit || axFocusedWindowID == hit {
+            let cursorMonitor = monitorUnderMouse()
+            if FocusFollowsMousePolicy.shouldSkipAlreadyFocusedHit(
+                hitHome: authoritativeHome(for: hit),
+                activeWorkspaceOnCursor: cursorMonitor.flatMap { workspaces.activeWorkspaceByMonitor[$0.id] },
+                focusedWindowOnCursor: cursorMonitor.flatMap { workspaces.activeWorkspace(for: $0.id)?.focusedWindowID },
+                axFocusedWindow: axFocusedWindowID,
+                hit: hit
+            ) {
                 refreshBorder()
                 return
             }
             focusSourceIsMouse = true
-            focusMouseTarget(hit, cursorMonitorID: monitorUnderMouse()?.id)
+            focusMouseTarget(hit, cursorMonitorID: cursorMonitor?.id)
             return
         }
 
@@ -307,7 +334,13 @@ extension WindowManager {
         }
         guard let hit = best?.0 else { return }
         if let cursorMon { primaryMonitorID = cursorMon.id }
-        if focusedWindowID() == hit || axFocusedWindowID == hit {
+        if FocusFollowsMousePolicy.shouldSkipAlreadyFocusedHit(
+            hitHome: authoritativeHome(for: hit),
+            activeWorkspaceOnCursor: activeOnCursor,
+            focusedWindowOnCursor: cursorMon.flatMap { workspaces.activeWorkspace(for: $0.id)?.focusedWindowID },
+            axFocusedWindow: axFocusedWindowID,
+            hit: hit
+        ) {
             refreshBorder()
             return
         }

@@ -35,6 +35,26 @@ struct AlwmChromeFocusTests {
         #expect(!FocusFollowsMousePolicy.shouldActivateHomeWorkspace(windowHome: nil, activeWorkspaceOnCursor: "6"))
     }
 
+    @Test("AX focus on a window from another workspace does not suppress mouse workspace activation")
+    func staleAXFocusDoesNotSkipCrossWorkspaceMouseFocus() {
+        let hit = WindowID(pid: 42, windowNumber: 100)
+
+        #expect(!FocusFollowsMousePolicy.shouldSkipAlreadyFocusedHit(
+            hitHome: "2",
+            activeWorkspaceOnCursor: "6",
+            focusedWindowOnCursor: hit,
+            axFocusedWindow: hit,
+            hit: hit
+        ))
+        #expect(FocusFollowsMousePolicy.shouldSkipAlreadyFocusedHit(
+            hitHome: "6",
+            activeWorkspaceOnCursor: "6",
+            focusedWindowOnCursor: nil,
+            axFocusedWindow: hit,
+            hit: hit
+        ))
+    }
+
     @Test("mouse focus uses Quartz coordinates directly on vertically offset displays")
     func quartzPointerCoordinatesWinOverPrimaryScreenConversion() {
         let lowerDisplayQuartzPoint = CGPoint(x: 900, y: 1_800)
