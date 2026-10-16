@@ -26,10 +26,11 @@ extension WindowManager {
         let focusedAXID = axFocusedWindowID ?? ax.frontmostFocusedWindowID()
         let focusedWorkspace = focusedAXID.flatMap { authoritativeHome(for: $0) ?? workspaces.workspaceID(containing: $0) }
         let focusedWindowMonitorID = focusedAXID.flatMap { id -> CGDirectDisplayID? in
-            guard let frame = lastFrames[id] ?? windowsByID[id]?.frame else { return nil }
-            return monitors.monitors.first(where: {
-                $0.frame.contains(pointX: frame.midX, pointY: frame.midY)
-            })?.id
+            FocusBorderPolicy.windowMonitorID(
+                liveFrame: ax.currentFrame(of: id),
+                cachedFrame: lastFrames[id] ?? windowsByID[id]?.frame,
+                monitors: monitors.monitors
+            )
         }
         let borderMonitorID = FocusBorderPolicy.monitorID(
             focusedWorkspace: focusedWorkspace,

@@ -38,6 +38,19 @@ enum FocusFollowsMousePolicy {
 }
 
 enum FocusBorderPolicy {
+    static func windowMonitorID(
+        liveFrame: Rect?,
+        cachedFrame: Rect?,
+        monitors: [MonitorInfo]
+    ) -> CGDirectDisplayID? {
+        // Deliberately centralized so border routing and regression tests use
+        // the same live-vs-cached frame precedence.
+        guard let frame = liveFrame ?? cachedFrame else { return nil }
+        return monitors.first(where: {
+            $0.frame.contains(pointX: frame.midX, pointY: frame.midY)
+        })?.id
+    }
+
     static func monitorID(
         focusedWorkspace: String?,
         activeWorkspaceByMonitor: [CGDirectDisplayID: String],

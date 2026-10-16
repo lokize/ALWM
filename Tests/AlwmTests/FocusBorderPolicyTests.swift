@@ -42,4 +42,24 @@ struct FocusBorderPolicyTests {
 
         #expect(selected == lower)
     }
+
+    @Test("the focus ring uses the live window frame after it moves to another display")
+    func liveWindowFrameWinsOverStaleCachedFrame() {
+        let msi: CGDirectDisplayID = 2
+        let hdmi: CGDirectDisplayID = 3
+        let monitors = [
+            MonitorInfo(id: msi, frame: Rect(x: 0, y: 0, width: 3_440, height: 1_440),
+                        visibleFrame: Rect(x: 0, y: 0, width: 3_440, height: 1_410), name: "MSI"),
+            MonitorInfo(id: hdmi, frame: Rect(x: 774, y: -1_080, width: 1_920, height: 1_080),
+                        visibleFrame: Rect(x: 774, y: -1_080, width: 1_920, height: 1_080), name: "HDMI"),
+        ]
+        let staleMSIFrame = Rect(x: 800, y: 100, width: 1_000, height: 800)
+        let liveHDMIFrame = Rect(x: 900, y: -1_000, width: 1_000, height: 800)
+
+        #expect(FocusBorderPolicy.windowMonitorID(
+            liveFrame: liveHDMIFrame,
+            cachedFrame: staleMSIFrame,
+            monitors: monitors
+        ) == hdmi)
+    }
 }

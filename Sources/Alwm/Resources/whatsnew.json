@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.9.0",
+      "items": [
+        "Keep focus borders on the window's live display after cross-monitor moves"
+      ]
+    },
+    {
       "version": "1.8.9",
       "items": [
         "Fix mouse focus across vertically offset monitors and inactive workspaces",
@@ -245,12 +251,6 @@
       "version": "1.5.1",
       "items": [
         "Keep Settings, wallpaper picker, Notepad and Ghostty Quake above workspace windows."
-      ]
-    },
-    {
-      "version": "1.5.0",
-      "items": [
-        "Persistent Quake and Notepad panels allow clicks and text selection in other apps."
       ]
     }
   ]
