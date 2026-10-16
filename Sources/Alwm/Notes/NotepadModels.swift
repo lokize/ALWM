@@ -24,6 +24,11 @@ public struct NoteBlock: Identifiable, Codable, Equatable, Sendable {
     public var children: [NoteBlock]
     public var calloutStyle: CalloutStyle
     public var language: String
+    public var attachments: [NoteImageAttachment]
+
+    private enum CodingKeys: String, CodingKey {
+        case id, kind, text, checked, collapsed, children, calloutStyle, language, attachments
+    }
 
     public init(
         id: UUID = UUID(),
@@ -33,7 +38,8 @@ public struct NoteBlock: Identifiable, Codable, Equatable, Sendable {
         collapsed: Bool = false,
         children: [NoteBlock] = [],
         calloutStyle: CalloutStyle = .info,
-        language: String = "swift"
+        language: String = "swift",
+        attachments: [NoteImageAttachment] = []
     ) {
         self.id = id
         self.kind = kind
@@ -43,6 +49,20 @@ public struct NoteBlock: Identifiable, Codable, Equatable, Sendable {
         self.children = children
         self.calloutStyle = calloutStyle
         self.language = language
+        self.attachments = attachments
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        kind = try container.decode(BlockKind.self, forKey: .kind)
+        text = try container.decodeIfPresent(String.self, forKey: .text) ?? ""
+        checked = try container.decodeIfPresent(Bool.self, forKey: .checked) ?? false
+        collapsed = try container.decodeIfPresent(Bool.self, forKey: .collapsed) ?? false
+        children = try container.decodeIfPresent([NoteBlock].self, forKey: .children) ?? []
+        calloutStyle = try container.decodeIfPresent(CalloutStyle.self, forKey: .calloutStyle) ?? .info
+        language = try container.decodeIfPresent(String.self, forKey: .language) ?? "swift"
+        attachments = try container.decodeIfPresent([NoteImageAttachment].self, forKey: .attachments) ?? []
     }
 
     public static func empty(_ kind: BlockKind = .paragraph) -> NoteBlock {

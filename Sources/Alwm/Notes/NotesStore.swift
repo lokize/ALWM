@@ -12,6 +12,7 @@ public final class NotesStore: ObservableObject {
     @Published var searchQuery = ""
     @Published public private(set) var lastPersistenceError: String?
     @Published public private(set) var undoRevision = 0
+    @Published var focusedAttachmentBlockID: UUID?
 
     public var onIndexChanged: (() -> Void)?
 
@@ -168,10 +169,17 @@ public final class NotesStore: ObservableObject {
 
     @discardableResult
     public func addImageAttachment(_ pngData: Data, toPageID pageID: UUID) -> UUID? {
+        let targetID = focusedAttachmentBlockID ?? page(pageID)?.blocks.first?.id
+        return addImageAttachment(pngData, toPageID: pageID, toBlockID: targetID)
+    }
+
+    @discardableResult
+    public func addImageAttachment(_ pngData: Data, toPageID pageID: UUID, toBlockID blockID: UUID?) -> UUID? {
         let pngSignature = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
         guard pngData.starts(with: pngSignature),
               pngData.count <= 25 * 1024 * 1024,
-              var page = page(pageID) else { return nil }
+              var page = page(pageID),
+              let targetIndex = page.blocks.firstIndex(where: { $0.id == blockID }) ?? page.blocks.indices.first else { return nil }
 
         let attachment = NoteImageAttachment()
         let destination = imageURL(for: attachment, in: pageID)
@@ -181,13 +189,21 @@ public final class NotesStore: ObservableObject {
                 withIntermediateDirectories: true
             )
             try pngData.write(to: destination, options: .atomic)
-            page.attachments.append(attachment)
+            page.blocks[targetIndex].attachments.append(attachment)
             updatePage(page, registerUndo: true)
             return attachment.id
         } catch {
             recordPersistenceError(error)
             return nil
         }
+    }
+
+    public func removeImageAttachment(_ attachmentID: UUID, fromPageID pageID: UUID, fromBlockID blockID: UUID) {
+        guard var page = page(pageID),
+              let index = page.blocks.firstIndex(where: { $0.id == blockID }),
+              page.blocks[index].attachments.contains(where: { $0.id == attachmentID }) else { return }
+        page.blocks[index].attachments.removeAll { $0.id == attachmentID }
+        updatePage(page, registerUndo: true)
     }
 
     public func removeImageAttachment(_ attachmentID: UUID, fromPageID pageID: UUID) {

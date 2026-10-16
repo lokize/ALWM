@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct NotepadEditorView: View {
@@ -5,6 +6,7 @@ struct NotepadEditorView: View {
     @State private var focusedBlockID: UUID?
     @State private var draftPage: NotePage?
     @State private var isCompletedTasksExpanded = false
+    @State private var hoveredAttachmentID: UUID?
 
     private var currentPage: NotePage? {
         guard let activeID = store.activePageID, let base = store.page(activeID) else { return nil }
@@ -40,8 +42,9 @@ struct NotepadEditorView: View {
                   let savedPage = pages[id],
                   var currentDraft = draftPage,
                   currentDraft.id == id,
-                  currentDraft.attachments != savedPage.attachments else { return }
+                  currentDraft.attachments != savedPage.attachments || currentDraft.blocks != savedPage.blocks else { return }
             currentDraft.attachments = savedPage.attachments
+            currentDraft.blocks = savedPage.blocks
             draftPage = currentDraft
         }
         .onAppear { reloadDraft() }
@@ -99,32 +102,48 @@ struct NotepadEditorView: View {
                 ) {
                     ForEach(page.attachments) { attachment in
                         if let image = NSImage(contentsOf: store.imageURL(for: attachment, in: page.id)) {
-                            Image(nsImage: image)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 112, height: 76)
-                                .clipped()
-                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                .overlay(alignment: .topTrailing) {
+                            let url = store.imageURL(for: attachment, in: page.id)
+                            Button { NSWorkspace.shared.open(url) } label: {
+                                Image(nsImage: image)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 112, height: 76)
+                                    .clipped()
+                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            }
+                            .buttonStyle(.plain)
+                            .help(L10n.t("notepad.attachment.open"))
+                            .onHover { hovering in hoveredAttachmentID = hovering ? attachment.id : nil }
+                            .overlay(alignment: .topTrailing) {
+                                HStack(spacing: 3) {
+                                    Button {
+                                        let pasteboard = NSPasteboard.general
+                                        pasteboard.clearContents()
+                                        pasteboard.writeObjects([image])
+                                    } label: { Image(systemName: "doc.on.doc") }
+                                    .help(L10n.t("notepad.attachment.copy"))
+                                    .accessibilityLabel(L10n.t("notepad.attachment.copy"))
+
                                     Button {
                                         store.removeImageAttachment(attachment.id, fromPageID: page.id)
                                         draftPage = store.page(page.id)
-                                    } label: {
-                                        Image(systemName: "xmark.circle.fill")
-                                            .font(.system(size: 17, weight: .semibold))
-                                            .symbolRenderingMode(.palette)
-                                            .foregroundStyle(.white, Color.black.opacity(0.72))
-                                    }
-                                    .buttonStyle(.plain)
-                                    .padding(3)
+                                    } label: { Image(systemName: "xmark") }
                                     .help(L10n.t("notepad.attachment.remove"))
                                     .accessibilityLabel(L10n.t("notepad.attachment.remove"))
                                 }
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .stroke(Color.primary.opacity(0.12), lineWidth: 1)
-                                        .allowsHitTesting(false)
-                                }
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .padding(4)
+                                .background(.black.opacity(0.78), in: Capsule())
+                                .buttonStyle(.plain)
+                                .opacity(hoveredAttachmentID == attachment.id ? 1 : 0)
+                                .allowsHitTesting(hoveredAttachmentID == attachment.id)
+                            }
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+                                    .allowsHitTesting(false)
+                            }
                         }
                     }
                 }
@@ -180,13 +199,17 @@ struct NotepadEditorView: View {
     ) -> some View {
         ForEach(Array(entries.enumerated()), id: \.element.id) { visibleIndex, entry in
             let idx = entry.sourceIndex
+            if !entry.block.attachments.isEmpty {
+                blockAttachmentGallery(block: entry.block, page: page)
+                    .padding(.leading, 28)
+            }
             BlockRowView(
                 block: blockBinding(at: idx, page: page),
                 canMoveUp: visibleIndex > 0,
                 canMoveDown: visibleIndex + 1 < entries.count,
                 numberedIndex: numberedIndex(for: idx, in: allBlocks),
                 focusedBlockID: focusedBlockID,
-                onFocus: { focusedBlockID = $0 },
+                onFocus: { focusedBlockID = $0; store.focusedAttachmentBlockID = $0 },
                 onEnter: { id in insertContinuation(after: id, page: page) },
                 onBackspaceEmpty: { id in deleteBlock(id, page: page) },
                 onDuplicateBlock: { id in duplicateBlock(id, page: page) },
@@ -195,6 +218,65 @@ struct NotepadEditorView: View {
                 onMoveBlock: { id, direction in moveBlock(id, direction: direction, page: page) }
             )
         }
+    }
+
+    @ViewBuilder
+    private func blockAttachmentGallery(block: NoteBlock, page: NotePage) -> some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 92, maximum: 132), spacing: 8)], alignment: .leading, spacing: 8) {
+            ForEach(block.attachments) { attachment in
+                let url = store.imageURL(for: attachment, in: page.id)
+                if let image = NSImage(contentsOf: url) {
+                    Button {
+                        NSWorkspace.shared.open(url)
+                    } label: {
+                        Image(nsImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 112, height: 76)
+                            .clipped()
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .help(L10n.t("notepad.attachment.open"))
+                    .onHover { hovering in hoveredAttachmentID = hovering ? attachment.id : nil }
+                    .overlay(alignment: .topTrailing) {
+                        HStack(spacing: 3) {
+                            Button {
+                                let pasteboard = NSPasteboard.general
+                                pasteboard.clearContents()
+                                pasteboard.writeObjects([image])
+                            } label: {
+                                Image(systemName: "doc.on.doc")
+                            }
+                            .help(L10n.t("notepad.attachment.copy"))
+                            .accessibilityLabel(L10n.t("notepad.attachment.copy"))
+
+                            Button {
+                                store.removeImageAttachment(attachment.id, fromPageID: page.id, fromBlockID: block.id)
+                                draftPage = store.page(page.id)
+                            } label: {
+                                Image(systemName: "xmark")
+                            }
+                            .help(L10n.t("notepad.attachment.remove"))
+                            .accessibilityLabel(L10n.t("notepad.attachment.remove"))
+                        }
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(4)
+                        .background(.black.opacity(0.78), in: Capsule())
+                        .buttonStyle(.plain)
+                        .opacity(hoveredAttachmentID == attachment.id ? 1 : 0)
+                        .allowsHitTesting(hoveredAttachmentID == attachment.id)
+                    }
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+                            .allowsHitTesting(false)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 5)
     }
 
     private func blockBinding(at index: Int, page: NotePage) -> Binding<NoteBlock> {

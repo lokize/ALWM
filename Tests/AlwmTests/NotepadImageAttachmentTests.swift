@@ -18,7 +18,16 @@ struct NotepadImageAttachmentTests {
         #expect(decoded.attachments.isEmpty)
     }
 
-    @Test("pasting an image attaches it to the active note and survives reopening")
+    @Test("older blocks decode without block attachments")
+    func legacyBlockDefaultsToNoAttachments() throws {
+        let encoded = try JSONEncoder().encode(NoteBlock(kind: .paragraph, text: "legacy"))
+        var object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object.removeValue(forKey: "attachments")
+        let decoded = try JSONDecoder().decode(NoteBlock.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(decoded.attachments.isEmpty)
+    }
+
+    @Test("pasting an image attaches it to the active block and survives reopening")
     @MainActor
     func pastedImagePersistsWithPage() throws {
         let root = FileManager.default.temporaryDirectory
@@ -33,7 +42,32 @@ struct NotepadImageAttachmentTests {
 
         let reopened = NotesStore(root: root)
         let savedPage = try #require(reopened.page(page.id))
-        let attachment = try #require(savedPage.attachments.first)
+        let attachment = try #require(savedPage.blocks.first?.attachments.first)
+        #expect(attachment.id == attachmentID)
+        #expect(try Data(contentsOf: reopened.imageURL(for: attachment, in: page.id)) == imageData)
+    }
+
+    @Test("pasted image belongs to the focused block and survives reopening")
+    @MainActor
+    func pastedImagePersistsWithBlock() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("alwm-note-block-image-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = NotesStore(root: root)
+        let first = NoteBlock(kind: .paragraph, text: "first")
+        let second = NoteBlock(kind: .paragraph, text: "second")
+        var page = store.createPage(title: "Block image")
+        page.blocks = [first, second]
+        store.updatePage(page)
+
+        let imageData = try makePNGData()
+        let attachmentID = try #require(store.addImageAttachment(imageData, toPageID: page.id, toBlockID: second.id))
+        store.flushPendingSaves()
+
+        let reopened = NotesStore(root: root)
+        let savedPage = try #require(reopened.page(page.id))
+        #expect(savedPage.blocks[0].attachments.isEmpty)
+        let attachment = try #require(savedPage.blocks[1].attachments.first)
         #expect(attachment.id == attachmentID)
         #expect(try Data(contentsOf: reopened.imageURL(for: attachment, in: page.id)) == imageData)
     }
@@ -48,17 +82,18 @@ struct NotepadImageAttachmentTests {
         let page = store.createPage(title: "Undo image")
         let png = try makePNGData()
         let attachmentID = try #require(store.addImageAttachment(png, toPageID: page.id))
-        let attachment = try #require(store.page(page.id)?.attachments.first)
+        let block = try #require(store.page(page.id)?.blocks.first)
+        let attachment = try #require(block.attachments.first)
         store.undoManager.removeAllActions()
 
         // Unit tests do not have AppKit's event loop to close the implicit
         // undo group between UI actions, so model the removal as one event.
         store.undoManager.beginUndoGrouping()
-        store.removeImageAttachment(attachmentID, fromPageID: page.id)
+        store.removeImageAttachment(attachmentID, fromPageID: page.id, fromBlockID: block.id)
         store.undoManager.endUndoGrouping()
         store.undoManager.undo()
 
-        #expect(store.page(page.id)?.attachments == [attachment])
+        #expect(store.page(page.id)?.blocks.first?.attachments == [attachment])
         #expect(try Data(contentsOf: store.imageURL(for: attachment, in: page.id)) == png)
     }
 
