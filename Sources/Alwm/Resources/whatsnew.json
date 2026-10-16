@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "1.9.7",
+      "items": [
+        "Center quit button title"
+      ]
+    },
+    {
       "version": "1.9.6",
       "items": [
         "Attach images to note blocks with copy and open controls"
@@ -243,12 +249,6 @@
       "version": "1.5.8",
       "items": [
         "Show wallpaper thumbnails in the on-screen badge"
-      ]
-    },
-    {
-      "version": "1.5.7",
-      "items": [
-        "Show wallpaper changes in an ALWM on-screen badge"
       ]
     }
   ]

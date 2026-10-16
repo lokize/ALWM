@@ -1175,14 +1175,17 @@ struct StatusMenuView: View {
 
     private var quitButton: some View {
         Button(action: onQuit) {
-            HStack(spacing: 10) {
-                Image(systemName: "power")
-                    .font(.system(size: 13, weight: .semibold))
+            ZStack {
                 Text(L10n.t("menu.quit"))
                     .font(.system(size: 13, weight: .semibold))
-                Spacer()
+                    .frame(maxWidth: .infinity, alignment: .center)
+                HStack {
+                    Image(systemName: "power")
+                        .font(.system(size: 13, weight: .semibold))
+                    Spacer(minLength: 0)
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
             .foregroundStyle(Color.red.opacity(0.9))
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
