@@ -459,18 +459,9 @@ extension WindowManager {
             healStaleColumnEntries()
             reinsertOrphanTiles()
         }
-        if var ws = workspaces.workspaces[workspaceID] {
-            let usable = engine.usableArea(monitor: layoutMon.layoutFrame)
-            let contentW = engine.niri.contentWidth(workspace: ws, usable: usable)
-            if contentW > usable.width + 1.0 {
-                engine.fitAllColumnsOnScreen(workspace: &ws, usable: usable)
-                workspaces.setWorkspace(ws)
-            } else {
-                prepareWorkspaceLayoutForDisplay(workspaceID, monitor: layoutMon)
-            }
-        } else {
-            prepareWorkspaceLayoutForDisplay(workspaceID, monitor: layoutMon)
-        }
+        // A workspace can intentionally scroll horizontally. Its saved column
+        // widths must survive every visibility/layout pass on switch-back.
+        prepareWorkspaceLayoutForDisplay(workspaceID, monitor: layoutMon)
         guard let layoutWS = workspaces.workspaces[workspaceID] else { return }
         let active = isHomeActiveOnAnyMonitor(workspaceID)
         let assignments = engine.computeFrames(

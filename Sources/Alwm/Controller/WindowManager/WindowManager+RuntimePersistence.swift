@@ -809,8 +809,7 @@ extension WindowManager {
 
     func syncColumnWidthsToUsable(
         workspace: inout WorkspaceState,
-        workspaceID: String,
-        preserveScrollOverflow: Bool = false
+        workspaceID: String
     ) {
         guard workspace.layout == .niri, !workspace.columns.isEmpty else { return }
         guard let mon = monitorForWorkspaceLayout(workspaceID) else { return }
@@ -823,20 +822,11 @@ extension WindowManager {
             workspace.viewOffset = 0
             return
         }
+        // Oversized columns are a valid scrolling layout. Preserve the user's
+        // widths and viewport; structural edits explicitly fit when intended.
         if contentW <= usable.width + 1.0 {
             workspace.viewOffset = 0
             return
-        }
-        // Resume restore: keep saved widths + viewOffset so scroll layouts rematch disk ratios.
-        if preserveScrollOverflow { return }
-        if engine.niri.columnsShouldFillUsable(count: n) {
-            engine.niri.normalizeWidthsToFill(workspace: &workspace, usable: usable)
-        }
-        let afterW = engine.niri.contentWidth(workspace: workspace, usable: usable)
-        if afterW <= usable.width + 1.0 {
-            workspace.viewOffset = 0
-        } else {
-            engine.fitAllColumnsOnScreen(workspace: &workspace, usable: usable)
         }
     }
 
@@ -1082,11 +1072,9 @@ extension WindowManager {
         )
         ws.viewOffset = snap.viewOffset
         ws.leafWeights = remappedLeafWeights(from: snap, columns: ws.columns)
-        let preserveOverflow = isResumeRecovering || Date() < resumeRecoveryEligibleUntil
         syncColumnWidthsToUsable(
             workspace: &ws,
-            workspaceID: wsID,
-            preserveScrollOverflow: preserveOverflow
+            workspaceID: wsID
         )
         workspaces.setWorkspace(ws)
 

@@ -596,7 +596,7 @@ extension WindowManager {
                 Column(windows: live.windows, width: saved.width, isMaximized: saved.isMaximized, restoreWidth: saved.restoreWidth)
             }
             expectedGeometry.viewOffset = snap.viewOffset
-            syncColumnWidthsToUsable(workspace: &expectedGeometry, workspaceID: wsID, preserveScrollOverflow: true)
+            syncColumnWidthsToUsable(workspace: &expectedGeometry, workspaceID: wsID)
             if abs(ws.viewOffset - expectedGeometry.viewOffset) > 1 { return false }
             let lastColumn = max(0, snapCols.count - 1)
             if min(max(0, ws.focusedColumn), lastColumn) != min(max(0, snap.focusedColumn), lastColumn) { return false }

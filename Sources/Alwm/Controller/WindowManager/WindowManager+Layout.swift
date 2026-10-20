@@ -1525,8 +1525,7 @@ extension WindowManager {
         let before = ws
         syncColumnWidthsToUsable(
             workspace: &ws,
-            workspaceID: wsID,
-            preserveScrollOverflow: isResumeRecovering || Date() < resumeRecoveryEligibleUntil
+            workspaceID: wsID
         )
         if ws != before {
             workspaces.setWorkspace(ws)

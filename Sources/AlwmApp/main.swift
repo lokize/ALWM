@@ -8,7 +8,11 @@ enum ALWMMain {
         let delegate = AppDelegate()
         app.delegate = delegate
         app.setActivationPolicy(.accessory)
-        app.run()
+        // NSApplication keeps its delegate weakly. Hold it for the entire event
+        // loop so release builds cannot discard startup and leave IPC offline.
+        withExtendedLifetime(delegate) {
+            app.run()
+        }
     }
 }
 
