@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "2.0.1",
+      "items": [
+        "Open Quake on the display under the cursor and keep it there during layout updates.",
+        "Honor the toggle shortcut while a Quake window is launching or briefly missing from Accessibility."
+      ]
+    },
+    {
       "version": "2.0.0",
       "items": [
         "Preserve resized window widths and horizontal scroll when switching workspaces"
@@ -241,13 +248,6 @@
       "version": "1.6.2",
       "items": [
         "Preserve the configured outer gap at the bottom edge"
-      ]
-    },
-    {
-      "version": "1.6.1",
-      "items": [
-        "Save wallpaper and workspace settings immediately",
-        "Show wallpaper rotation controls and countdown in the menu"
       ]
     }
   ]

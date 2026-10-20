@@ -1637,8 +1637,7 @@ extension WindowManager {
 
         // Quake: keep docked float geometry without visibility thrash.
         if let qid = quake.windowID {
-            let mon = monitors.monitors.first(where: { $0.id == primaryMonitorID })
-                ?? primaryMonitor()
+            let mon = monitorContainingQuakeWindow()
                 ?? monitors.monitors.first
             if let mon {
                 let qFrame = quake.isVisible
@@ -2411,7 +2410,7 @@ extension WindowManager {
 
         // Quake scratchpad: always docked float on the configured edge (never tiled layout).
         if let qid = quake.windowID {
-            let mon = monitors.monitors.first(where: { $0.id == primaryMonitorID }) ?? layoutMonitor
+            let mon = monitorContainingQuakeWindow() ?? layoutMonitor
             if quake.isVisible {
                 let frame = quake.visibleFrame(settings: configStore.config.settings.quake, monitor: mon)
                 target[qid] = frame

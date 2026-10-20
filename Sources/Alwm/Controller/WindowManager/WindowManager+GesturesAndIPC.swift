@@ -451,6 +451,11 @@ extension WindowManager {
             toggleOverview()
             return
         }
+        if action == "quake.toggle" {
+            guard let monitor = monitorUnderMouse() ?? monitorForAction() ?? primaryMonitor() else { return }
+            toggleQuake(monitor: monitor)
+            return
+        }
         let historyKind: WindowActionKind? = {
             if action.hasPrefix("resize.") { return .resize }
             if ["move.left", "move.right", "move.up", "move.down"].contains(action) { return .move }

@@ -397,6 +397,10 @@ extension WindowManager {
     }
 
     func monitorContainingQuakeWindow() -> MonitorInfo? {
+        if let activeID = quake.activeMonitorID,
+           let active = monitors.monitors.first(where: { $0.id == activeID }) {
+            return active
+        }
         if let id = quake.windowID,
            let frame = ax.currentFrame(of: id) ?? lastFrames[id] {
             return monitors.monitorContaining(pointX: frame.midX, pointY: frame.midY)
@@ -406,7 +410,7 @@ extension WindowManager {
 
     func dismissQuake() {
         guard quake.isVisible else { return }
-        guard let monitor = monitorForAction() ?? primaryMonitor() else { return }
+        guard let monitor = monitorContainingQuakeWindow() ?? primaryMonitor() else { return }
         let settings = configStore.config.settings.quake
         quake.dismiss(
             settings: settings,
@@ -421,7 +425,7 @@ extension WindowManager {
             focusTiled: { @Sendable [weak self] in
                 Task { @MainActor in
                     guard let self, !self.overlaysCaptureFocus else { return }
-                    guard let mon = self.primaryMonitor() else { return }
+                    guard let mon = self.monitorContainingQuakeWindow() ?? self.primaryMonitor() else { return }
                     if let focused = self.workspaces.activeWorkspace(for: mon.id)?.focusedWindowID {
                         self.ax.focus(focused)
                     }
@@ -578,7 +582,7 @@ extension WindowManager {
     }
 
     func reassertQuakeVisibleFrame(for id: WindowID) {
-        guard let monitor = primaryMonitor() ?? monitors.monitors.first else { return }
+        guard let monitor = monitorContainingQuakeWindow() ?? monitors.monitors.first else { return }
         let settings = configStore.config.settings.quake
         let frame = quake.visibleFrame(settings: settings, monitor: monitor)
         ax.setMinimized(false, id: id)
@@ -589,11 +593,14 @@ extension WindowManager {
     }
 
     func toggleQuake(monitor: MonitorInfo) {
+        let presentationMonitor = quake.isVisible
+            ? (monitorContainingQuakeWindow() ?? monitor)
+            : monitor
         let settings = configStore.config.settings.quake
         let monitorsFrames = monitors.monitors.map(\.frame)
         quake.toggle(
             settings: settings,
-            monitor: monitor,
+            monitor: presentationMonitor,
             windows: windowsByID,
             ax: ax,
             applyFrame: { @Sendable [weak self] id, frame in
@@ -611,13 +618,19 @@ extension WindowManager {
             focusTiled: { @Sendable [weak self] in
                 Task { @MainActor in
                     guard let self, !self.overlaysCaptureFocus else { return }
-                    guard let mon = self.primaryMonitor() else { return }
+                    guard let mon = self.monitorContainingQuakeWindow() ?? self.primaryMonitor() else { return }
                     if let focused = self.workspaces.activeWorkspace(for: mon.id)?.focusedWindowID {
                         self.ax.focus(focused)
                     }
                 }
             }
         )
+        if quake.isLaunchPending {
+            suppressQuakeDismissUntil = Date().addingTimeInterval(2.0)
+            updateOverlayInputMode()
+            refreshChrome()
+            return
+        }
         if let id = quake.windowID {
             workspaces.removeWindowEverywhere(id)
             floatingOverrides.insert(id)
@@ -626,7 +639,7 @@ extension WindowManager {
             // and AX focus noise must not slide the panel away immediately.
             suppressQuakeDismissUntil = Date().addingTimeInterval(0.8)
             if quake.isVisible {
-                let frame = quake.visibleFrame(settings: settings, monitor: monitor)
+                let frame = quake.visibleFrame(settings: settings, monitor: presentationMonitor)
                 ax.setMinimized(false, id: id)
                 ax.apply(frame: frame, to: id)
                 ax.focus(id)
@@ -634,10 +647,10 @@ extension WindowManager {
                 preferredOverlayFocus = .quake
                 suppressGeometryEnforce(for: 1.0)
             } else {
-                let hidden = quake.hiddenFrame(settings: settings, monitor: monitor)
+                let hidden = quake.hiddenFrame(settings: settings, monitor: presentationMonitor)
                 ax.parkAndHide(frame: hidden, id: id, monitors: monitorsFrames)
                 lastFrames[id] = hidden
-                applyFluidLayout(animated: false, onlyMonitor: monitor)
+                applyFluidLayout(animated: false, onlyMonitor: presentationMonitor)
             }
         } else {
             suppressQuakeDismissUntil = Date().addingTimeInterval(2.0)

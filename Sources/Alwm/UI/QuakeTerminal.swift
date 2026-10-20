@@ -32,6 +32,7 @@ private final class AppleScriptResultBox: @unchecked Sendable {
 public final class QuakeTerminalController {
     public private(set) var windowID: WindowID?
     public private(set) var isVisible = false
+    public private(set) var activeMonitorID: CGDirectDisplayID?
     public var onNeedRescan: (() -> Void)?
     /// Called whenever a window is adopted as the Quake scratchpad (float + dock).
     public var onAdopted: ((WindowID) -> Void)?
@@ -55,6 +56,8 @@ public final class QuakeTerminalController {
     var isFullscreen: Bool { fullscreenState.isFullscreen }
     private weak var blurTintView: NSView?
     private var pendingLaunch = false
+    public var isLaunchPending: Bool { pendingLaunch }
+    private var pendingLaunchWantsVisible = true
     private var pendingLaunchStartedAt: CFAbsoluteTime = 0
     /// Bumps on every show/hide so delayed animation steps cannot revive a dismissed panel.
     private var presentationGeneration: UInt64 = 0
@@ -108,12 +111,23 @@ public final class QuakeTerminalController {
             settings.effectiveOpacity
         )
 
+        if pendingLaunch {
+            let age = CFAbsoluteTimeGetCurrent() - pendingLaunchStartedAt
+            if age < 5 {
+                pendingLaunchWantsVisible.toggle()
+                NSLog("ALWM Quake: pending launch visibility=%@", pendingLaunchWantsVisible ? "show" : "hide")
+                return
+            }
+            NSLog("ALWM Quake: clearing stuck pendingLaunch (%.1fs)", age)
+            pendingLaunch = false
+        }
+
         if let id = windowID {
             // Off-screen park can drop out of one AX snapshot — rescan before giving up.
             if windows[id] == nil && ax.currentAX[id] == nil {
                 onNeedRescan?()
             }
-            if windows[id] != nil || ax.currentAX[id] != nil {
+            if isVisible || windows[id] != nil || ax.currentAX[id] != nil {
                 if isVisible {
                     NSLog("ALWM Quake: hide %@", id.token)
                     hide(id: id, settings: settings, monitor: monitor, applyFrame: applyFrame)
@@ -138,16 +152,8 @@ public final class QuakeTerminalController {
             return
         }
 
-        if pendingLaunch {
-            let age = CFAbsoluteTimeGetCurrent() - pendingLaunchStartedAt
-            if age < 5 {
-                NSLog("ALWM Quake: launch already pending (%.1fs)", age)
-                return
-            }
-            NSLog("ALWM Quake: clearing stuck pendingLaunch (%.1fs)", age)
-            pendingLaunch = false
-        }
         pendingLaunch = true
+        pendingLaunchWantsVisible = true
         pendingLaunchStartedAt = CFAbsoluteTimeGetCurrent()
         pendingAdoptBundleID = bundleID
         NSLog("ALWM Quake: launching dedicated scratchpad for %@", bundleID)
@@ -161,7 +167,13 @@ public final class QuakeTerminalController {
                     self.onNeedRescan?()
                     if let found = self.pickNewestWindow(bundleID: bundleID, in: ax) {
                         NSLog("ALWM Quake: found %@ attempt %d", found.token, attempt)
-                        self.adopt(found, settings: settings, monitor: monitor, applyFrame: applyFrame, ax: ax)
+                        let showOnAdopt = self.pendingLaunchWantsVisible
+                        self.pendingLaunch = false
+                        self.adopt(
+                            found, settings: settings, monitor: monitor,
+                            applyFrame: applyFrame, ax: ax,
+                            showOnAdopt: showOnAdopt
+                        )
                         return
                     }
                 }
@@ -176,11 +188,18 @@ public final class QuakeTerminalController {
         settings: QuakeSettings,
         monitor: MonitorInfo,
         applyFrame: @escaping @Sendable (WindowID, Rect) -> Void,
-        ax: AXTracker
+        ax: AXTracker,
+        showOnAdopt: Bool = true
     ) {
         windowID = id
+        activeMonitorID = monitor.id
         pendingAdoptBundleID = nil
         onAdopted?(id)
+        if !showOnAdopt {
+            let hidden = hiddenFrame(settings: settings, monitor: monitor)
+            applyFrame(id, hidden)
+            return
+        }
         // Caller may still be outside the suppress window — extend while we animate in.
         show(id: id, settings: settings, monitor: monitor, applyFrame: applyFrame, ax: ax)
         // Re-assert docked float after AX/app settle.
@@ -269,6 +288,7 @@ public final class QuakeTerminalController {
         ax: AXTracker
     ) {
         presentationGeneration &+= 1
+        activeMonitorID = monitor.id
         let visible = visibleFrame(settings: settings, monitor: monitor)
         QuakeShellAppearance.sync(
             bundleID: Self.resolveBundleID(configured: settings.bundleID),
@@ -624,8 +644,10 @@ public final class QuakeTerminalController {
     /// User closed the scratchpad window — drop binding without waiting for soft-delete scans.
     public func clearAfterUserClose() {
         windowID = nil
+        activeMonitorID = nil
         setVisible(false)
         pendingLaunch = false
+        pendingLaunchWantsVisible = true
         pendingAdoptBundleID = nil
         blurPanel?.orderOut(nil)
     }
