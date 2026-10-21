@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "version": "2.0.4",
+      "items": [
+        "Restore workspace layouts more reliably",
+        "Place new windows on the current workspace",
+        "Avoid minimizing windows when changing workspaces"
+      ]
+    },
+    {
       "version": "2.0.3",
       "items": [
         "Place new windows on the current workspace",
