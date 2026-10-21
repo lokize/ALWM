@@ -411,26 +411,17 @@ extension WindowManager {
                     }
                 } else {
                     guard let live = liveFrameForVisibility(id) else { continue }
-                    var siblingVisible = false
-                    for other in windowsByID.keys where other.pid == id.pid && other != id {
-                        let home = windowWorkspace[other] ?? workspaces.workspaceID(containing: other)
-                        if let home, activeIDs.contains(home) {
-                            siblingVisible = true
-                            break
-                        }
-                    }
-                    let escalate = !siblingVisible || allowsPerWindowMinimize(id)
                     if OffscreenParking.isUsableOnscreenFrame(live, monitors: monitors) {
                         var parkFrame = savedFrames[id] ?? live
                         parkFrame.x = OffscreenParking.parkOrigin(monitors: monitors, preferred: nil).x
                         parkFrame.y = OffscreenParking.parkOrigin(monitors: monitors, preferred: nil).y
-                        if escalate {
-                            ax.parkAndHide(frame: parkFrame, id: id, monitors: monitors)
-                        } else {
-                            ax.parkOffscreen(frame: parkFrame, id: id, monitors: monitors)
-                        }
+                        ax.parkOffscreen(frame: parkFrame, id: id, monitors: monitors)
                     } else {
-                        ax.reparkIfLeaking(id: id, monitors: monitors, allowMinimize: escalate)
+                        ax.reparkIfLeaking(
+                            id: id,
+                            monitors: monitors,
+                            allowMinimize: WorkspaceTransitionParkingPolicy.mayMinimizeLeakingWindow
+                        )
                     }
                 }
             }

@@ -3,6 +3,11 @@ import Testing
 
 @Suite("Workspace visibility reconciliation")
 struct WorkspaceVisibilityReconciliationTests {
+    @Test("workspace transitions never minimize app windows to hide them")
+    func workspaceTransitionDoesNotMinimizeWindows() {
+        #expect(!WorkspaceTransitionParkingPolicy.mayMinimizeLeakingWindow)
+    }
+
     @Test("an active workspace tile leak onto another monitor is detected")
     func activeHomeCrossMonitorLeakIsDetected() {
         let msi = MonitorInfo(
