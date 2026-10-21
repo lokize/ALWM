@@ -40,6 +40,39 @@ struct ReliabilityRegressionTests {
         #expect(manager.resolveTargetWorkspace(for: window, on: monitor) == "2")
     }
 
+    @Test("new windows use the active workspace of the current monitor, not their default frame monitor")
+    @MainActor
+    func newWindowUsesCurrentMonitorWorkspace() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let left = MonitorInfo(id: 2, frame: .init(x: 0, y: 0, width: 1440, height: 900), visibleFrame: .init(x: 0, y: 24, width: 1440, height: 876), name: "Left")
+        let right = MonitorInfo(id: 3, frame: .init(x: 1440, y: 0, width: 1440, height: 900), visibleFrame: .init(x: 1440, y: 24, width: 1440, height: 876), name: "Right")
+        let manager = WindowManager(
+            runtimeState: RuntimeStateStore(url: root.appendingPathComponent("runtime.json")),
+            notesStore: NotesStore(root: root.appendingPathComponent("notes")),
+            monitors: MonitorStore(monitors: [left, right])
+        )
+        manager.isBootstrapping = false
+        manager.primaryMonitorID = right.id
+        manager.workspaces.configure(definitions: [
+            .init(id: "1", name: "1", monitorIndex: 0),
+            .init(id: "5", name: "5", monitorIndex: 1),
+        ], monitors: [left, right])
+        manager.workspaces.switchWorkspace(id: "1", on: left.id, monitors: [left, right])
+        manager.workspaces.switchWorkspace(id: "5", on: right.id, monitors: [left, right])
+        let window = ManagedWindow(
+            id: WindowID(pid: 42, windowNumber: 101), title: "UTM",
+            bundleID: "com.utmapp.UTM", appName: "UTM",
+            frame: .init(x: 100, y: 100, width: 900, height: 700)
+        )
+
+        #expect(manager.initialWorkspaceForNewWindow(for: window, on: left) == "5")
+        var config = manager.configStore.config
+        config.rules.append(AppRule(bundleID: "com.utmapp.UTM", workspace: "1"))
+        manager.configStore.replaceConfig(config)
+        #expect(manager.initialWorkspaceForNewWindow(for: window, on: left) == "1")
+    }
+
     @Test("a reused window token does not override an app rule on another monitor")
     @MainActor
     func reusedTokenUsesAppRuleWorkspace() {

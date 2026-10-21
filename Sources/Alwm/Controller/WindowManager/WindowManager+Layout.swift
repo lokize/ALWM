@@ -58,6 +58,11 @@ enum VisibilityPassPolicy {
     }
 }
 
+enum WorkspaceTransitionParkingPolicy {
+    /// Workspace navigation hides windows; it must not change an app's minimized state.
+    static let mayMinimizeLeakingWindow = false
+}
+
 enum WorkspaceMonitorLeakPolicy {
     static func correctedActiveTileFrame(
         home: String,
@@ -1907,13 +1912,8 @@ extension WindowManager {
             ax.reparkIfLeaking(
                 id: id,
                 monitors: allMonitorFrames,
-                allowMinimize: allowMinimizeDespiteSibling(id)
+                allowMinimize: WorkspaceTransitionParkingPolicy.mayMinimizeLeakingWindow
             )
-            if let still = liveFrameForVisibility(id),
-               frameLeaksWrongMonitor(home: home, frame: still),
-               allowsPerWindowMinimize(id) {
-                ax.parkAndHide(frame: parkFrame, id: id, monitors: allMonitorFrames)
-            }
         }
     }
 

@@ -35,9 +35,13 @@ extension WindowManager {
             rules: configStore.config.rules,
             window: win
         )
-        let monitorIndex = workspaces.monitorIndex(of: monitor.id, in: monitors.monitors) ?? 0
+        // macOS can create a new app window at its own default frame on a different
+        // display from the one the user is currently working on. Place it with the
+        // current workspace in that case; the frame monitor is only a fallback.
+        let currentMonitor = monitors.monitors.first(where: { $0.id == primaryMonitorID }) ?? monitor
+        let monitorIndex = workspaces.monitorIndex(of: currentMonitor.id, in: monitors.monitors) ?? 0
         let allowed = Set(workspaces.definitionsVisible(onMonitorIndex: monitorIndex).map(\.id))
-        let active = workspaces.activeWorkspaceByMonitor[monitor.id].flatMap {
+        let active = workspaces.activeWorkspaceByMonitor[currentMonitor.id].flatMap {
             allowed.contains($0) ? $0 : nil
         }
         return InitialWorkspaceSelection.resolve(
@@ -410,11 +414,14 @@ extension WindowManager {
             runtimeState.setAssignment(sticky, for: id)
             return
         }
-        let mon = monitors.monitorContaining(pointX: win.frame.midX, pointY: win.frame.midY)
+        let frameMonitor = monitors.monitorContaining(pointX: win.frame.midX, pointY: win.frame.midY)
             ?? monitors.monitors.first
         let configured = AppRules.preferredWorkspaceForOpening(rules: configStore.config.rules, window: win)
             .flatMap { workspaces.workspaces[$0] != nil ? $0 : nil }
-        let home = configured ?? mon.flatMap { workspaces.activeWorkspaceByMonitor[$0.id] } ?? firstWorkspaceID()
+        let currentMonitor = monitors.monitors.first(where: { $0.id == primaryMonitorID }) ?? frameMonitor
+        let home = configured
+            ?? currentMonitor.flatMap { workspaces.activeWorkspaceByMonitor[$0.id] }
+            ?? firstWorkspaceID()
         guard let home else { return }
         windowWorkspace[id] = home
         runtimeState.setAssignment(home, for: id)

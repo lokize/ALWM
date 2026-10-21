@@ -5,6 +5,20 @@ import SwiftUI
 import AlwmIPC
 import AlwmPluginAPI
 
+enum MoveToWorkspaceTargetPolicy {
+    static func resolve(
+        frontmost: WindowID?,
+        cached: WindowID?,
+        workspaceFocused: WindowID?,
+        isActionable: (WindowID) -> Bool
+    ) -> WindowID? {
+        for candidate in [frontmost, cached, workspaceFocused].compactMap({ $0 }) {
+            if isActionable(candidate) { return candidate }
+        }
+        return nil
+    }
+}
+
 // MARK: - Workspaces — switch, move, focus, bundle heal
 
 extension WindowManager {
@@ -397,26 +411,17 @@ extension WindowManager {
                     }
                 } else {
                     guard let live = liveFrameForVisibility(id) else { continue }
-                    var siblingVisible = false
-                    for other in windowsByID.keys where other.pid == id.pid && other != id {
-                        let home = windowWorkspace[other] ?? workspaces.workspaceID(containing: other)
-                        if let home, activeIDs.contains(home) {
-                            siblingVisible = true
-                            break
-                        }
-                    }
-                    let escalate = !siblingVisible || allowsPerWindowMinimize(id)
                     if OffscreenParking.isUsableOnscreenFrame(live, monitors: monitors) {
                         var parkFrame = savedFrames[id] ?? live
                         parkFrame.x = OffscreenParking.parkOrigin(monitors: monitors, preferred: nil).x
                         parkFrame.y = OffscreenParking.parkOrigin(monitors: monitors, preferred: nil).y
-                        if escalate {
-                            ax.parkAndHide(frame: parkFrame, id: id, monitors: monitors)
-                        } else {
-                            ax.parkOffscreen(frame: parkFrame, id: id, monitors: monitors)
-                        }
+                        ax.parkOffscreen(frame: parkFrame, id: id, monitors: monitors)
                     } else {
-                        ax.reparkIfLeaking(id: id, monitors: monitors, allowMinimize: escalate)
+                        ax.reparkIfLeaking(
+                            id: id,
+                            monitors: monitors,
+                            allowMinimize: WorkspaceTransitionParkingPolicy.mayMinimizeLeakingWindow
+                        )
                     }
                 }
             }
@@ -425,14 +430,22 @@ extension WindowManager {
     }
 
     func moveFocusedToWorkspace(_ workspaceID: String, follow: Bool = false) {
-        if windowsByID.isEmpty || (axFocusedWindowID == nil && focusedWindowID() == nil) {
+        var frontmost = ax.frontmostFocusedWindowID()
+        if windowsByID.isEmpty
+            || (frontmost == nil && axFocusedWindowID == nil && focusedWindowID() == nil) {
             ax.scanAll()
             ingest(windows: ax.currentWindows)
+            frontmost = ax.frontmostFocusedWindowID()
         }
-        guard let id = axFocusedWindowID
-            ?? ax.frontmostFocusedWindowID()
-            ?? focusedWindowID()
-        else {
+        let id = MoveToWorkspaceTargetPolicy.resolve(
+            frontmost: frontmost,
+            cached: axFocusedWindowID,
+            workspaceFocused: focusedWindowID(),
+            isActionable: { id in
+                self.windowsByID[id] != nil || self.workspaces.workspaceID(containing: id) != nil
+            }
+        )
+        guard let id else {
             NSLog("ALWM: move.to.workspace.%@ — nenhuma janela focada", workspaceID)
             return
         }

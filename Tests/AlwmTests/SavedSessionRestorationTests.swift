@@ -239,3 +239,32 @@ struct SavedSessionRestorationTests {
         #expect(manager.floatingOverrides.contains(id))
     }
 }
+
+@Suite("Move-to-workspace target selection")
+struct MoveToWorkspaceTargetSelectionTests {
+    @Test("the live frontmost window beats a stale cached focus")
+    func liveFrontmostWindowWins() {
+        let stale = WindowID(pid: 42, windowNumber: 100)
+        let current = WindowID(pid: 43, windowNumber: 200)
+
+        #expect(MoveToWorkspaceTargetPolicy.resolve(
+            frontmost: current,
+            cached: stale,
+            workspaceFocused: stale,
+            isActionable: { _ in true }
+        ) == current)
+    }
+
+    @Test("an unmanaged popup is skipped in favor of the last actionable window")
+    func unmanagedFrontmostFallsBackToActionableWindow() {
+        let popup = WindowID(pid: 42, windowNumber: 300)
+        let appWindow = WindowID(pid: 42, windowNumber: 100)
+
+        #expect(MoveToWorkspaceTargetPolicy.resolve(
+            frontmost: popup,
+            cached: appWindow,
+            workspaceFocused: nil,
+            isActionable: { $0 == appWindow }
+        ) == appWindow)
+    }
+}
