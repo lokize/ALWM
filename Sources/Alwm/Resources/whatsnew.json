@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "2.0.5",
+      "items": [
+        "Fix new windows inheriting stale workspace from saved titles",
+        "Keep newly opened windows on the active workspace unless an app rule applies"
+      ]
+    },
+    {
       "version": "2.0.4",
       "items": [
         "Restore workspace layouts more reliably",
@@ -243,26 +250,6 @@
       "version": "1.6.6",
       "items": [
         "Confirm settings survive updates and package restarts"
-      ]
-    },
-    {
-      "version": "1.6.5",
-      "items": [
-        "Persist all settings edits synchronously"
-      ]
-    },
-    {
-      "version": "1.6.4",
-      "items": [
-        "Reconcile live windows with their assigned workspaces",
-        "Preserve settings when closing an untouched Settings window"
-      ]
-    },
-    {
-      "version": "1.6.3",
-      "items": [
-        "Apply app opening rules when macOS reuses a window token",
-        "Remove duplicate window memberships across workspaces and monitors"
       ]
     }
   ]

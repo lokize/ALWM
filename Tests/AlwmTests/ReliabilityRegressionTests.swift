@@ -40,6 +40,36 @@ struct ReliabilityRegressionTests {
         #expect(manager.resolveTargetWorkspace(for: window, on: monitor) == "2")
     }
 
+    @Test("a newly opened app with a saved same-title window joins the active workspace")
+    @MainActor
+    func newWindowWithSavedTitleUsesActiveWorkspace() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let monitor = MonitorInfo(id: 1, frame: .init(x: 0, y: 0, width: 1440, height: 900), visibleFrame: .init(x: 0, y: 24, width: 1440, height: 876), name: "Test")
+        let manager = WindowManager(
+            runtimeState: RuntimeStateStore(url: root.appendingPathComponent("runtime.json")),
+            notesStore: NotesStore(root: root.appendingPathComponent("notes")),
+            monitors: MonitorStore(monitors: [monitor])
+        )
+        manager.isBootstrapping = false
+        manager.resumeRecoveryEligibleUntil = Date().addingTimeInterval(5)
+        manager.workspaces.configure(definitions: [.init(id: "1", name: "1"), .init(id: "2", name: "2")], monitors: [monitor])
+        manager.workspaces.switchWorkspace(id: "2", on: monitor.id, monitors: [monitor])
+        manager.runtimeState.setWorkspaceLayout(.init(columns: [.init(windows: [
+            .init(token: "41:10", bundleID: "com.philandro.anydesk", appName: "AnyDesk", title: "Nova sessão")
+        ], width: 800)]), for: "1")
+
+        let window = ManagedWindow(
+            id: WindowID(pid: 42, windowNumber: 11), title: "Nova sessão",
+            bundleID: "com.philandro.anydesk", appName: "AnyDesk", frame: monitor.visibleFrame
+        )
+
+        manager.windowsByID[window.id] = window
+        #expect(manager.diskLayoutClaimsWindow(window.id, allowFuzzy: true))
+        #expect(manager.savedHome(for: window, id: window.id) == "1")
+        #expect(manager.initialWorkspaceForNewWindow(for: window, on: monitor) == "2")
+    }
+
     @Test("new windows use the active workspace of the current monitor, not their default frame monitor")
     @MainActor
     func newWindowUsesCurrentMonitorWorkspace() {

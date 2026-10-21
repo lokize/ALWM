@@ -28,9 +28,6 @@ extension WindowManager {
     /// Select placement for a newly discovered window. Token assignments alone are
     /// not enough: macOS can reuse a window number after the previous window closed.
     func initialWorkspaceForNewWindow(for win: ManagedWindow, on monitor: MonitorInfo) -> String? {
-        let savedHome = diskLayoutClaimsWindow(win.id, allowFuzzy: true)
-            ? savedHome(for: win, id: win.id)
-            : nil
         let openingRule = AppRules.preferredWorkspaceForOpening(
             rules: configStore.config.rules,
             window: win
@@ -44,14 +41,11 @@ extension WindowManager {
         let active = workspaces.activeWorkspaceByMonitor[currentMonitor.id].flatMap {
             allowed.contains($0) ? $0 : nil
         }
-        return InitialWorkspaceSelection.resolve(
-            rule: openingRule,
-            sticky: nil,
-            savedLayout: savedHome,
-            bundle: nil,
-            active: active,
-            existing: Set(workspaces.workspaces.keys)
-        ) ?? allowed.first ?? firstWorkspaceID()
+        // This path is for genuinely new windows only. Fuzzy saved-title matching is
+        // reserved for restore/reconciliation; during recovery it can otherwise send a
+        // newly opened app to a stale workspace and leave it parked behind visible tiles.
+        if let openingRule, workspaces.workspaces[openingRule] != nil { return openingRule }
+        return active ?? allowed.first ?? firstWorkspaceID()
     }
 
     func resolveTargetWorkspace(for win: ManagedWindow, on monitor: MonitorInfo) -> String? {
