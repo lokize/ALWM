@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "2.0.2",
+      "items": [
+        "Move-to-workspace targets the currently focused window"
+      ]
+    },
+    {
       "version": "2.0.1",
       "items": [
         "Open Quake on the display under the cursor and keep it there during layout updates.",
@@ -242,12 +248,6 @@
       "items": [
         "Apply app opening rules when macOS reuses a window token",
         "Remove duplicate window memberships across workspaces and monitors"
-      ]
-    },
-    {
-      "version": "1.6.2",
-      "items": [
-        "Preserve the configured outer gap at the bottom edge"
       ]
     }
   ]

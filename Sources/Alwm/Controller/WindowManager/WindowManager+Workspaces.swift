@@ -5,6 +5,20 @@ import SwiftUI
 import AlwmIPC
 import AlwmPluginAPI
 
+enum MoveToWorkspaceTargetPolicy {
+    static func resolve(
+        frontmost: WindowID?,
+        cached: WindowID?,
+        workspaceFocused: WindowID?,
+        isActionable: (WindowID) -> Bool
+    ) -> WindowID? {
+        for candidate in [frontmost, cached, workspaceFocused].compactMap({ $0 }) {
+            if isActionable(candidate) { return candidate }
+        }
+        return nil
+    }
+}
+
 // MARK: - Workspaces — switch, move, focus, bundle heal
 
 extension WindowManager {
@@ -425,14 +439,22 @@ extension WindowManager {
     }
 
     func moveFocusedToWorkspace(_ workspaceID: String, follow: Bool = false) {
-        if windowsByID.isEmpty || (axFocusedWindowID == nil && focusedWindowID() == nil) {
+        var frontmost = ax.frontmostFocusedWindowID()
+        if windowsByID.isEmpty
+            || (frontmost == nil && axFocusedWindowID == nil && focusedWindowID() == nil) {
             ax.scanAll()
             ingest(windows: ax.currentWindows)
+            frontmost = ax.frontmostFocusedWindowID()
         }
-        guard let id = axFocusedWindowID
-            ?? ax.frontmostFocusedWindowID()
-            ?? focusedWindowID()
-        else {
+        let id = MoveToWorkspaceTargetPolicy.resolve(
+            frontmost: frontmost,
+            cached: axFocusedWindowID,
+            workspaceFocused: focusedWindowID(),
+            isActionable: { id in
+                self.windowsByID[id] != nil || self.workspaces.workspaceID(containing: id) != nil
+            }
+        )
+        guard let id else {
             NSLog("ALWM: move.to.workspace.%@ — nenhuma janela focada", workspaceID)
             return
         }
