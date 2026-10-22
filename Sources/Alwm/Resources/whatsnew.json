@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "2.0.6",
+      "items": [
+        "Restore minimized tiles after sleep",
+        "Resume recovery now includes minimized workspace tiles in layout restoration"
+      ]
+    },
+    {
       "version": "2.0.5",
       "items": [
         "Fix new windows inheriting stale workspace from saved titles",
@@ -244,12 +251,6 @@
       "version": "1.6.7",
       "items": [
         "Hide workspace tiles leaking across monitors"
-      ]
-    },
-    {
-      "version": "1.6.6",
-      "items": [
-        "Confirm settings survive updates and package restarts"
       ]
     }
   ]

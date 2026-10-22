@@ -330,6 +330,25 @@ struct ReliabilityRegressionTests {
         #expect(manager.windowWorkspace[id] == "1")
     }
 
+    @Test("resume recovery includes minimized tiles so it can restore their frames")
+    @MainActor
+    func resumeRecoveryIncludesMinimizedTiles() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let manager = manager(root: root)
+        let id = WindowID(pid: 999_998, windowNumber: 12)
+        manager.windowsByID[id] = ManagedWindow(
+            id: id, title: "Editor", bundleID: "example.editor", appName: "Editor",
+            frame: .init(x: 0, y: 0, width: 800, height: 600)
+        )
+        manager.minimizedCache[id] = true
+        manager.isResumeRecovering = true
+
+        #expect(!manager.stackExcludedFromLayout().contains(id))
+        manager.isResumeRecovering = false
+        #expect(manager.stackExcludedFromLayout().contains(id))
+    }
+
     @Test("a brief missing AX scan does not erase the first workspace tile")
     @MainActor
     func firstMissingScanPreservesTile() {

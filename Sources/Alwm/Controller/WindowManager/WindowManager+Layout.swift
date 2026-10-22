@@ -1036,7 +1036,9 @@ extension WindowManager {
     func stackExcludedFromLayout() -> Set<WindowID> {
         Set(windowsByID.keys.filter { id in
             guard let win = windowsByID[id], win.isTiled else { return false }
-            if cachedIsMinimized(id) { return true }
+            // Resume must include minimized windows in frame computation; otherwise the
+            // reveal pass has no target for them and cannot clear macOS's minimized state.
+            if cachedIsMinimized(id), !isResumeRecovering { return true }
             if missingScanCounts[id] != nil { return true }
             return false
         })
