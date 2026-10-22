@@ -29,6 +29,23 @@ enum ResumeWorkspaceSelection {
     }
 }
 
+enum ResumeVisibleWindowRecoveryPolicy {
+    struct Candidate: Equatable {
+        var id: WindowID
+        var isMinimized: Bool
+        var isLayoutVisible: Bool
+        var isIntentionallyParked = false
+    }
+
+    static func windowIDsToReveal(_ candidates: [Candidate]) -> [WindowID] {
+        candidates.compactMap { candidate in
+            candidate.isMinimized && candidate.isLayoutVisible && !candidate.isIntentionallyParked
+                ? candidate.id
+                : nil
+        }
+    }
+}
+
 enum WorkspaceWindowRecoveryPolicy {
     static func bundleIDs(workspaceID: String, snapshot: RuntimeStateStore.Snapshot) -> Set<String> {
         var result: Set<String> = []
@@ -184,6 +201,7 @@ extension WindowManager {
         visibilityForceReveal = true
         applyActiveWorkspaceTileLayoutsAfterResume()
         applyWorkspaceVisibility(animated: false)
+        restoreMinimizedVisibleActiveWorkspaceTiles()
         scheduleTileFrameEnforcement()
         refreshChrome()
         let saved = savedTiledWindowCount()
@@ -465,6 +483,7 @@ extension WindowManager {
         visibilityForceReveal = true
         applyActiveWorkspaceTileLayoutsAfterResume()
         applyWorkspaceVisibility(animated: false)
+        restoreMinimizedVisibleActiveWorkspaceTiles()
         scheduleTileFrameEnforcement()
         refreshChrome()
 
@@ -520,6 +539,46 @@ extension WindowManager {
             applyWorkspaceTileLayout(wsID, on: mon, forceReveal: true, skipHeal: true)
         }
         applyAllActiveStackColumns()
+    }
+
+    /// A sleep/wake AX refresh can report a tile as minimized after the normal
+    /// layout pass has already revealed it. Reconcile active, visible tile frames
+    /// once more after visibility enforcement so the final wake state is onscreen.
+    func restoreMinimizedVisibleActiveWorkspaceTiles() {
+        for monitor in monitors.monitors {
+            guard let workspaceID = workspaces.activeWorkspaceByMonitor[monitor.id],
+                  let workspace = workspaces.workspaces[workspaceID]
+            else { continue }
+            let assignments = engine.computeFrames(
+                workspace: workspace,
+                windows: windowsByID,
+                monitor: monitor.layoutFrame,
+                active: true,
+                stackExcluded: stackExcludedFromLayout(),
+                layoutExcluded: layoutExcludedWindowIDs(for: workspaceID, monitor: monitor)
+            )
+            let frames = Dictionary(
+                assignments.map { ($0.windowID, $0) },
+                uniquingKeysWith: { _, last in last }
+            )
+            let candidates = workspace.columns.flatMap(\.windows).compactMap { id -> ResumeVisibleWindowRecoveryPolicy.Candidate? in
+                guard let assignment = frames[id], let window = windowsByID[id], window.isTiled else { return nil }
+                return .init(
+                    id: id,
+                    isMinimized: ax.isMinimized(id),
+                    isLayoutVisible: assignment.visible,
+                    isIntentionallyParked: isIntentionallyParkedFrame(
+                        assignment.frame,
+                        usable: engine.usableArea(monitor: monitor.layoutFrame)
+                    )
+                )
+            }
+            for id in ResumeVisibleWindowRecoveryPolicy.windowIDsToReveal(candidates) {
+                guard let frame = frames[id]?.frame else { continue }
+                ax.reveal(frame: frame, id: id)
+                lastFrames[id] = frame
+            }
+        }
     }
 
     func purgeStaleStickyTokens() {

@@ -2,6 +2,19 @@ import AppKit
 import CoreGraphics
 import Foundation
 
+enum QuakeFrameIntent: Equatable {
+    case reveal
+    case hide
+
+    init(isVisible: Bool) {
+        self = isVisible ? .reveal : .hide
+    }
+
+    static func shouldApply(generation: UInt64, currentGeneration: UInt64) -> Bool {
+        generation == currentGeneration
+    }
+}
+
 @MainActor
 private final class QuakeDismissButtonTarget: NSObject {
     var onDismiss: (() -> Void)?

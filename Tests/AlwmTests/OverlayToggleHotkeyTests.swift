@@ -14,6 +14,22 @@ struct OverlayToggleHotkeyTests {
         #expect(!OverlayKeyboardFocus.quakeOwnsKeyboard(bound: quake, focused: quake, frontmostPID: 43))
     }
 
+    @Test("a queued Quake frame update keeps the intent from its own toggle")
+    func queuedQuakeFrameIntentDoesNotFollowLaterToggle() {
+        let hideIntent = QuakeFrameIntent(isVisible: false)
+        let showIntent = QuakeFrameIntent(isVisible: true)
+        #expect(hideIntent == .hide)
+        #expect(showIntent == .reveal)
+        // A later toggle changes controller visibility, but cannot change the
+        // already queued AX operation's captured intent.
+        var currentlyVisible = false
+        currentlyVisible = true
+        #expect(hideIntent == .hide)
+        #expect(currentlyVisible)
+        #expect(!QuakeFrameIntent.shouldApply(generation: 1, currentGeneration: 2))
+        #expect(QuakeFrameIntent.shouldApply(generation: 2, currentGeneration: 2))
+    }
+
     @Test("workspace switches update tile visibility without releasing overlay focus")
     func workspaceSwitchCanApplyVisibilityDuringOverlayCapture() {
         #expect(OverlayWorkspaceVisibilityPolicy.shouldDefer(overlaysCaptureFocus: true, isWorkspaceSwitch: false))

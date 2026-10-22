@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "2.1.0",
+      "items": [
+        "Restore visible workspace windows after sleep",
+        "Keep Quake Option+T toggles in order"
+      ]
+    },
+    {
       "version": "2.0.9",
       "items": [
         "Keep app popovers from stealing focus or triggering layout enforcement"
@@ -243,15 +250,6 @@
         "Keep the interactive overview shortcut available while overlays capture keyboard focus",
         "Make the status menu scroll on short screens and add environment profile controls",
         "Restore missing apps and saved window placement when loading an environment profile"
-      ]
-    },
-    {
-      "version": "1.7.0",
-      "items": [
-        "Compact status menu while preserving every control",
-        "Fix focus-follow-mouse routing and keep the focus border on the active display",
-        "Add environment profiles, automatic display topology profiles, window undo history, and interactive overview",
-        "Persist configured workspace and wallpaper state across updates"
       ]
     }
   ]

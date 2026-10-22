@@ -604,15 +604,25 @@ extension WindowManager {
             windows: windowsByID,
             ax: ax,
             applyFrame: { @Sendable [weak self] id, frame in
-                Task { @MainActor in
-                    guard let self else { return }
-                    if self.quake.isVisible {
-                        self.ax.setMinimized(false, id: id)
-                        self.ax.apply(frame: frame, to: id)
-                    } else {
-                        self.ax.parkAndHide(frame: frame, id: id, monitors: monitorsFrames)
+                guard let self else { return }
+                MainActor.assumeIsolated {
+                    self.quakeFrameUpdateGeneration &+= 1
+                    let generation = self.quakeFrameUpdateGeneration
+                    let intent = QuakeFrameIntent(isVisible: self.quake.isVisible)
+                    Task { @MainActor [weak self] in
+                        guard let self,
+                              QuakeFrameIntent.shouldApply(
+                                generation: generation,
+                                currentGeneration: self.quakeFrameUpdateGeneration
+                              ) else { return }
+                        if intent == .reveal {
+                            self.ax.setMinimized(false, id: id)
+                            self.ax.apply(frame: frame, to: id)
+                        } else {
+                            self.ax.parkAndHide(frame: frame, id: id, monitors: monitorsFrames)
+                        }
+                        self.lastFrames[id] = frame
                     }
-                    self.lastFrames[id] = frame
                 }
             },
             focusTiled: { @Sendable [weak self] in

@@ -349,6 +349,19 @@ struct ReliabilityRegressionTests {
         #expect(manager.stackExcludedFromLayout().contains(id))
     }
 
+    @Test("resume explicitly reveals minimized tiles assigned to active layouts")
+    func resumeSelectsMinimizedVisibleTilesForReveal() {
+        let active = WindowID(pid: 999_997, windowNumber: 7)
+        let inactive = WindowID(pid: 999_996, windowNumber: 8)
+        let parked = WindowID(pid: 999_995, windowNumber: 9)
+        let candidates = [
+            ResumeVisibleWindowRecoveryPolicy.Candidate(id: active, isMinimized: true, isLayoutVisible: true),
+            ResumeVisibleWindowRecoveryPolicy.Candidate(id: inactive, isMinimized: true, isLayoutVisible: false),
+            ResumeVisibleWindowRecoveryPolicy.Candidate(id: parked, isMinimized: true, isLayoutVisible: true, isIntentionallyParked: true),
+        ]
+        #expect(ResumeVisibleWindowRecoveryPolicy.windowIDsToReveal(candidates) == [active])
+    }
+
     @Test("a brief missing AX scan does not erase the first workspace tile")
     @MainActor
     func firstMissingScanPreservesTile() {
