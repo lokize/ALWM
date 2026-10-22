@@ -123,13 +123,28 @@ struct AlwmChromeFocusTests {
     }
 
     @Test("an open transient popup prevents refocusing its managed owner while scrolling")
+    @MainActor
     func transientPopupPreventsRefocusingManagedOwner() {
-        let owner = WindowID(pid: 43, windowNumber: 201)
-        #expect(FocusFollowsMousePolicy.topWindowAction(
-            windowNumber: owner.windowNumber,
-            hit: owner,
-            isManagedWindow: true,
-            transientPopupIsOpen: true
-        ) == .ignore)
+        #expect(AlwmChromeFocus.blocksFocusFollowsMouse(
+            overlaysCaptureFocus: false,
+            paletteVisible: false,
+            overviewVisible: false,
+            settingsVisible: false,
+            appTransientPopupVisible: true
+        ))
+    }
+
+    @Test("geometry enforcement pauses while an app popup is open")
+    func transientPopupPreventsGeometryEnforcement() {
+        #expect(!FocusFollowsMousePolicy.shouldEnforceGeometry(transientPopupIsOpen: true))
+        #expect(FocusFollowsMousePolicy.shouldEnforceGeometry(transientPopupIsOpen: false))
+    }
+
+    @Test("AX popovers are recognized even when focus moves outside the popup")
+    @MainActor
+    func recognizesPopupWindowRoleIndependentlyOfFocusedElement() {
+        #expect(AlwmChromeFocus.isTransientPopupRole("AXPopover"))
+        #expect(AlwmChromeFocus.isTransientPopupRole("AXSheet"))
+        #expect(!AlwmChromeFocus.isTransientPopupRole("AXGroup"))
     }
 }

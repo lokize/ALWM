@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "2.0.9",
+      "items": [
+        "Keep app popovers from stealing focus or triggering layout enforcement"
+      ]
+    },
+    {
       "version": "2.0.8",
       "items": [
         "Keep WhatsApp emoji and sticker popovers open while scrolling"
@@ -246,12 +252,6 @@
         "Fix focus-follow-mouse routing and keep the focus border on the active display",
         "Add environment profiles, automatic display topology profiles, window undo history, and interactive overview",
         "Persist configured workspace and wallpaper state across updates"
-      ]
-    },
-    {
-      "version": "1.6.9",
-      "items": [
-        "Correct focused workspace tiles that bleed onto another display"
       ]
     }
   ]

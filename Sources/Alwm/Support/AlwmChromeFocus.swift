@@ -12,8 +12,12 @@ enum AlwmChromeFocus {
         paletteVisible: Bool,
         overviewVisible: Bool,
         settingsVisible: Bool,
-        statusPopoverVisible: Bool = false
+        statusPopoverVisible: Bool = false,
+        appTransientPopupVisible: Bool = false
     ) -> Bool {
+        // App-owned transient UI (for example WhatsApp's sticker picker) must
+        // retain interaction even when it shares the owner's normal CG window.
+        if appTransientPopupVisible { return true }
         if overlaysCaptureFocus { return true }
         if paletteVisible || overviewVisible || settingsVisible { return true }
         if statusPopoverVisible { return true }
@@ -175,8 +179,12 @@ enum AlwmChromeFocus {
         return false
     }
 
+    static func isTransientPopupRole(_ role: String) -> Bool {
+        ["AXMenu", "AXMenuItem", "AXPopover", "AXSheet", "AXDialog"].contains(role)
+    }
+
     /// Some Electron popups are drawn inside the document's CGWindow. Inspect
-    /// focus ancestry and sheets, not the entire (potentially huge) UI tree.
+    /// focus ancestry and direct window children, not the entire (potentially huge) UI tree.
     static func axProcessHasTransientPopup(pid: pid_t) -> Bool {
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 0.015)
@@ -192,7 +200,7 @@ enum AlwmChromeFocus {
             guard let element = node else { break }
             let role = attribute(element, kAXRoleAttribute as CFString) as? String ?? ""
             let subrole = attribute(element, kAXSubroleAttribute as CFString) as? String ?? ""
-            if ["AXMenu", "AXMenuItem", "AXPopover", "AXSheet", "AXDialog"].contains(role)
+            if isTransientPopupRole(role)
                 || ["AXDialog", "AXSystemDialog"].contains(subrole) {
                 return true
             }
@@ -203,8 +211,12 @@ enum AlwmChromeFocus {
         if let window = AXBridge.element(attribute(app, kAXFocusedWindowAttribute as CFString)) {
             if AXBridge.bool(attribute(window, kAXModalAttribute as CFString)) == true { return true }
             if let children = attribute(window, kAXChildrenAttribute as CFString) as? [AXUIElement] {
-                for child in children.prefix(32) {
-                    if attribute(child, kAXRoleAttribute as CFString) as? String == "AXSheet" { return true }
+                for child in children.prefix(64) {
+                    let role = attribute(child, kAXRoleAttribute as CFString) as? String ?? ""
+                    let subrole = attribute(child, kAXSubroleAttribute as CFString) as? String ?? ""
+                    if isTransientPopupRole(role) || ["AXDialog", "AXSystemDialog"].contains(subrole) {
+                        return true
+                    }
                 }
             }
         }

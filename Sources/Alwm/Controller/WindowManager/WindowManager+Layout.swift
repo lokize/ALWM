@@ -2825,6 +2825,10 @@ extension WindowManager {
 
     public nonisolated func axTrackerWindowGeometryChanged(_ id: WindowID) {
         Task { @MainActor in
+            let popupIsOpen = AlwmChromeFocus.axProcessHasTransientPopup(pid: id.pid)
+            guard FocusFollowsMousePolicy.shouldEnforceGeometry(transientPopupIsOpen: popupIsOpen) else {
+                return
+            }
             self.scheduleGeometryEnforce(for: id)
         }
     }
