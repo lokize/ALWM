@@ -17,9 +17,14 @@ enum FocusFollowsMousePolicy {
     static func topWindowAction(
         windowNumber: Int?,
         hit: WindowID?,
-        isManagedWindow: Bool
+        isManagedWindow: Bool,
+        transientPopupIsOpen: Bool = false
     ) -> TopWindowAction {
         guard let windowNumber, windowNumber > 0 else { return .fallback }
+        // Some app popovers (including WhatsApp's emoji/sticker picker) are
+        // rendered inside the owner's regular CGWindow. Don't refocus or raise
+        // that managed tile while the transient UI owns the interaction.
+        guard !transientPopupIsOpen else { return .ignore }
         guard let hit, isManagedWindow else { return .ignore }
         return .focus(hit)
     }
@@ -242,10 +247,14 @@ extension WindowManager {
                 ? WindowID(pid: window.pid, windowNumber: window.windowNumber)
                 : nil
         }
+        let transientPopupIsOpen = topPID.map {
+            AlwmChromeFocus.axProcessHasTransientPopup(pid: $0)
+        } ?? false
         let topWindowAction = FocusFollowsMousePolicy.topWindowAction(
             windowNumber: topWindow?.windowNumber,
             hit: topWindowHit,
-            isManagedWindow: topWindowHit.flatMap { windowsByID[$0] } != nil
+            isManagedWindow: topWindowHit.flatMap { windowsByID[$0] } != nil,
+            transientPopupIsOpen: transientPopupIsOpen
         )
         switch topWindowAction {
         case .focus(let hit):

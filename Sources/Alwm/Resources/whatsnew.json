@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "2.0.8",
+      "items": [
+        "Keep WhatsApp emoji and sticker popovers open while scrolling"
+      ]
+    },
+    {
       "version": "2.0.7",
       "items": [
         "Preserve horizontal scrolling in tile layouts",
@@ -246,12 +252,6 @@
       "version": "1.6.9",
       "items": [
         "Correct focused workspace tiles that bleed onto another display"
-      ]
-    },
-    {
-      "version": "1.6.8",
-      "items": [
-        "Keep active workspace tiles inside their assigned display"
       ]
     }
   ]

@@ -121,4 +121,15 @@ struct AlwmChromeFocusTests {
             isManagedWindow: false
         ) == .fallback)
     }
+
+    @Test("an open transient popup prevents refocusing its managed owner while scrolling")
+    func transientPopupPreventsRefocusingManagedOwner() {
+        let owner = WindowID(pid: 43, windowNumber: 201)
+        #expect(FocusFollowsMousePolicy.topWindowAction(
+            windowNumber: owner.windowNumber,
+            hit: owner,
+            isManagedWindow: true,
+            transientPopupIsOpen: true
+        ) == .ignore)
+    }
 }
