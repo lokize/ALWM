@@ -89,6 +89,40 @@ struct ColumnLayoutEngineTests {
         #expect(bx.x > ax.x)
     }
 
+    @Test("scrolled columns keep distinct horizontal positions instead of overlapping at the edge")
+    func scrolledColumnsDoNotCollapseAtViewportEdge() {
+        let wideMonitor = Rect(x: 0, y: 0, width: 3440, height: 1440)
+        let engine = ColumnLayoutEngine(settings: .default)
+        let ids = (1...3).map { WindowID(pid: Int32($0), windowNumber: $0) }
+        let width = 1705.0
+        let ws = WorkspaceState(
+            id: "1",
+            name: "1",
+            columns: ids.map { Column(windows: [$0], width: width) },
+            focusedColumn: 1,
+            viewOffset: 1718
+        )
+        let windows: [WindowID: ManagedWindow] = Dictionary(uniqueKeysWithValues: ids.enumerated().map { index, id in
+            (id, ManagedWindow(
+                id: id,
+                title: "Window \(index)",
+                bundleID: nil,
+                appName: "Window \(index)",
+                frame: Rect(x: 0, y: 0, width: 800, height: 600)
+            ))
+        })
+
+        let frames = engine.computeFrames(
+            workspace: ws,
+            windows: windows,
+            monitor: wideMonitor,
+            active: true
+        )
+        let xByID: [WindowID: Double] = Dictionary(uniqueKeysWithValues: frames.map { ($0.windowID, $0.frame.x) })
+        #expect(xByID[ids[0]]! < xByID[ids[1]]!)
+        #expect(xByID[ids[1]]! < xByID[ids[2]]!)
+    }
+
     @Test("inactive workspace parks windows offscreen")
     func parksInactive() {
         var ws = WorkspaceState(id: "1", name: "1")

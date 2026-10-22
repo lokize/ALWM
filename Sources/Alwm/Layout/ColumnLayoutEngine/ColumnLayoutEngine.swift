@@ -71,12 +71,4 @@ public struct ColumnLayoutEngine: Sendable {
         workspace.columns.filter { !$0.windows.isEmpty }.count
     }
 
-    func snapHorizontalTileFrame(_ frame: Rect, usable: Rect) -> Rect {
-        var f = frame
-        if f.width > usable.width { f.width = usable.width }
-        if f.x < usable.x { f.x = usable.x }
-        if f.maxX > usable.maxX { f.x = max(usable.x, usable.maxX - f.width) }
-        return f
-    }
 }
-

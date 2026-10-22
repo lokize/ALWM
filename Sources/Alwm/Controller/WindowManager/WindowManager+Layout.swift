@@ -991,11 +991,13 @@ extension WindowManager {
         suppressGeometryEnforceUntil = Date().addingTimeInterval(seconds)
     }
 
-    func clampStackTileFrame(_ frame: Rect, usable: Rect) -> Rect {
+    func clampStackTileFrame(_ frame: Rect, usable: Rect, clampX: Bool = true) -> Rect {
         var f = frame
         if f.width > usable.width { f.width = usable.width }
-        if f.x < usable.x { f.x = usable.x }
-        if f.maxX > usable.maxX { f.x = max(usable.x, usable.maxX - f.width) }
+        if clampX {
+            if f.x < usable.x { f.x = usable.x }
+            if f.maxX > usable.maxX { f.x = max(usable.x, usable.maxX - f.width) }
+        }
         if f.height > usable.height { f.height = usable.height }
         if f.y < usable.y { f.y = usable.y }
         if f.maxY > usable.maxY { f.y = max(usable.y, usable.maxY - f.height) }
@@ -1092,7 +1094,7 @@ extension WindowManager {
                         windowsByID[wid] = win
                     }
                     if ax.isMinimized(wid) { ax.setMinimized(false, id: wid) }
-                    var frame = clampStackTileFrame(a.frame, usable: usable)
+                    var frame = clampStackTileFrame(a.frame, usable: usable, clampX: tileColumns <= 1)
                     if tileColumns <= 1 {
                         frame.x = usable.x
                         frame.width = usable.width
@@ -1183,9 +1185,9 @@ extension WindowManager {
                         || live.y < usable.y - 8 else { continue }
                     let target: Rect = {
                         if let expected = lastFrames[wid], expected.maxY <= usable.maxY + 1 {
-                            return clampStackTileFrame(expected, usable: usable)
+                            return clampStackTileFrame(expected, usable: usable, clampX: ws.columns.count <= 1)
                         }
-                        return clampStackTileFrame(live, usable: usable)
+                        return clampStackTileFrame(live, usable: usable, clampX: ws.columns.count <= 1)
                     }()
                     ax.forceFrame(target, id: wid)
                     lastFrames[wid] = target
@@ -1439,7 +1441,8 @@ extension WindowManager {
             fallback: primaryMonitor() ?? monitors.monitors[0]
         )
         let usable = engine.usableArea(monitor: mon.layoutFrame)
-        return clampStackTileFrame(frame, usable: usable)
+        let hasScrollingColumns = (workspaces.workspaces[home]?.columns.count ?? 0) > 1
+        return clampStackTileFrame(frame, usable: usable, clampX: !hasScrollingColumns)
     }
 
     func enforceActiveTileFrames() {
@@ -1481,7 +1484,7 @@ extension WindowManager {
                         target.width = engine.usableArea(monitor: mon.layoutFrame).width
                     }
                     let usable = engine.usableArea(monitor: mon.layoutFrame)
-                    target = clampStackTileFrame(target, usable: usable)
+                    target = clampStackTileFrame(target, usable: usable, clampX: ws.columns.count <= 1)
                     ax.reveal(frame: target, id: a.windowID)
                     if shouldForceTileExpand(wsID)
                         || !ax.isSettled(id: a.windowID, frame: target, monitors: monitorFrames) {

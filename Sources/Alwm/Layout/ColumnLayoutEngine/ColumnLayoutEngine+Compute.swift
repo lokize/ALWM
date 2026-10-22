@@ -119,7 +119,6 @@ extension ColumnLayoutEngine {
                     let (wid, _) = pair
                     if row == stackFocusedRow {
                         var frame = Rect(x: cursorX, y: usable.y, width: colWidth, height: usable.height)
-                        frame = snapHorizontalTileFrame(frame, usable: usable)
                         assignments.append(FrameAssignment(windowID: wid, frame: frame, visible: true))
                     } else {
                         // Off-screen but still "visible" to the WM — never minimize tabbed
@@ -141,7 +140,6 @@ extension ColumnLayoutEngine {
                     let isLast = index == stackEligible.count - 1
                     let h = isLast ? max(0, usable.maxY - y) : heights[index]
                     var frame = Rect(x: cursorX, y: y, width: colWidth, height: h)
-                    frame = snapHorizontalTileFrame(frame, usable: usable)
                     if isLast {
                         frame.height = max(0, usable.maxY - frame.y)
                     }

@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "2.0.7",
+      "items": [
+        "Preserve horizontal scrolling in tile layouts",
+        "Prevent scrolled workspace columns from being clamped into overlapping window positions"
+      ]
+    },
+    {
       "version": "2.0.6",
       "items": [
         "Restore minimized tiles after sleep",
@@ -245,12 +252,6 @@
       "version": "1.6.8",
       "items": [
         "Keep active workspace tiles inside their assigned display"
-      ]
-    },
-    {
-      "version": "1.6.7",
-      "items": [
-        "Hide workspace tiles leaking across monitors"
       ]
     }
   ]
