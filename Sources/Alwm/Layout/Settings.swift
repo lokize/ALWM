@@ -229,6 +229,41 @@ public struct GestureSettings: Equatable, Sendable {
     }
 }
 
+/// Resolves a live trackpad pan through the user's saved finger and axis binding.
+public enum GestureBindingResolver {
+    public struct Continuous: Equatable, Sendable {
+        public var action: String
+        public var delta: Double
+
+        public init(action: String, delta: Double) {
+            self.action = action
+            self.delta = delta
+        }
+    }
+
+    public static func continuous(
+        settings: GestureSettings,
+        fingers: Int,
+        dx: Double,
+        dy: Double
+    ) -> Continuous? {
+        guard settings.enabled else { return nil }
+        let invert = settings.invertScroll ? -1.0 : 1.0
+        let x = dx * invert
+        let y = dy * invert
+        let bindings = settings.bindings.filter { $0.enabled && $0.fingers == fingers && $0.direction.isContinuous }
+        if abs(x) >= abs(y), abs(x) > 0.05,
+           let binding = bindings.first(where: { $0.direction == .horizontal }) {
+            return Continuous(action: binding.action, delta: x)
+        }
+        if abs(y) > 0.05,
+           let binding = bindings.first(where: { $0.direction == .vertical }) {
+            return Continuous(action: binding.action, delta: y)
+        }
+        return nil
+    }
+}
+
 public enum WorkspaceBarPosition: String, Sendable, Codable, CaseIterable, Identifiable {
     case belowMenuBar
     case overlayMenuBar

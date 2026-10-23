@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "version": "2.1.1",
+      "items": [
+        "Honor configured trackpad gesture actions and direction",
+        "Place new unruled windows in the active workspace layout",
+        "Complete missing notepad image translations"
+      ]
+    },
+    {
       "version": "2.1.0",
       "items": [
         "Restore visible workspace windows after sleep",
@@ -242,14 +250,6 @@
       "version": "1.7.2",
       "items": [
         "Wider, more compact status menu with adaptive sizing"
-      ]
-    },
-    {
-      "version": "1.7.1",
-      "items": [
-        "Keep the interactive overview shortcut available while overlays capture keyboard focus",
-        "Make the status menu scroll on short screens and add environment profile controls",
-        "Restore missing apps and saved window placement when loading an environment profile"
       ]
     }
   ]

@@ -103,6 +103,80 @@ struct ReliabilityRegressionTests {
         #expect(manager.initialWorkspaceForNewWindow(for: window, on: left) == "1")
     }
 
+    @Test("a fourth unruled window opens in a new column beside a stacked layout")
+    @MainActor
+    func fourthWindowUsesNewColumnByDefault() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let monitor = MonitorInfo(id: 1, frame: .init(x: 0, y: 0, width: 1440, height: 900), visibleFrame: .init(x: 0, y: 24, width: 1440, height: 876), name: "Test")
+        let manager = WindowManager(
+            runtimeState: RuntimeStateStore(url: root.appendingPathComponent("runtime.json")),
+            notesStore: NotesStore(root: root.appendingPathComponent("notes")),
+            monitors: MonitorStore(monitors: [monitor])
+        )
+        manager.isBootstrapping = false
+        manager.workspaces.configure(definitions: [.init(id: "1", name: "1")], monitors: [monitor])
+        let ids = (1...4).map { WindowID(pid: Int32(100 + $0), windowNumber: $0) }
+        for (index, id) in ids.enumerated() {
+            manager.windowsByID[id] = ManagedWindow(id: id, title: "Window \(index)", bundleID: "example.\(index)", appName: "App", frame: monitor.visibleFrame)
+        }
+        manager.assignWindow(ids[0], to: "1", on: monitor)
+        manager.assignWindow(ids[1], to: "1", on: monitor)
+        manager.assignWindow(ids[2], to: "1", on: monitor)
+        var workspace = manager.workspaces.workspaces["1"]!
+        workspace.columns = [
+            .init(windows: [ids[0], ids[1]], width: 700),
+            .init(windows: [ids[2]], width: 700),
+        ]
+        workspace.focusedColumn = 0
+        workspace.focusedWindowInColumn[0] = 1
+        manager.workspaces.setWorkspace(workspace)
+
+        manager.settleNewTiledWindows([ids[3]])
+
+        #expect(manager.workspaces.workspaces["1"]?.columns.map(\.windows) == [[ids[0], ids[1]], [ids[2]], [ids[3]]])
+    }
+
+    @Test("continuous gesture executes the configured action, independent of its axis")
+    @MainActor
+    func continuousGestureUsesConfiguredAction() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let monitor = MonitorInfo(id: 1, frame: .init(x: 0, y: 0, width: 1440, height: 900), visibleFrame: .init(x: 0, y: 24, width: 1440, height: 876), name: "Test")
+        let manager = WindowManager(
+            runtimeState: RuntimeStateStore(url: root.appendingPathComponent("runtime.json")),
+            notesStore: NotesStore(root: root.appendingPathComponent("notes")),
+            monitors: MonitorStore(monitors: [monitor])
+        )
+        manager.isBootstrapping = false
+        manager.workspaces.configure(definitions: [.init(id: "1", name: "1")], monitors: [monitor])
+        let a = WindowID(pid: 111, windowNumber: 1)
+        let b = WindowID(pid: 112, windowNumber: 2)
+        manager.windowsByID[a] = ManagedWindow(id: a, title: "A", bundleID: "a", appName: "A", frame: monitor.visibleFrame)
+        manager.windowsByID[b] = ManagedWindow(id: b, title: "B", bundleID: "b", appName: "B", frame: monitor.visibleFrame)
+        var workspace = manager.workspaces.workspaces["1"]!
+        workspace.columns = [.init(windows: [a, b], width: 1000)]
+        manager.workspaces.setWorkspace(workspace)
+        var config = manager.configStore.config
+        config.settings.gestures = GestureSettings(
+            enabled: true,
+            scrollSnap: true,
+            swipeScrollFactor: 2.2,
+            invertScroll: false,
+            bindings: [.init(fingers: 3, direction: .horizontal, action: "scroll.stack")]
+        )
+        manager.configStore.replaceConfig(config)
+
+        var inverted = config.settings.gestures
+        inverted.invertScroll = true
+        #expect(GestureBindingResolver.continuous(settings: inverted, fingers: 3, dx: 100, dy: 0)?.delta == -100)
+        #expect(GestureBindingResolver.continuous(settings: inverted, fingers: 4, dx: 100, dy: 0) == nil)
+
+        manager.handleGestureSignal(.init(fingers: 3, dx: 100, dy: 0, ended: false))
+
+        #expect(manager.workspaces.workspaces["1"]?.focusedWindowInColumn[0] == 1)
+    }
+
     @Test("a reused window token does not override an app rule on another monitor")
     @MainActor
     func reusedTokenUsesAppRuleWorkspace() {

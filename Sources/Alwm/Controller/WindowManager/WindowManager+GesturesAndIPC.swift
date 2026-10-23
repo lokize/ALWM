@@ -14,6 +14,7 @@ extension WindowManager {
         gestureAccY = 0
         gestureDiscreteFired = false
         gestureDidContinuousScroll = false
+        gestureConfiguredContinuousAction = nil
         gesturePanVelocity = 0
         stackScrollAcc = 0
         gestureScrollIdleWorkItem?.cancel()
@@ -34,46 +35,56 @@ extension WindowManager {
         let dx = signal.dx * invert
         let dy = signal.dy * invert
         let fingers = signal.fingers
+        if signal.ended, let action = gestureConfiguredContinuousAction {
+            gestureConfiguredContinuousAction = nil
+            handleAction(action)
+            gestureAccX = 0
+            gestureAccY = 0
+            gestureActiveFingers = fingers
+            return
+        }
         if fingers != gestureActiveFingers {
             gestureActiveFingers = fingers
             gestureAccX = 0
             gestureAccY = 0
             gestureDiscreteFired = false
             stackScrollAcc = 0
+            gestureConfiguredContinuousAction = nil
         }
 
         let bindings = g.bindings.filter { $0.enabled && $0.fingers == fingers }
-        let continuousBindings = g.bindings.filter {
-            $0.enabled && $0.direction.isContinuous
-                && ($0.action == "scroll.columns" || $0.action == "scroll.stack")
-        }
-        let hasContinuousH = bindings.contains {
-            $0.direction == .horizontal && ($0.action == "scroll.columns" || $0.action == "scroll.stack")
-        } || (gestureDidContinuousScroll && gesturePanKind == .columns
-              && continuousBindings.contains { $0.direction == .horizontal })
-        let hasContinuousV = bindings.contains {
-            $0.direction == .vertical && ($0.action == "scroll.columns" || $0.action == "scroll.stack")
-        } || (gestureDidContinuousScroll && gesturePanKind == .stack
-              && continuousBindings.contains { $0.direction == .vertical })
         let hasDiscrete = bindings.contains { !$0.direction.isContinuous }
 
-        // Prefer continuous pan: never fire discrete focus/workspace mid-scroll.
-        if hasContinuousH || hasContinuousV || gestureDidContinuousScroll {
-            if signal.ended {
-                if gestureDidContinuousScroll {
-                    scheduleGestureScrollFinish()
+        // Continuous axes are routed by the saved binding action, not by a fixed
+        // horizontal=columns / vertical=stack convention.
+        if let continuous = GestureBindingResolver.continuous(
+            settings: g, fingers: fingers, dx: signal.dx, dy: signal.dy
+        ) {
+            if continuous.action == "scroll.columns" || continuous.action == "scroll.stack" {
+                if signal.ended {
+                    if gestureDidContinuousScroll { scheduleGestureScrollFinish() }
+                    return
+                }
+                let gain = g.swipeScrollFactor * 1.85
+                if continuous.action == "scroll.columns" {
+                    gesturePanKind = .columns
+                    applyContinuousColumnScroll(delta: continuous.delta * gain, fromFinger: true)
+                } else {
+                    gesturePanKind = .stack
+                    applyContinuousStackScroll(delta: continuous.delta * gain, fromFinger: true)
                 }
                 return
             }
-            // Base gain so Magic Trackpad feels closer to Niri even at factor≈1.
-            let gain = g.swipeScrollFactor * 1.85
-            if hasContinuousH, abs(dx) >= abs(dy), abs(dx) > 0.05 {
-                gesturePanKind = .columns
-                applyContinuousColumnScroll(delta: dx * gain, fromFinger: true)
-            } else if hasContinuousV, abs(dy) > abs(dx), abs(dy) > 0.05 {
-                // Vertical continuous = scroll the focused column stack (not viewOffset).
-                gesturePanKind = .stack
-                applyContinuousStackScroll(delta: dy * gain, fromFinger: true)
+            // A continuous-axis binding may invoke any configured action. Run it
+            // once on gesture end so workspace/focus actions do not repeat per frame.
+            gestureConfiguredContinuousAction = continuous.action
+            return
+        }
+
+        // End frames commonly have zero delta; keep continuous scroll completion alive.
+        if gestureDidContinuousScroll {
+            if signal.ended {
+                scheduleGestureScrollFinish()
             }
             return
         }
@@ -147,7 +158,7 @@ extension WindowManager {
     }
 
     func applyContinuousColumnScroll(delta: Double, fromFinger: Bool) {
-        guard let monitor = primaryMonitor() else { return }
+        guard let monitor = monitorUnderMouse() ?? monitorForAction() ?? primaryMonitor() else { return }
         isGestureScrolling = true
         gestureDidContinuousScroll = true
         if fromFinger {
@@ -164,7 +175,7 @@ extension WindowManager {
     }
 
     func applyContinuousStackScroll(delta: Double, fromFinger: Bool) {
-        guard let monitor = primaryMonitor() else { return }
+        guard let monitor = monitorUnderMouse() ?? monitorForAction() ?? primaryMonitor() else { return }
         isGestureScrolling = true
         gestureDidContinuousScroll = true
         if fromFinger {

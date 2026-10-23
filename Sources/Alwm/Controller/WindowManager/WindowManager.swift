@@ -746,6 +746,8 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
 
     var gestureDidContinuousScroll = false
 
+    var gestureConfiguredContinuousAction: String?
+
     let gestureDiscreteThreshold: Double = 40
 
     var isGestureScrolling = false
