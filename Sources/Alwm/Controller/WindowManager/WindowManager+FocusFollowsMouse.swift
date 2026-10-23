@@ -57,6 +57,18 @@ enum FocusFollowsMousePolicy {
         return windowHome != activeWorkspaceOnCursor
     }
 
+    static func shouldSchedulePostIngestRecheck(
+        focusFollowsMouse: Bool,
+        addedTileCount: Int,
+        isBootstrapping: Bool,
+        isWorkspaceTransition: Bool
+    ) -> Bool {
+        focusFollowsMouse
+            && addedTileCount > 0
+            && !isBootstrapping
+            && !isWorkspaceTransition
+    }
+
     static func shouldSkipAlreadyFocusedHit(
         hitHome: String?,
         activeWorkspaceOnCursor: String?,

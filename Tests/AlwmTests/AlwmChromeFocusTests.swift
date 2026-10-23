@@ -4,6 +4,34 @@ import Testing
 
 @Suite("Application popup focus handling")
 struct AlwmChromeFocusTests {
+    @Test("ingesting a new tiled window rechecks focus under a stationary pointer")
+    func newTileSchedulesPostIngestFocusCheck() {
+        #expect(FocusFollowsMousePolicy.shouldSchedulePostIngestRecheck(
+            focusFollowsMouse: true,
+            addedTileCount: 1,
+            isBootstrapping: false,
+            isWorkspaceTransition: false
+        ))
+        #expect(!FocusFollowsMousePolicy.shouldSchedulePostIngestRecheck(
+            focusFollowsMouse: false,
+            addedTileCount: 1,
+            isBootstrapping: false,
+            isWorkspaceTransition: false
+        ))
+        #expect(!FocusFollowsMousePolicy.shouldSchedulePostIngestRecheck(
+            focusFollowsMouse: true,
+            addedTileCount: 1,
+            isBootstrapping: true,
+            isWorkspaceTransition: false
+        ))
+        #expect(!FocusFollowsMousePolicy.shouldSchedulePostIngestRecheck(
+            focusFollowsMouse: true,
+            addedTileCount: 1,
+            isBootstrapping: false,
+            isWorkspaceTransition: true
+        ))
+    }
+
     @Test("a top window covering the focused tile lets focus follow the mouse")
     func topWindowBeatsFocusedTileFrame() {
         #expect(!FocusFollowsMousePolicy.shouldKeepCurrentFocus(pointerInside: true, focusedPID: 42, topPID: 43))

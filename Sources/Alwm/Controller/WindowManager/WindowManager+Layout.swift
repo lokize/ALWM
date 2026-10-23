@@ -841,6 +841,29 @@ extension WindowManager {
                 monitor: ingestScopeMonitor ?? layoutScopeMonitor()
             )
         }
+
+        let addedTileCount = added.reduce(into: 0) { count, id in
+            if windowsByID[id]?.isTiled == true { count += 1 }
+        }
+        let workspaceTransition = blockingReassign || Date() < suppressWorkspaceFollowUntil
+        if FocusFollowsMousePolicy.shouldSchedulePostIngestRecheck(
+            focusFollowsMouse: configStore.config.settings.focusFollowsMouse,
+            addedTileCount: addedTileCount,
+            isBootstrapping: isBootstrapping || isResumeRecovering,
+            isWorkspaceTransition: workspaceTransition
+        ) {
+            // A new tile changes which window sits under a stationary cursor but does
+            // not produce a mouseMoved event. Re-sample after AX/layout settling so
+            // focus follows the current pointer position instead of a stale tile.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { [weak self] in
+                guard let self,
+                      self.configStore.config.settings.focusFollowsMouse,
+                      !self.isBootstrapping,
+                      !self.isResumeRecovering,
+                      Date() >= self.suppressWorkspaceFollowUntil else { return }
+                self.scheduleFocusWindowUnderMouse()
+            }
+        }
         refreshChrome()
     }
 

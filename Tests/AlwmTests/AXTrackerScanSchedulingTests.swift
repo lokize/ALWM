@@ -42,6 +42,7 @@ struct AXTrackerScanSchedulingTests {
     }
 
     @Test("a scan delayed by layout suppression eventually runs")
+    @MainActor
     func deferredScanRunsAfterSuppression() async throws {
         let tracker = AXTracker()
         tracker.lastScanAppCount = -1

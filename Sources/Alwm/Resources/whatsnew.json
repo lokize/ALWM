@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "2.1.3",
+      "items": [
+        "Refresh mouse focus after new tiled windows are arranged"
+      ]
+    },
+    {
       "version": "2.1.2",
       "items": [
         "Reflow workspace columns and clamp scroll after windows close"
@@ -244,12 +250,6 @@
       "version": "1.7.4",
       "items": [
         "Settings links now sit beside the tools with white labels"
-      ]
-    },
-    {
-      "version": "1.7.3",
-      "items": [
-        "Wider two-column status menu with content-sized height"
       ]
     }
   ]
