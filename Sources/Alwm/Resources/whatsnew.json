@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "2.1.5",
+      "items": [
+        "Recover distinct workspace slots after displays reconnect",
+        "Restore the saved monitor and workspace layout after a power interruption"
+      ]
+    },
+    {
       "version": "2.1.4",
       "items": [
         "Keep mouse focus responsive during slow volume scans"
@@ -244,12 +251,6 @@
       "version": "1.7.6",
       "items": [
         "Reorganize status menu navigation"
-      ]
-    },
-    {
-      "version": "1.7.5",
-      "items": [
-        "Maintenance release"
       ]
     }
   ]

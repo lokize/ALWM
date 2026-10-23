@@ -35,6 +35,38 @@ struct MonitorWorkspaceReconnectionTests {
         #expect(store.preferredMonitor(forWorkspace: "4", monitors: [msi, hdmi])?.id == hdmi.id)
     }
 
+    @Test("duplicate persisted monitor slots are repaired after a display reconnect")
+    func repairsDuplicatePersistedMonitorSlots() {
+        let msi = MonitorInfo(
+            id: 2,
+            frame: Rect(x: 0, y: 0, width: 3440, height: 1440),
+            visibleFrame: Rect(x: 0, y: 0, width: 3440, height: 1440),
+            name: "MSI MAG401QR"
+        )
+        let hdmi = MonitorInfo(
+            id: 3,
+            frame: Rect(x: 3440, y: 0, width: 1920, height: 1080),
+            visibleFrame: Rect(x: 3440, y: 0, width: 1920, height: 1080),
+            name: "HDMI"
+        )
+        let store = WorkspaceStore()
+        let definitions = [
+            WorkspaceDefinition(id: "5", name: "5", layout: .niri, monitorIndex: 0),
+            WorkspaceDefinition(id: "1", name: "1", layout: .niri, monitorIndex: 1)
+        ]
+
+        store.configure(
+            definitions: definitions,
+            monitors: [msi, hdmi],
+            savedMonitorIndexByID: [msi.id: 0, hdmi.id: 0],
+            primaryMonitorID: msi.id
+        )
+
+        #expect(store.logicalMonitorIndices(for: [msi, hdmi]) == [msi.id: 0, hdmi.id: 1])
+        #expect(store.preferredMonitor(forWorkspace: "5", monitors: [msi, hdmi])?.id == msi.id)
+        #expect(store.preferredMonitor(forWorkspace: "1", monitors: [msi, hdmi])?.id == hdmi.id)
+    }
+
     @Test("display enumeration changing order keeps workspaces on their original displays")
     func keepsPhysicalWorkspaceWhenScreenOrderChanges() {
         let builtIn = MonitorInfo(

@@ -145,7 +145,7 @@ public final class WorkspaceStore: @unchecked Sendable {
             logicalMonitorIndexByID[id] = index
         }
         assignLogicalMonitorIndices(for: monitors)
-        normalizePrimaryMonitorSlot(primaryMonitorID, monitors: monitors)
+        normalizeConnectedMonitorSlots(primaryMonitorID, monitors: monitors)
         var next: [String: WorkspaceState] = [:]
         for def in definitions {
             if let existing = workspaces[def.id] {
@@ -265,22 +265,28 @@ public final class WorkspaceStore: @unchecked Sendable {
         }
     }
 
-    private func normalizePrimaryMonitorSlot(
+    /// Keep the connected displays in unique, contiguous logical slots.
+    /// Persisted state can contain duplicate indices after a dock or power event;
+    /// retain the primary display at zero and preserve the remaining displays' order.
+    private func normalizeConnectedMonitorSlots(
         _ primaryMonitorID: CGDirectDisplayID?,
         monitors: [MonitorInfo]
     ) {
-        guard let primaryMonitorID,
-              monitors.contains(where: { $0.id == primaryMonitorID }),
-              let primaryIndex = logicalMonitorIndexByID[primaryMonitorID],
-              primaryIndex != 0
-        else { return }
-
-        if let occupant = logicalMonitorIndexByID.first(where: {
-            $0.key != primaryMonitorID && $0.value == 0
-        })?.key {
-            logicalMonitorIndexByID[occupant] = primaryIndex
+        guard !monitors.isEmpty else { return }
+        let primaryIsConnected = primaryMonitorID.map { id in monitors.contains(where: { $0.id == id }) } ?? false
+        let ordered = monitors.enumerated().sorted { lhs, rhs in
+            if primaryIsConnected {
+                if lhs.element.id == primaryMonitorID { return true }
+                if rhs.element.id == primaryMonitorID { return false }
+            }
+            let lhsIndex = logicalMonitorIndexByID[lhs.element.id] ?? lhs.offset
+            let rhsIndex = logicalMonitorIndexByID[rhs.element.id] ?? rhs.offset
+            if lhsIndex != rhsIndex { return lhsIndex < rhsIndex }
+            return lhs.offset < rhs.offset
         }
-        logicalMonitorIndexByID[primaryMonitorID] = 0
+        for (slot, entry) in ordered.enumerated() {
+            logicalMonitorIndexByID[entry.element.id] = slot
+        }
     }
 
     /// Switch the active workspace on one monitor.
