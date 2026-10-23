@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "2.1.2",
+      "items": [
+        "Reflow workspace columns and clamp scroll after windows close"
+      ]
+    },
+    {
       "version": "2.1.1",
       "items": [
         "Honor configured trackpad gesture actions and direction",
@@ -244,12 +250,6 @@
       "version": "1.7.3",
       "items": [
         "Wider two-column status menu with content-sized height"
-      ]
-    },
-    {
-      "version": "1.7.2",
-      "items": [
-        "Wider, more compact status menu with adaptive sizing"
       ]
     }
   ]

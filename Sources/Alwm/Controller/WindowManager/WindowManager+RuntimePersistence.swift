@@ -880,7 +880,13 @@ extension WindowManager {
         snappingWorkspaces.insert(wsID)
         defer { snappingWorkspaces.remove(wsID) }
         guard var ws = workspaces.workspaces[wsID] else { return }
-        guard !ws.columns.isEmpty else { return }
+        guard !ws.columns.isEmpty else {
+            ws.viewOffset = 0
+            ws.focusedColumn = 0
+            ws.focusedWindowInColumn.removeAll()
+            workspaces.setWorkspace(ws)
+            return
+        }
         if var restores = columnWidthRestores[wsID] {
             let liveColumns = ws.columns.map(\.windows)
             let liveIDs = Set(liveColumns.flatMap { $0 })
@@ -901,8 +907,12 @@ extension WindowManager {
             ?? primaryMonitor()
         guard let mon else { return }
         syncColumnWidthsToUsable(workspace: &ws, workspaceID: wsID)
+        let usable = engine.usableArea(monitor: mon.layoutFrame)
+        // Removing a column changes the scrollable content width. Keep the focused
+        // surviving column visible even when the previous offset is now past the end.
+        engine.niri.snapViewToFocusedColumn(&ws, usableWidth: usable.width)
+        ws.viewOffset = min(ws.viewOffset, engine.niri.maxViewOffset(workspace: ws, usable: usable))
         workspaces.setWorkspace(ws)
-        ws = workspaces.workspaces[wsID] ?? ws
         let signature = "\(ws.columns.count):\(structuralSnapSignature(for: ws))"
         if lastSnapSignature[wsID] == signature { return }
         lastSnapSignature[wsID] = signature

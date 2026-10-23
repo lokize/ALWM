@@ -524,6 +524,64 @@ struct ReliabilityRegressionTests {
         #expect(abs(closed.columns[0].width / (closed.columns[0].width + closed.columns[1].width) - 0.7) < 0.01)
     }
 
+    @Test("closing a scrolled column keeps the remaining focused content in view")
+    @MainActor
+    func closingScrolledColumnClampsViewportToRemainingTiles() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let monitor = MonitorInfo(id: 1, frame: .init(x: 0, y: 0, width: 1440, height: 900), visibleFrame: .init(x: 0, y: 24, width: 1440, height: 876), name: "Test")
+        let manager = WindowManager(
+            runtimeState: RuntimeStateStore(url: root.appendingPathComponent("runtime.json")),
+            notesStore: NotesStore(root: root.appendingPathComponent("notes")),
+            monitors: MonitorStore(monitors: [monitor])
+        )
+        manager.isBootstrapping = false
+        manager.workspaces.configure(definitions: [.init(id: "1", name: "1")], monitors: [monitor])
+        let ids = (1...5).map { WindowID(pid: Int32(999_700 + $0), windowNumber: 1) }
+        for (index, id) in ids.enumerated() {
+            manager.windowsByID[id] = ManagedWindow(id: id, title: "Tile \(index)", bundleID: "example.tiles.\(index)", appName: "Tiles", frame: monitor.visibleFrame)
+            manager.windowWorkspace[id] = "1"
+        }
+        let width = 700.0
+        let usable = manager.engine.usableArea(monitor: monitor.layoutFrame)
+        var workspace = WorkspaceState(
+            id: "1", name: "1",
+            columns: [
+                .init(windows: [ids[0], ids[1]], width: width),
+                .init(windows: [ids[2]], width: width),
+                .init(windows: [ids[3]], width: width),
+                .init(windows: [ids[4]], width: width),
+            ],
+            focusedColumn: 3,
+            focusedWindowInColumn: [0: 1, 3: 0],
+            viewOffset: 0
+        )
+        workspace.viewOffset = manager.engine.niri.maxViewOffset(workspace: workspace, usable: usable)
+        manager.workspaces.setWorkspace(workspace)
+
+        manager.handleUserClosedWindow(ids[4])
+
+        let closed = manager.workspaces.workspaces["1"]!
+        let maxOffset = manager.engine.niri.maxViewOffset(workspace: closed, usable: usable)
+        #expect(closed.columns.count == 3)
+        #expect(closed.viewOffset <= maxOffset + 1)
+        let focused = closed.focusedWindowID!
+        let frame = manager.engine.computeFrames(
+            workspace: closed,
+            windows: manager.windowsByID,
+            monitor: monitor.layoutFrame,
+            active: true
+        ).first { $0.windowID == focused }!.frame
+        #expect(frame.x >= usable.x - 1)
+        #expect(frame.maxX <= usable.maxX + 1)
+
+        manager.handleUserClosedWindow(ids[1])
+        let afterStackClose = manager.workspaces.workspaces["1"]!
+        #expect(afterStackClose.columns[0].windows == [ids[0]])
+        #expect(afterStackClose.focusedWindowInColumn[0] == 0)
+        #expect(afterStackClose.focusedWindowID == ids[3])
+    }
+
     @Test("a compact second document window is not mistaken for a popup")
     @MainActor
     func compactSiblingWindowStillTiles() {

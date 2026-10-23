@@ -1708,7 +1708,13 @@ extension WindowManager {
         }
 
         cancelSameBundleSiblingSettle(id)
-        workspaces.removeWindowEverywhere(id)
+        for workspaceID in Array(workspaces.workspaces.keys) {
+            guard var workspace = workspaces.workspaces[workspaceID],
+                  engine.locate(id, in: workspace) != nil else { continue }
+            engine.niri.removeWindow(id, from: &workspace)
+            workspaces.setWorkspace(workspace)
+            if workspaceID != home { logMove("close removed duplicate tile win=\(id.token) ws=\(workspaceID)") }
+        }
         windowsByID.removeValue(forKey: id)
         windowWorkspace.removeValue(forKey: id)
         floatingOverrides.remove(id)
