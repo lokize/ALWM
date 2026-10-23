@@ -112,6 +112,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
     var floatingOverrides: Set<WindowID> = []
 
     var axFocusedWindowID: WindowID?
+    var transientPopupDetector: (pid_t) -> Bool = { AlwmChromeFocus.axProcessHasTransientPopup(pid: $0) }
 
     var windowWorkspace: [WindowID: String] = [:]
 

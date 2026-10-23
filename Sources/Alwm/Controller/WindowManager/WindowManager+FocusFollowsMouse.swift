@@ -156,7 +156,7 @@ extension WindowManager {
     func chromeBlocksFocusFollowsMouse() -> Bool {
         let frontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
         let appPopupVisible = frontmostPID.map {
-            AlwmChromeFocus.axProcessHasTransientPopup(pid: $0)
+            transientPopupDetector($0)
         } ?? false
         return AlwmChromeFocus.blocksFocusFollowsMouse(
             overlaysCaptureFocus: overlaysCaptureFocus,

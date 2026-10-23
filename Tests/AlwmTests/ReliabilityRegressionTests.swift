@@ -148,6 +148,7 @@ struct ReliabilityRegressionTests {
             notesStore: NotesStore(root: root.appendingPathComponent("notes")),
             monitors: MonitorStore(monitors: [monitor])
         )
+        manager.transientPopupDetector = { _ in false }
         manager.isBootstrapping = false
         manager.workspaces.configure(definitions: [.init(id: "1", name: "1")], monitors: [monitor])
         let a = WindowID(pid: 111, windowNumber: 1)

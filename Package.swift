@@ -527,7 +527,7 @@ let package = Package(
         ),
         .testTarget(
             name: "AlwmTests",
-            dependencies: ["Alwm", "AlwmIPC", sharedAPI, sharedL10n],
+            dependencies: ["Alwm", "AlwmIPC", sharedAPI, sharedL10n, sharedStats],
             path: "Tests/AlwmTests",
             swiftSettings: [
                 .swiftLanguageMode(.v6)

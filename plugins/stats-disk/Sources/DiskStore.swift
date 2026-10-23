@@ -14,6 +14,11 @@ final class DiskStore: ObservableObject, @unchecked Sendable {
     var onChange: (() -> Void)?
 
     private let sampler = DiskSampler()
+    private lazy var backgroundSampler = BackgroundSnapshotSampler<DiskSampler.Snapshot>(
+        label: "dev.alwm.stats-disk.sample"
+    ) { [sampler] in
+        sampler.sample()
+    }
     private var timer: Timer?
     private let historyLimit = 60
     private let lock = NSLock()
@@ -40,17 +45,19 @@ final class DiskStore: ObservableObject, @unchecked Sendable {
     }
 
     private func tick() {
-        let next = sampler.sample()
-        lock.lock()
-        snapshot = next
-        var h = history
-        h.append(next.usageFraction)
-        if h.count > historyLimit {
-            h.removeFirst(h.count - historyLimit)
+        backgroundSampler.request { [weak self] next in
+            guard let self else { return }
+            lock.lock()
+            snapshot = next
+            var h = history
+            h.append(next.usageFraction)
+            if h.count > historyLimit {
+                h.removeFirst(h.count - historyLimit)
+            }
+            history = h
+            lock.unlock()
+            onChange?()
         }
-        history = h
-        lock.unlock()
-        onChange?()
     }
 
     var barLabel: String {

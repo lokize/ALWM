@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "2.1.4",
+      "items": [
+        "Keep mouse focus responsive during slow volume scans"
+      ]
+    },
+    {
       "version": "2.1.3",
       "items": [
         "Refresh mouse focus after new tiled windows are arranged"
@@ -244,12 +250,6 @@
       "version": "1.7.5",
       "items": [
         "Maintenance release"
-      ]
-    },
-    {
-      "version": "1.7.4",
-      "items": [
-        "Settings links now sit beside the tools with white labels"
       ]
     }
   ]
