@@ -2,6 +2,24 @@ import AppKit
 import Foundation
 
 enum SavedSessionRestorePolicy {
+    static func bundleIDsToRevealMinimizedWindows(
+        snapshot: RuntimeStateStore.Snapshot,
+        runningBundleIDs: Set<String>,
+        trackedBundleIDs: Set<String>
+    ) -> [String] {
+        let saved = snapshot.workspaceLayouts.values.flatMap { layout in
+            layout.columns.flatMap(\.windows) + layout.floating
+        }
+        return Set(saved.compactMap { ref -> String? in
+            guard let bundle = ref.bundleID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !bundle.isEmpty,
+                  runningBundleIDs.contains(bundle),
+                  !trackedBundleIDs.contains(bundle)
+            else { return nil }
+            return bundle
+        }).sorted()
+    }
+
     static func bundleIDsToLaunch(
         snapshot: RuntimeStateStore.Snapshot,
         runningBundleIDs: Set<String>

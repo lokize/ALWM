@@ -23,6 +23,20 @@ struct SavedSessionRestorationTests {
         ) == ["example.editor", "example.floating"])
     }
 
+    @Test("startup reveals saved apps whose minimized windows were not discovered yet")
+    func findsRunningSavedAppsMissingFromTheWindowScan() {
+        let snapshot = RuntimeStateStore.Snapshot(workspaceLayouts: [
+            "1": .init(columns: [.init(windows: [ref("1:1", "example.minimized")])]),
+            "2": .init(floating: [ref("2:1", "example.visible")])
+        ])
+
+        #expect(SavedSessionRestorePolicy.bundleIDsToRevealMinimizedWindows(
+            snapshot: snapshot,
+            runningBundleIDs: ["example.minimized", "example.visible"],
+            trackedBundleIDs: ["example.visible"]
+        ) == ["example.minimized"])
+    }
+
     @Test("the manager launches missing saved apps through its startup path")
     @MainActor
     func managerLaunchesSavedApps() {

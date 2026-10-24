@@ -468,6 +468,21 @@ extension WindowManager {
         loadStickyAssignmentsFromDisk()
         restorePersistedWorkspaces()
 
+        let runningBundleIDs = Set(NSWorkspace.shared.runningApplications.compactMap { app -> String? in
+            guard !app.isTerminated else { return nil }
+            return app.bundleIdentifier
+        })
+        let trackedBundleIDs = Set(windowsByID.values.compactMap(\.bundleID))
+        let bundlesToReveal = SavedSessionRestorePolicy.bundleIDsToRevealMinimizedWindows(
+            snapshot: runtimeState.snapshot,
+            runningBundleIDs: runningBundleIDs,
+            trackedBundleIDs: trackedBundleIDs
+        )
+        let revealed = ax.revealMinimizedWindows(bundleIDs: Set(bundlesToReveal))
+        if revealed > 0 {
+            logMove("resume reveal minimized saved windows count=\(revealed) bundles=\(bundlesToReveal.joined(separator: ","))")
+        }
+
         ax.scanAll()
         isBootstrapping = true
         ingest(windows: ax.currentWindows)

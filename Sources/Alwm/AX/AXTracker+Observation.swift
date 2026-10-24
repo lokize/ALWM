@@ -358,6 +358,36 @@ extension AXTracker {
         publishIfNeeded(previousManaged: previousManaged)
     }
 
+    /// Reveal saved app windows that AX did not include in the last scan.
+    /// Minimized windows may not have a WindowServer number until they are revealed.
+    @discardableResult
+    public func revealMinimizedWindows(bundleIDs: Set<String>) -> Int {
+        guard !bundleIDs.isEmpty else { return 0 }
+        var revealed = 0
+        for app in NSWorkspace.shared.runningApplications where
+            !app.isTerminated && app.bundleIdentifier.map(bundleIDs.contains) == true
+        {
+            _ = app.unhide()
+            let appElement = AXUIElementCreateApplication(app.processIdentifier)
+            var windowsValue: AnyObject?
+            guard AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsValue) == .success,
+                  let elements = windowsValue as? [AXUIElement]
+            else { continue }
+
+            for element in elements {
+                let window = AXWindow(
+                    id: WindowID(pid: app.processIdentifier, windowNumber: -1),
+                    element: element,
+                    pid: app.processIdentifier
+                )
+                guard window.isStandardWindow, window.isMinimized else { continue }
+                window.isMinimized = false
+                revealed += 1
+            }
+        }
+        return revealed
+    }
+
 
     /// Update a single window title without a full AX rescan (Electron apps change titles often).
     func refreshTitle(for id: WindowID) {
