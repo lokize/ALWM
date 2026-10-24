@@ -311,7 +311,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
 
         // Grace BEFORE first ingest — mass AX delivery must rematch from disk, not snap to MSI/WS1.
         postLaunchLayoutGraceUntil = Date().addingTimeInterval(20)
-        resumeRecoveryEligibleUntil = Date().addingTimeInterval(20)
+        resumeRecoveryEligibleUntil = Date().addingTimeInterval(StartupSessionRecoveryPolicy.eligibilityDuration)
 
         ax.delegate = self
         ax.scanAll()
@@ -334,9 +334,8 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         ax.start()
         setupSystemResumeObservers()
         restoreSavedSessionApps()
-        // Accessibility can lag behind the TCC toggle — keep trying briefly after launch.
+        // A full restart can expose saved app windows well after the first AX scan.
         scheduleAccessibilityRecoveryScans()
-        scheduleSystemResumeRecovery(delay: 1.0)
 
         hotkeys.onAction = { [weak self] action in
             Task { @MainActor in

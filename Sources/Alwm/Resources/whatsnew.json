@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "2.1.6",
+      "items": [
+        "Keep restoring saved windows after delayed app startup",
+        "Retry workspace recovery for up to one minute after ALWM starts"
+      ]
+    },
+    {
       "version": "2.1.5",
       "items": [
         "Recover distinct workspace slots after displays reconnect",
@@ -245,12 +252,6 @@
       "version": "1.7.7",
       "items": [
         "Move menu action grid below controls"
-      ]
-    },
-    {
-      "version": "1.7.6",
-      "items": [
-        "Reorganize status menu navigation"
       ]
     }
   ]

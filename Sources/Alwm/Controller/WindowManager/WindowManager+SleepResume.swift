@@ -5,6 +5,11 @@ import SwiftUI
 import AlwmIPC
 import AlwmPluginAPI
 
+enum StartupSessionRecoveryPolicy {
+    static let retryDelays: [TimeInterval] = [0.6, 1.5, 3.0, 6.0, 12.0, 20.0, 32.0, 48.0]
+    static let eligibilityDuration: TimeInterval = 60
+}
+
 enum ResumeWorkspaceSelection {
     static func matches(
         active: [CGDirectDisplayID: String],
@@ -126,8 +131,7 @@ enum ResumeFrameSelection {
 
 extension WindowManager {
     func scheduleAccessibilityRecoveryScans() {
-        runLayoutRecoveryIfNeeded(force: false, delay: 0.8)
-        runLayoutRecoveryIfNeeded(force: false, delay: 2.5)
+        scheduleStaggeredResumeRecovery()
     }
 
     func savedTiledWindowCount() -> Int {
@@ -414,7 +418,7 @@ extension WindowManager {
     func scheduleStaggeredResumeRecovery() {
         cancelPendingResumeRecovery()
         // Longer tail: Electron/Safari rematerialize window numbers slowly after wake.
-        for delay in [0.6, 1.5, 3.0, 6.0, 12.0, 20.0, 32.0, 48.0] {
+        for delay in StartupSessionRecoveryPolicy.retryDelays {
             let work = DispatchWorkItem { [weak self] in
                 self?.recoverAfterSystemResume()
             }
