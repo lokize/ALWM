@@ -565,6 +565,9 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         settingsUI.runningAppsProvider = { [weak self] in
             self?.runningAppsForRules() ?? []
         }
+        settingsUI.openAppRuleSnapshotsProvider = { [weak self] in
+            self?.openAppRuleSnapshots() ?? []
+        }
         settingsUI.onCaptureAppRuleFrame = { [weak self] bundleID in
             self?.captureAppRuleGeometry(bundleID: bundleID)
         }

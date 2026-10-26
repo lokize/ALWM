@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import Alwm
 import AlwmIPC
@@ -729,6 +730,54 @@ struct WorkspaceMonitorVisibilityTests {
 
 @Suite("AppRules")
 struct AppRulesTests {
+    @Test("saving a captured rule replaces the app rule and keeps unrelated rules")
+    func savingCapturedRuleUpdatesMatchingApp() {
+        let existing = [
+            AppRule(bundleID: "com.example.app", mode: .float, workspace: "1"),
+            AppRule(bundleID: "com.example.other", mode: .tile, workspace: "3")
+        ]
+        let captured = AppRule(bundleID: "com.example.app", mode: .tile, workspace: "2", monitorIndex: 1, width: 800, height: 600)
+
+        let saved = AppRules.saving(captured, into: existing)
+
+        #expect(saved.count == 2)
+        #expect(saved.first(where: { $0.bundleID == "com.example.app" }) == captured)
+        #expect(saved.first(where: { $0.bundleID == "com.example.other" }) == existing[1])
+    }
+
+    @Test("open app captures include the window's home workspace, monitor and geometry")
+    @MainActor
+    func capturesCurrentOpenAppState() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-rule-capture-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let primary = MonitorInfo(id: 1, frame: .init(x: 0, y: 0, width: 1_440, height: 900), visibleFrame: .init(x: 0, y: 24, width: 1_440, height: 876), name: "Primary")
+        let secondary = MonitorInfo(id: 2, frame: .init(x: 1_440, y: 0, width: 1_920, height: 1_080), visibleFrame: .init(x: 1_440, y: 24, width: 1_920, height: 1_056), name: "Secondary")
+        let manager = WindowManager(
+            runtimeState: RuntimeStateStore(url: root.appendingPathComponent("runtime.json")),
+            notesStore: NotesStore(root: root.appendingPathComponent("notes")),
+            monitors: MonitorStore(monitors: [primary, secondary])
+        )
+        manager.workspaces.configure(definitions: [
+            WorkspaceDefinition(id: "1", name: "1", monitorIndex: 0),
+            WorkspaceDefinition(id: "2", name: "2", monitorIndex: 1)
+        ], monitors: [primary, secondary])
+        let id = WindowID(pid: 998_001, windowNumber: 4)
+        manager.windowsByID[id] = ManagedWindow(
+            id: id, title: "Project", bundleID: "com.example.editor", appName: "Editor",
+            frame: .init(x: 1_500, y: 90, width: 840, height: 620)
+        )
+        manager.windowWorkspace[id] = "2"
+        manager.workspaces.setWorkspace(WorkspaceState(id: "2", name: "2", columns: [.init(windows: [id], width: 840)]))
+
+        let capture = manager.openAppRuleSnapshots().first
+
+        #expect(capture?.rule.workspace == "2")
+        #expect(capture?.rule.monitorIndex == 1)
+        #expect(capture?.rule.width == 840)
+        #expect(capture?.rule.height == 620)
+        #expect(capture?.rule.mode == AppRuleMode.tile)
+    }
+
     @Test("preferred workspace is applied on window open, not on later reconciliation")
     func preferredWorkspaceOnlyOnOpen() {
         let rules = [AppRule(bundleID: "com.example.float", mode: .float, workspace: "2")]

@@ -1,6 +1,18 @@
 {
   "releases": [
     {
+      "version": "2.1.9",
+      "items": [
+        "Config updates",
+        "Window manager improvements",
+        "Update AppRules",
+        "UI updates",
+        "Settings UI updates",
+        "Localization updates",
+        "Update ColumnLayoutEngineTests"
+      ]
+    },
+    {
       "version": "2.1.8",
       "items": [
         "Window manager improvements",
@@ -248,12 +260,6 @@
       "version": "1.8.0",
       "items": [
         "Make wallpaper navigation buttons fill the card"
-      ]
-    },
-    {
-      "version": "1.7.9",
-      "items": [
-        "Add previous wallpaper navigation beside next"
       ]
     }
   ]

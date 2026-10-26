@@ -82,14 +82,58 @@ extension WindowManager {
 
     func captureAppRuleGeometry(bundleID: String?) -> AppRuleCapturedGeometry? {
         guard let win = bestWindowForRuleCapture(bundleID: bundleID) else { return nil }
+        return captureAppRuleGeometry(for: win)
+    }
+
+    func openAppRuleSnapshots() -> [AppRuleOpenAppSnapshot] {
+        let openWindows = windowsByID.values.filter {
+            !$0.isIgnored && $0.bundleID?.isEmpty == false
+        }
+        let grouped = Dictionary(grouping: openWindows, by: { $0.bundleID! })
+        let focusedID = ax.frontmostFocusedWindowID()
+        return grouped.keys.sorted { lhs, rhs in
+            let leftName = grouped[lhs]?.first?.appName ?? lhs
+            let rightName = grouped[rhs]?.first?.appName ?? rhs
+            return leftName.localizedCaseInsensitiveCompare(rightName) == .orderedAscending
+        }.compactMap { bundleID in
+            guard let windows = grouped[bundleID], !windows.isEmpty else { return nil }
+            let representative = windows.first(where: { $0.id == focusedID })
+                ?? windows.max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height })
+            guard let representative,
+                  let geometry = captureAppRuleGeometry(for: representative) else { return nil }
+            let rule = AppRule(
+                bundleID: bundleID,
+                appName: representative.appName,
+                mode: geometry.isFloating ? .float : .tile,
+                workspace: geometry.workspace,
+                monitorIndex: geometry.monitorIndex,
+                minWidth: representative.minSize.width,
+                minHeight: representative.minSize.height,
+                width: geometry.width,
+                height: geometry.height,
+                x: geometry.x,
+                y: geometry.y
+            )
+            return AppRuleOpenAppSnapshot(
+                bundleID: bundleID,
+                appName: representative.appName,
+                windowTitle: representative.title,
+                windowCount: windows.count,
+                rule: rule
+            )
+        }
+    }
+
+    private func captureAppRuleGeometry(for win: ManagedWindow) -> AppRuleCapturedGeometry? {
         let frame = ax.currentFrame(of: win.id) ?? win.frame
         let monitor = monitors.monitorContaining(pointX: frame.midX, pointY: frame.midY)
+            ?? authoritativeHome(for: win.id).flatMap { workspaces.preferredMonitor(forWorkspace: $0, monitors: monitors.monitors) }
             ?? primaryMonitor()
         guard let monitor else { return nil }
         let idx = monitors.monitors.firstIndex(where: { $0.id == monitor.id }) ?? 0
         var geo = AppRules.geometry(from: frame, on: monitor, monitorIndex: idx)
         geo.workspace = authoritativeHome(for: win.id)
-        geo.isFloating = win.isFloating || win.isScratchpad
+        geo.isFloating = win.isFloating || win.isScratchpad || isQuakeOwned(win.id)
         return geo
     }
 

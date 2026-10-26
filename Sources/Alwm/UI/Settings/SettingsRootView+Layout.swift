@@ -69,6 +69,7 @@ extension SettingsRootView {
             config: $config,
             monitors: monitors,
             runningApps: runningAppsProvider(),
+            openAppRuleSnapshotsProvider: openAppRuleSnapshotsProvider,
             onCaptureFrame: onCaptureAppRuleFrame,
             onApplyNow: {
                 onSave(config)

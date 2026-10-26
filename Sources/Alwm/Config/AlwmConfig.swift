@@ -156,6 +156,26 @@ public struct AppRuleCapturedGeometry: Equatable, Sendable {
     }
 }
 
+/// Current window state shown in the app-rules screen for one open application.
+/// Rules are application-scoped, so multiple windows from one app share a capture.
+public struct AppRuleOpenAppSnapshot: Identifiable, Equatable, Sendable {
+    public var bundleID: String
+    public var appName: String
+    public var windowTitle: String
+    public var windowCount: Int
+    public var rule: AppRule
+
+    public var id: String { bundleID }
+
+    public init(bundleID: String, appName: String, windowTitle: String, windowCount: Int, rule: AppRule) {
+        self.bundleID = bundleID
+        self.appName = appName
+        self.windowTitle = windowTitle
+        self.windowCount = windowCount
+        self.rule = rule
+    }
+}
+
 public struct AlwmConfig: Equatable, Sendable {
     public var settings: LayoutSettings
     public var hotkeys: [HotkeyBinding]

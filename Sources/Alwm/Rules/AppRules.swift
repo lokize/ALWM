@@ -1,6 +1,23 @@
 import Foundation
 
 public enum AppRules {
+    public static func saving(_ captured: AppRule, into rules: [AppRule]) -> [AppRule] {
+        var updated = rules
+        let matchIndex = updated.firstIndex { existing in
+            if let bundleID = captured.bundleID, existing.bundleID == bundleID { return true }
+            guard let appName = captured.appName, existing.bundleID == nil, let existingName = existing.appName else {
+                return false
+            }
+            return existingName.caseInsensitiveCompare(appName) == .orderedSame
+        }
+        if let matchIndex {
+            updated[matchIndex] = captured
+        } else {
+            updated.append(captured)
+        }
+        return updated
+    }
+
     public static func matching(rules: [AppRule], window: ManagedWindow) -> AppRule? {
         rules.first { $0.matches(bundleID: window.bundleID, appName: window.appName) }
     }

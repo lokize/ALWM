@@ -26,6 +26,7 @@ struct SettingsRootView: View {
     let monitors: [MonitorInfo]
     let monitorIndexByID: [CGDirectDisplayID: Int]
     let runningAppsProvider: () -> [AppRuleRunningApp]
+    let openAppRuleSnapshotsProvider: () -> [AppRuleOpenAppSnapshot]
     let onCaptureAppRuleFrame: (String?) -> AppRuleCapturedGeometry?
     let onApplyRulesNow: () -> Void
     var onSave: (AlwmConfig) -> Void
@@ -47,6 +48,7 @@ struct SettingsRootView: View {
         monitors: [MonitorInfo],
         monitorIndexByID: [CGDirectDisplayID: Int] = [:],
         runningAppsProvider: @escaping () -> [AppRuleRunningApp],
+        openAppRuleSnapshotsProvider: @escaping () -> [AppRuleOpenAppSnapshot] = { [] },
         onCaptureAppRuleFrame: @escaping (String?) -> AppRuleCapturedGeometry?,
         onApplyRulesNow: @escaping () -> Void,
         onSave: @escaping (AlwmConfig) -> Void,
@@ -72,6 +74,7 @@ struct SettingsRootView: View {
         self.monitors = monitors
         self.monitorIndexByID = monitorIndexByID
         self.runningAppsProvider = runningAppsProvider
+        self.openAppRuleSnapshotsProvider = openAppRuleSnapshotsProvider
         self.onCaptureAppRuleFrame = onCaptureAppRuleFrame
         self.onApplyRulesNow = onApplyRulesNow
         self.onSave = onSave

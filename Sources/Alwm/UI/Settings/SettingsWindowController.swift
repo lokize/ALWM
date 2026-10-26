@@ -28,6 +28,7 @@ public final class SettingsWindowController {
     public var monitorsProvider: (() -> [MonitorInfo])?
     public var monitorIndexByIDProvider: (() -> [CGDirectDisplayID: Int])?
     public var runningAppsProvider: (() -> [AppRuleRunningApp])?
+    public var openAppRuleSnapshotsProvider: (() -> [AppRuleOpenAppSnapshot])?
     public var onCaptureAppRuleFrame: ((String?) -> AppRuleCapturedGeometry?)?
     public var onApplyRulesNow: (() -> Void)?
     /// Fired when Settings becomes visible (`true`) or is dismissed (`false`).
@@ -49,6 +50,7 @@ public final class SettingsWindowController {
             monitors: monitorsProvider?() ?? [],
             monitorIndexByID: monitorIndexByIDProvider?() ?? [:],
             runningAppsProvider: { [weak self] in self?.runningAppsProvider?() ?? [] },
+            openAppRuleSnapshotsProvider: { [weak self] in self?.openAppRuleSnapshotsProvider?() ?? [] },
             onCaptureAppRuleFrame: { [weak self] bundleID in self?.onCaptureAppRuleFrame?(bundleID) },
             onApplyRulesNow: { [weak self] in self?.onApplyRulesNow?() },
             onSave: { [weak self] c in self?.onSave?(c) },

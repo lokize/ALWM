@@ -5,11 +5,67 @@ struct AppRulesSettingsPane: View {
     @Binding var config: AlwmConfig
     let monitors: [MonitorInfo]
     let runningApps: [AppRuleRunningApp]
+    let openAppRuleSnapshotsProvider: () -> [AppRuleOpenAppSnapshot]
     let onCaptureFrame: (String?) -> AppRuleCapturedGeometry?
     let onApplyNow: () -> Void
+    @State private var openAppSnapshots: [AppRuleOpenAppSnapshot] = []
+    @State private var saveStatus = ""
 
     var body: some View {
         Form {
+            Section {
+                if openAppSnapshots.isEmpty {
+                    Text(L10n.t("rules.open_empty"))
+                        .foregroundStyle(.secondary)
+                } else {
+                    Button(action: saveAllOpenApps) {
+                        Label(L10n.t("rules.save_all"), systemImage: "tray.and.arrow.down.fill")
+                    }
+                    .disabled(openAppSnapshots.isEmpty)
+
+                    ForEach(openAppSnapshots) { snapshot in
+                        HStack(spacing: 10) {
+                            Image(systemName: "app.fill")
+                                .foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(snapshot.appName)
+                                    .font(.headline)
+                                Text(snapshot.windowTitle)
+                                    .lineLimit(1)
+                                    .foregroundStyle(.secondary)
+                                Text(snapshot.bundleID)
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
+                                Text(captureSummary(snapshot))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                if snapshot.windowCount > 1 {
+                                    Text(L10n.tf("rules.open.window_count", snapshot.windowCount))
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer(minLength: 8)
+                            Button(ruleExists(for: snapshot) ? L10n.t("rules.update") : L10n.t("rules.save")) {
+                                save(snapshot)
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+                if !saveStatus.isEmpty {
+                    Text(saveStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text(L10n.t("rules.open_apps"))
+            } footer: {
+                Text(L10n.t("rules.open_apps.footer"))
+                    .font(.caption)
+            }
+
             Section {
                 ForEach(Array(config.rules.enumerated()), id: \.offset) { index, _ in
                     AppRuleSettingsRowContainer(
@@ -41,6 +97,44 @@ struct AppRulesSettingsPane: View {
             }
         }
         .formStyle(.grouped)
+        .task {
+            while !Task.isCancelled {
+                openAppSnapshots = openAppRuleSnapshotsProvider()
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
+    private func ruleExists(for snapshot: AppRuleOpenAppSnapshot) -> Bool {
+        config.rules.contains { $0.bundleID == snapshot.bundleID }
+    }
+
+    private func save(_ snapshot: AppRuleOpenAppSnapshot) {
+        config.rules = AppRules.saving(snapshot.rule, into: config.rules)
+        saveStatus = L10n.tf("rules.save_count", 1)
+        onApplyNow()
+    }
+
+    private func saveAllOpenApps() {
+        let latest = openAppRuleSnapshotsProvider()
+        guard !latest.isEmpty else { return }
+        config.rules = latest.reduce(config.rules) { rules, snapshot in
+            AppRules.saving(snapshot.rule, into: rules)
+        }
+        openAppSnapshots = latest
+        saveStatus = L10n.tf("rules.save_count", latest.count)
+        onApplyNow()
+    }
+
+    private func captureSummary(_ snapshot: AppRuleOpenAppSnapshot) -> String {
+        let rule = snapshot.rule
+        let workspace = rule.workspace ?? L10n.t("rules.workspace.any")
+        let monitor = rule.monitorIndex.map { $0 + 1 } ?? 1
+        let width = Int(rule.width ?? 0)
+        let height = Int(rule.height ?? 0)
+        let x = Int(rule.x ?? 0)
+        let y = Int(rule.y ?? 0)
+        return L10n.tf("rules.open.details", workspace, monitor, width, height, x, y)
     }
 }
 
