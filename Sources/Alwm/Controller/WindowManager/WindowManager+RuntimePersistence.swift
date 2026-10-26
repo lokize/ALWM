@@ -25,9 +25,16 @@ extension WindowManager {
         // Prefer live sticky when the window still sits in that live workspace's columns.
         let liveStickyByID = windowWorkspace
         let diskStickyByToken = runtimeState.snapshot.windowWorkspace
-        var effectiveStickyByToken = diskStickyByToken
+        var effectiveStickyByToken = ResumeWindowAssignmentPolicy.effectiveStickyAssignments(
+            diskStickyByToken,
+            layouts: runtimeState.snapshot.workspaceLayouts
+        )
         for (id, liveWS) in liveStickyByID {
             let diskWS = diskStickyByToken[id.token]
+            // During wake, AX can temporarily place every window in the active
+            // workspace. A unique exact token in the saved layouts is stronger
+            // evidence than that transient live placement or a stale sticky row.
+            if effectiveStickyByToken[id.token] != diskWS { continue }
             guard diskWS != liveWS, workspaces.workspaces[liveWS] != nil else { continue }
             let inLiveColumn = workspaces.workspaces[liveWS]?.columns
                 .contains(where: { $0.windows.contains(id) }) == true

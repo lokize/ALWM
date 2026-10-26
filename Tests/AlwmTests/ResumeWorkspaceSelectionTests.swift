@@ -265,4 +265,16 @@ struct ResumeWorkspaceSelectionTests {
             liveWindows: [liveSibling]
         ))
     }
+    @Test("a unique saved layout slot wins over a conflicting stale sticky assignment")
+    func savedLayoutWinsConflictingStickyAssignment() {
+        let layouts: [String: RuntimeStateStore.WorkspaceLayoutSnapshot] = [
+            "5": .init(columns: [.init(windows: [
+                .init(token: "42:7", bundleID: "example.chat", title: "Chat")
+            ])])
+        ]
+
+        #expect(ResumeWindowAssignmentPolicy.effectiveStickyAssignments(
+            ["42:7": "1"], layouts: layouts
+        ) == ["42:7": "5"])
+    }
 }

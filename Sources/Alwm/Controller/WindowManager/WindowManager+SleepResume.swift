@@ -34,6 +34,34 @@ enum ResumeWorkspaceSelection {
     }
 }
 
+enum ResumeWindowAssignmentPolicy {
+    static func effectiveStickyAssignments(
+        _ assignments: [String: String],
+        layouts: [String: RuntimeStateStore.WorkspaceLayoutSnapshot]
+    ) -> [String: String] {
+        var layoutWorkspaceByToken: [String: String] = [:]
+        var ambiguousTokens: Set<String> = []
+        for (workspaceID, layout) in layouts {
+            let refs = layout.columns.flatMap(\.windows) + layout.floating
+            for token in Set(refs.map(\.token)) {
+                if let previous = layoutWorkspaceByToken[token], previous != workspaceID {
+                    ambiguousTokens.insert(token)
+                } else {
+                    layoutWorkspaceByToken[token] = workspaceID
+                }
+            }
+        }
+
+        var result = assignments
+        for (token, workspaceID) in layoutWorkspaceByToken where !ambiguousTokens.contains(token) {
+            if assignments[token] != workspaceID {
+                result[token] = workspaceID
+            }
+        }
+        return result
+    }
+}
+
 enum ResumeVisibleWindowRecoveryPolicy {
     struct Candidate: Equatable {
         var id: WindowID

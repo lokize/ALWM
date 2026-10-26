@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "2.1.8",
+      "items": [
+        "Window manager improvements",
+        "Update ResumeWorkspaceSelectionTests"
+      ]
+    },
+    {
       "version": "2.1.7",
       "items": [
         "Reveal minimized saved windows during session recovery",
@@ -247,12 +254,6 @@
       "version": "1.7.9",
       "items": [
         "Add previous wallpaper navigation beside next"
-      ]
-    },
-    {
-      "version": "1.7.8",
-      "items": [
-        "Show the upcoming wallpaper in the menu"
       ]
     }
   ]
