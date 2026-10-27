@@ -413,8 +413,10 @@ extension WindowManager {
                     guard let live = liveFrameForVisibility(id) else { continue }
                     if OffscreenParking.isUsableOnscreenFrame(live, monitors: monitors) {
                         var parkFrame = savedFrames[id] ?? live
-                        parkFrame.x = OffscreenParking.parkOrigin(monitors: monitors, preferred: nil).x
-                        parkFrame.y = OffscreenParking.parkOrigin(monitors: monitors, preferred: nil).y
+                        let preferredMon = monitors.first { $0.contains(pointX: live.midX, pointY: live.midY) } ?? monitors.first
+                        let origin = OffscreenParking.parkOrigin(monitors: monitors, preferred: preferredMon)
+                        parkFrame.x = origin.x
+                        parkFrame.y = origin.y
                         ax.parkOffscreen(frame: parkFrame, id: id, monitors: monitors)
                     } else {
                         ax.reparkIfLeaking(

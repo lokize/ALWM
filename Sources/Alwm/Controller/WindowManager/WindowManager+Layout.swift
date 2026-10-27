@@ -92,10 +92,18 @@ enum WorkspaceMonitorLeakPolicy {
         let monitorFrames = monitors.map(\.frame)
         guard OffscreenParking.intersectsAnyMonitor(frame, monitors: monitorFrames) else { return false }
 
+        // Find the monitor showing `home` workspace, if any
+        let homeMonitorID = activeWorkspaceByMonitor.first(where: { $0.value == home })?.key
+
+        // If the window is a clamped edge strip from offscreen parking:
+        // Clamping to its own home monitor's edge is expected macOS WindowServer behavior.
+        // It only leaks if it clamps onto a DIFFERENT monitor than the one hosting home.
         if OffscreenParking.isEdgeStrip(frame, monitors: monitorFrames) {
-            for monitor in monitors {
-                guard OffscreenParking.intersectsAnyMonitor(frame, monitors: [monitor.frame]) else { continue }
-                if activeWorkspaceByMonitor[monitor.id] != home { return true }
+            guard let homeMonID = homeMonitorID else { return false }
+            for monitor in monitors where monitor.id != homeMonID {
+                if OffscreenParking.intersectsAnyMonitor(frame, monitors: [monitor.frame]) {
+                    return true
+                }
             }
             return false
         }
@@ -1993,9 +2001,15 @@ extension WindowManager {
                 )
                 if ax.isMinimized(id) { continue }
 
+                let homeMon = monitors.monitors.first(where: { workspaces.activeWorkspaceByMonitor[$0.id] == home })
+                    ?? workspaces.preferredMonitor(forWorkspace: home, monitors: monitors.monitors)
+                    ?? primaryMonitor()
+                let windowPreferred = homeMon?.frame ?? preferred
+                let windowPark = OffscreenParking.parkOrigin(monitors: allMonitorFrames, preferred: windowPreferred)
+
                 var parkFrame = savedFrames[id] ?? live
-                parkFrame.x = park.x
-                parkFrame.y = park.y
+                parkFrame.x = windowPark.x
+                parkFrame.y = windowPark.y
                 ax.parkOffscreen(frame: parkFrame, id: id, monitors: allMonitorFrames)
                 if let after = liveFrameForVisibility(id),
                    frameLeaksWrongMonitor(home: home, frame: after),
@@ -2285,6 +2299,7 @@ extension WindowManager {
                 }
                 return layoutMonitor
             }()
+            let parkForWS = OffscreenParking.parkOrigin(monitors: allMonitorFrames, preferred: monitorForWS.frame)
             var layoutWS = ws
             if active {
                 prepareWorkspaceLayoutForDisplay(wsID, monitor: monitorForWS)
@@ -2301,8 +2316,8 @@ extension WindowManager {
             if !active {
                 for (index, a) in assignments.enumerated() {
                     var copy = a
-                    copy.frame.x = park.x - Double(index) * 40
-                    copy.frame.y = park.y
+                    copy.frame.x = parkForWS.x - Double(index) * 40
+                    copy.frame.y = parkForWS.y
                     copy.visible = false
                     assignments[index] = copy
                 }
@@ -2310,8 +2325,8 @@ extension WindowManager {
                 for (index, a) in assignments.enumerated() {
                     guard let home = authoritativeHome(for: a.windowID), home != wsID else { continue }
                     var copy = a
-                    copy.frame.x = park.x - Double(index) * 40
-                    copy.frame.y = park.y
+                    copy.frame.x = parkForWS.x - Double(index) * 40
+                    copy.frame.y = parkForWS.y
                     copy.visible = false
                     assignments[index] = copy
                 }
@@ -2327,14 +2342,19 @@ extension WindowManager {
         for (id, win) in windowsByID where win.isTiled {
             let home = authoritativeHome(for: id)
             let onActive = home.map { isHomeActiveOnAnyMonitor($0) } ?? false
+            let homeMon = home.flatMap { h in
+                monitors.monitors.first(where: { workspaces.activeWorkspaceByMonitor[$0.id] == h })
+                    ?? workspaces.preferredMonitor(forWorkspace: h, monitors: monitors.monitors)
+            } ?? layoutMonitor
+            let parkForHome = OffscreenParking.parkOrigin(monitors: allMonitorFrames, preferred: homeMon.frame)
             if !onActive {
                 visibleIDs.remove(id)
                 if target[id] == nil {
-                    target[id] = Rect(x: park.x, y: park.y, width: 800, height: 600)
+                    target[id] = Rect(x: parkForHome.x, y: parkForHome.y, width: 800, height: 600)
                 } else {
                     var f = target[id]!
-                    f.x = park.x
-                    f.y = park.y
+                    f.x = parkForHome.x
+                    f.y = parkForHome.y
                     target[id] = f
                 }
             } else if target[id] == nil {
@@ -2369,7 +2389,7 @@ extension WindowManager {
                         }) ?? layoutMonitor
                         assignWindow(id, to: home, on: mon)
                     }
-                    target[id] = Rect(x: park.x, y: park.y, width: max(win.frame.width, 800), height: max(win.frame.height, 600))
+                    target[id] = Rect(x: parkForHome.x, y: parkForHome.y, width: max(win.frame.width, 800), height: max(win.frame.height, 600))
                     visibleIDs.remove(id)
                 }
             }
@@ -2391,8 +2411,13 @@ extension WindowManager {
             let home = authoritativeHome(for: id)
             let onActive = home.map { isHomeActiveOnAnyMonitor($0) } ?? false
             let live = ax.currentFrame(of: id) ?? win.frame
+            let homeMon = home.flatMap { h in
+                monitors.monitors.first(where: { workspaces.activeWorkspaceByMonitor[$0.id] == h })
+                    ?? workspaces.preferredMonitor(forWorkspace: h, monitors: monitors.monitors)
+            } ?? layoutMonitor
+            let parkForHome = OffscreenParking.parkOrigin(monitors: allMonitorFrames, preferred: homeMon.frame)
             if onActive, let home {
-                let restored = floatFrameForActiveHome(id: id, home: home, live: live, layoutMonitor: layoutMonitor)
+                let restored = floatFrameForActiveHome(id: id, home: home, live: live, layoutMonitor: homeMon)
                 if frameIsOnMonitorShowingHome(home: home, frame: restored) {
                     savedFrames[id] = restored
                 }
@@ -2406,8 +2431,8 @@ extension WindowManager {
                     savedFrames[id] = prev
                 }
                 var parkFrame = savedFrames[id] ?? live
-                parkFrame.x = park.x
-                parkFrame.y = park.y
+                parkFrame.x = parkForHome.x
+                parkFrame.y = parkForHome.y
                 target[id] = parkFrame
                 visibleIDs.remove(id)
             }
@@ -2440,9 +2465,11 @@ extension WindowManager {
                 }
             }
             visibleIDs.remove(id)
+            let homeMonitor = displayMonitor(forHome: home, fallback: layoutMonitor)
+            let parkForHome = OffscreenParking.parkOrigin(monitors: allMonitorFrames, preferred: homeMonitor.frame)
             var f = planned
-            f.x = park.x
-            f.y = park.y
+            f.x = parkForHome.x
+            f.y = parkForHome.y
             target[id] = f
         }
 

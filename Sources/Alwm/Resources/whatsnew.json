@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "2.2.1",
+      "items": [
+        "Fix multi-monitor offscreen parking to prevent upper monitor windows leaking and flickering on lower monitor workspaces"
+      ]
+    },
+    {
       "version": "2.2.0",
       "items": [
         "Reutilizar sempre o mesmo terminal Quake na janela/posição anterior sem abrir duplicados",
@@ -256,12 +262,6 @@
       "version": "1.8.2",
       "items": [
         "Separate recent notes and tools cards"
-      ]
-    },
-    {
-      "version": "1.8.1",
-      "items": [
-        "Move the Tools heading into its card"
       ]
     }
   ]
