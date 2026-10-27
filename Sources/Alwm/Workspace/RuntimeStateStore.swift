@@ -119,12 +119,16 @@ public final class RuntimeStateStore: @unchecked Sendable {
         public var workspaceLayouts: [String: WorkspaceLayoutSnapshot]
         /// Persisted Quake scratchpad window token (`pid:windowNumber`).
         public var quakeWindowToken: String?
+        /// Persisted Quake active display ID.
+        public var quakeMonitorID: String?
+        /// Persisted Quake active workspace ID.
+        public var quakeWorkspaceID: String?
         /// Stable logical monitor slot keyed by the macOS display ID.
         public var monitorIndexByDisplay: [String: Int]
 
         enum CodingKeys: String, CodingKey {
             case lastWorkspaceByMonitor, windowWorkspace, bundleWorkspace, lastWorkspace, workspaceLayouts
-            case quakeWindowToken, monitorIndexByDisplay
+            case quakeWindowToken, quakeMonitorID, quakeWorkspaceID, monitorIndexByDisplay
         }
 
         public init(
@@ -134,6 +138,8 @@ public final class RuntimeStateStore: @unchecked Sendable {
             lastWorkspace: String? = nil,
             workspaceLayouts: [String: WorkspaceLayoutSnapshot] = [:],
             quakeWindowToken: String? = nil,
+            quakeMonitorID: String? = nil,
+            quakeWorkspaceID: String? = nil,
             monitorIndexByDisplay: [String: Int] = [:]
         ) {
             self.lastWorkspaceByMonitor = lastWorkspaceByMonitor
@@ -142,6 +148,8 @@ public final class RuntimeStateStore: @unchecked Sendable {
             self.lastWorkspace = lastWorkspace
             self.workspaceLayouts = workspaceLayouts
             self.quakeWindowToken = quakeWindowToken
+            self.quakeMonitorID = quakeMonitorID
+            self.quakeWorkspaceID = quakeWorkspaceID
             self.monitorIndexByDisplay = monitorIndexByDisplay
         }
 
@@ -153,6 +161,8 @@ public final class RuntimeStateStore: @unchecked Sendable {
             lastWorkspace = try c.decodeIfPresent(String.self, forKey: .lastWorkspace)
             workspaceLayouts = try c.decodeIfPresent([String: WorkspaceLayoutSnapshot].self, forKey: .workspaceLayouts) ?? [:]
             quakeWindowToken = try c.decodeIfPresent(String.self, forKey: .quakeWindowToken)
+            quakeMonitorID = try c.decodeIfPresent(String.self, forKey: .quakeMonitorID)
+            quakeWorkspaceID = try c.decodeIfPresent(String.self, forKey: .quakeWorkspaceID)
             monitorIndexByDisplay = try c.decodeIfPresent([String: Int].self, forKey: .monitorIndexByDisplay) ?? [:]
         }
     }
@@ -231,6 +241,11 @@ public final class RuntimeStateStore: @unchecked Sendable {
 
     public func setQuakeWindowToken(_ token: String?) {
         snapshot.quakeWindowToken = token
+    }
+
+    public func setQuakeLocation(monitorID: CGDirectDisplayID?, workspaceID: String?) {
+        snapshot.quakeMonitorID = monitorID.map { String($0) }
+        snapshot.quakeWorkspaceID = workspaceID
     }
 
     public func monitorIndexAssignments() -> [CGDirectDisplayID: Int] {

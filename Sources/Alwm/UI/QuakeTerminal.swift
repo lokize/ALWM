@@ -19,8 +19,13 @@ enum QuakeFrameIntent: Equatable {
 private final class QuakeDismissButtonTarget: NSObject {
     var onDismiss: (() -> Void)?
     var onToggleFullscreen: (() -> Void)?
+    var onChangeMonitorWorkspace: ((NSButton) -> Void)?
     @objc func dismiss(_ sender: Any?) { onDismiss?() }
     @objc func toggleFullscreen(_ sender: Any?) { onToggleFullscreen?() }
+    @objc func changeMonitorWorkspace(_ sender: Any?) {
+        guard let button = sender as? NSButton else { return }
+        onChangeMonitorWorkspace?(button)
+    }
 }
 
 private final class AppleScriptResultBox: @unchecked Sendable {
@@ -46,6 +51,7 @@ public final class QuakeTerminalController {
     public private(set) var windowID: WindowID?
     public private(set) var isVisible = false
     public private(set) var activeMonitorID: CGDirectDisplayID?
+    public private(set) var activeWorkspaceID: String?
     public var onNeedRescan: (() -> Void)?
     /// Called whenever a window is adopted as the Quake scratchpad (float + dock).
     public var onAdopted: ((WindowID) -> Void)?
@@ -53,6 +59,7 @@ public final class QuakeTerminalController {
     public var onVisibilityChanged: ((Bool) -> Void)?
     public var onDismiss: (() -> Void)?
     public var onToggleFullscreen: (() -> Void)?
+    public var onRequestChangeMonitorWorkspace: ((NSButton) -> Void)?
     /// Bundle ID waiting for the next new window to become the quake scratchpad.
     public private(set) var pendingAdoptBundleID: String?
 
@@ -63,6 +70,10 @@ public final class QuakeTerminalController {
     var hasVisibleFullscreenButton: Bool {
         guard let stack = dismissButtonPanel?.contentView as? NSStackView else { return false }
         return stack.views.contains { $0.accessibilityLabel() == L10n.t("overlay.fullscreen.expand") }
+    }
+    var hasVisibleMoveButton: Bool {
+        guard let stack = dismissButtonPanel?.contentView as? NSStackView else { return false }
+        return stack.views.contains { $0.accessibilityLabel() == L10n.t("quake.move") }
     }
     private var fullscreenState = OverlayFullscreenState()
     private var fullscreenDisplayID: CGDirectDisplayID?
@@ -85,6 +96,26 @@ public final class QuakeTerminalController {
     public func rebind(_ id: WindowID) {
         windowID = id
         pendingAdoptBundleID = nil
+    }
+
+    public func setLocation(monitorID: CGDirectDisplayID?, workspaceID: String?) {
+        activeMonitorID = monitorID
+        activeWorkspaceID = workspaceID
+    }
+
+    public static func isWindowAlive(_ id: WindowID) -> Bool {
+        if let app = NSRunningApplication(processIdentifier: id.pid), app.isTerminated {
+            return false
+        }
+        guard let list = CGWindowListCopyWindowInfo([.optionIncludingWindow], CGWindowID(id.windowNumber)) as? [[String: Any]],
+              let first = list.first else {
+            return false
+        }
+        if let ownerPID = (first[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
+           ownerPID != id.pid {
+            return false
+        }
+        return true
     }
 
     public func clearPendingAdopt() {
@@ -140,7 +171,7 @@ public final class QuakeTerminalController {
             if windows[id] == nil && ax.currentAX[id] == nil {
                 onNeedRescan?()
             }
-            if isVisible || windows[id] != nil || ax.currentAX[id] != nil {
+            if isVisible || windows[id] != nil || ax.currentAX[id] != nil || Self.isWindowAlive(id) {
                 if isVisible {
                     NSLog("ALWM Quake: hide %@", id.token)
                     hide(id: id, settings: settings, monitor: monitor, applyFrame: applyFrame)
@@ -399,6 +430,10 @@ public final class QuakeTerminalController {
             panel.isReleasedWhenClosed = false
             let target = QuakeDismissButtonTarget()
             target.onDismiss = { [weak self] in self?.onDismiss?() }
+            target.onToggleFullscreen = { [weak self] in self?.onToggleFullscreen?() }
+            target.onChangeMonitorWorkspace = { [weak self] button in
+                self?.onRequestChangeMonitorWorkspace?(button)
+            }
             let closeButton = makeControlButton(
                 symbol: "xmark.circle.fill",
                 label: L10n.t("quake.hide"),
@@ -411,19 +446,30 @@ public final class QuakeTerminalController {
                 target: target,
                 action: #selector(QuakeDismissButtonTarget.toggleFullscreen(_:))
             )
-            let stack = NSStackView(views: [fullscreenButton, closeButton])
+            let moveButton = makeControlButton(
+                symbol: "display.2",
+                label: L10n.t("quake.move"),
+                target: target,
+                action: #selector(QuakeDismissButtonTarget.changeMonitorWorkspace(_:))
+            )
+            let stack = NSStackView(views: [moveButton, fullscreenButton, closeButton])
             stack.orientation = .horizontal
             stack.alignment = .centerY
             stack.spacing = 4
-            stack.frame = NSRect(x: 0, y: 0, width: 60, height: 28)
+            stack.frame = NSRect(x: 0, y: 0, width: 92, height: 28)
             panel.contentView = stack
             dismissButtonTarget = target
             dismissButtonPanel = panel
         }
         dismissButtonTarget?.onDismiss = { [weak self] in self?.onDismiss?() }
         dismissButtonTarget?.onToggleFullscreen = { [weak self] in self?.onToggleFullscreen?() }
+        dismissButtonTarget?.onChangeMonitorWorkspace = { [weak self] button in
+            self?.onRequestChangeMonitorWorkspace?(button)
+        }
         if let stack = dismissButtonPanel?.contentView as? NSStackView,
-           let fullscreenButton = stack.views.first as? NSButton {
+           let fullscreenButton = stack.views.first(where: {
+               $0.accessibilityLabel() == L10n.t("overlay.fullscreen.expand") || $0.accessibilityLabel() == L10n.t("overlay.fullscreen.restore")
+           }) as? NSButton {
             let label = L10n.t(fullscreenState.isFullscreen ? "overlay.fullscreen.restore" : "overlay.fullscreen.expand")
             fullscreenButton.setAccessibilityLabel(label)
             fullscreenButton.toolTip = label
@@ -628,6 +674,7 @@ public final class QuakeTerminalController {
         // often drops out of a single AX scan; clearing here would launch a new shell.
         if windows[id] != nil { return }
         if !isVisible { return }
+        if Self.isWindowAlive(id) { return }
         windowID = nil
         setVisible(false)
         blurPanel?.orderOut(nil)
@@ -637,6 +684,7 @@ public final class QuakeTerminalController {
     public func forgetIfFullyGone(windows: [WindowID: ManagedWindow]) {
         guard let id = windowID else { return }
         guard windows[id] == nil else { return }
+        if Self.isWindowAlive(id) { return }
         windowID = nil
         setVisible(false)
         blurPanel?.orderOut(nil)
@@ -658,6 +706,7 @@ public final class QuakeTerminalController {
     public func clearAfterUserClose() {
         windowID = nil
         activeMonitorID = nil
+        activeWorkspaceID = nil
         setVisible(false)
         pendingLaunch = false
         pendingLaunchWantsVisible = true

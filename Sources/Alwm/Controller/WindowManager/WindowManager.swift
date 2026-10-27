@@ -600,6 +600,9 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         }
         quake.onDismiss = { [weak self] in self?.dismissQuake() }
         quake.onToggleFullscreen = { [weak self] in self?.toggleQuakeFullscreen() }
+        quake.onRequestChangeMonitorWorkspace = { [weak self] button in
+            self?.showQuakeMoveMenu(from: button)
+        }
         quake.onVisibilityChanged = { [weak self] _ in
             self?.updateOverlayInputMode()
         }

@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "version": "2.2.0",
+      "items": [
+        "Reutilizar sempre o mesmo terminal Quake na janela/posição anterior sem abrir duplicados",
+        "Abrir no monitor e workspace em foco na primeira abertura",
+        "Botão no terminal para mover entre monitores e workspaces"
+      ]
+    },
+    {
       "version": "2.1.9",
       "items": [
         "Config updates",
@@ -254,12 +262,6 @@
       "version": "1.8.1",
       "items": [
         "Move the Tools heading into its card"
-      ]
-    },
-    {
-      "version": "1.8.0",
-      "items": [
-        "Make wallpaper navigation buttons fill the card"
       ]
     }
   ]

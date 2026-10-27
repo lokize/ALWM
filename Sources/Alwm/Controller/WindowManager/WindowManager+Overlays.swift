@@ -155,7 +155,23 @@ extension WindowManager {
                 quake.rebind(id)
                 runtimeState.setQuakeWindowToken(id.token)
                 NSLog("ALWM Quake: rebound from session pid %d → %@", pid, id.token)
+            } else {
+                let parts = token.split(separator: ":")
+                if parts.count == 2,
+                   let pid = pid_t(parts[0]),
+                   let winNum = Int(parts[1]) {
+                    let probeID = WindowID(pid: pid, windowNumber: winNum)
+                    if QuakeTerminalController.isWindowAlive(probeID) {
+                        quake.rebind(probeID)
+                        NSLog("ALWM Quake: rebound from live WindowServer token %@", token)
+                    }
+                }
             }
+        }
+        if quake.activeMonitorID == nil,
+           let monStr = runtimeState.snapshot.quakeMonitorID,
+           let monID = CGDirectDisplayID(monStr) {
+            quake.setLocation(monitorID: monID, workspaceID: runtimeState.snapshot.quakeWorkspaceID)
         }
 
         guard let id = quake.windowID, var win = windowsByID[id] else {
@@ -489,6 +505,7 @@ extension WindowManager {
         let closedID = quake.windowID
         quake.clearAfterUserClose()
         runtimeState.setQuakeWindowToken(nil)
+        runtimeState.setQuakeLocation(monitorID: nil, workspaceID: nil)
         preferredOverlayFocus = nil
         if let closedID {
             windowsByID.removeValue(forKey: closedID)
@@ -516,6 +533,14 @@ extension WindowManager {
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
             guard self.quake.windowID == suspectID || self.isQuakeOwned(suspectID) else { return }
+            if QuakeTerminalController.isWindowAlive(suspectID) {
+                NSLog("ALWM Quake: window %@ is still alive in WindowServer — keeping binding", suspectID.token)
+                self.missingScanCounts.removeValue(forKey: suspectID)
+                if wasVisible {
+                    self.reassertQuakeVisibleFrame(for: suspectID)
+                }
+                return
+            }
             self.ax.scanAll()
             let live = self.ax.currentWindows
             if live.contains(where: { $0.id == suspectID }) {
@@ -593,9 +618,36 @@ extension WindowManager {
     }
 
     func toggleQuake(monitor: MonitorInfo) {
+        let isFirstOpening = (quake.activeMonitorID == nil)
+        let targetMon: MonitorInfo
+        let targetWS: String
+
+        if isFirstOpening {
+            let focusMon = monitorForAction() ?? monitorUnderMouse() ?? primaryMonitor() ?? monitor
+            let focusWS = workspaces.activeWorkspaceByMonitor[focusMon.id] ?? "1"
+            quake.setLocation(monitorID: focusMon.id, workspaceID: focusWS)
+            runtimeState.setQuakeLocation(monitorID: focusMon.id, workspaceID: focusWS)
+            persistRuntimeState()
+            targetMon = focusMon
+            targetWS = focusWS
+        } else {
+            let savedMon = quake.activeMonitorID.flatMap { id in monitors.monitors.first(where: { $0.id == id }) }
+            targetMon = savedMon ?? primaryMonitor() ?? monitor
+            targetWS = quake.activeWorkspaceID ?? workspaces.activeWorkspaceByMonitor[targetMon.id] ?? "1"
+        }
+
+        if !quake.isVisible {
+            if workspaces.activeWorkspaceByMonitor[targetMon.id] != targetWS {
+                switchWorkspace(id: targetWS, on: targetMon.id)
+            }
+            if primaryMonitorID != targetMon.id {
+                primaryMonitorID = targetMon.id
+            }
+        }
+
         let presentationMonitor = quake.isVisible
-            ? (monitorContainingQuakeWindow() ?? monitor)
-            : monitor
+            ? (monitorContainingQuakeWindow() ?? targetMon)
+            : targetMon
         let settings = configStore.config.settings.quake
         let monitorsFrames = monitors.monitors.map(\.frame)
         quake.toggle(
@@ -656,6 +708,8 @@ extension WindowManager {
                 lastFrames[id] = frame
                 preferredOverlayFocus = .quake
                 suppressGeometryEnforce(for: 1.0)
+                runtimeState.setQuakeLocation(monitorID: presentationMonitor.id, workspaceID: targetWS)
+                persistRuntimeState()
             } else {
                 let hidden = quake.hiddenFrame(settings: settings, monitor: presentationMonitor)
                 ax.parkAndHide(frame: hidden, id: id, monitors: monitorsFrames)
@@ -684,4 +738,168 @@ extension WindowManager {
         refreshChrome()
     }
 
+    func showQuakeMoveMenu(from button: NSButton) {
+        suppressQuakeDismissUntil = Date().addingTimeInterval(30.0)
+
+        let menu = NSMenu(title: L10n.t("quake.move"))
+        menu.autoenablesItems = false
+
+        let currentMonID = quake.activeMonitorID ?? primaryMonitorID
+        let currentWSID = quake.activeWorkspaceID ?? workspaces.activeWorkspaceByMonitor[currentMonID] ?? "1"
+
+        let focusMon = monitorUnderMouse() ?? monitorForAction() ?? primaryMonitor()
+        if let focusMon {
+            let focusWS = workspaces.activeWorkspaceByMonitor[focusMon.id] ?? "1"
+            let isCurrent = (focusMon.id == currentMonID && focusWS == currentWSID)
+            let focusItem = NSMenuItem(
+                title: L10n.t("quake.move.focused"),
+                action: #selector(QuakeMenuTarget.moveQuakeToFocus(_:)),
+                keyEquivalent: ""
+            )
+            focusItem.target = QuakeMenuTarget.shared
+            focusItem.isEnabled = !isCurrent
+            focusItem.state = isCurrent ? .on : .off
+            menu.addItem(focusItem)
+        }
+
+        menu.addItem(NSMenuItem.separator())
+
+        let monHeader = NSMenuItem(title: L10n.t("quake.move.monitors"), action: nil, keyEquivalent: "")
+        monHeader.isEnabled = false
+        menu.addItem(monHeader)
+
+        for (index, mon) in monitors.monitors.enumerated() {
+            let name = mon.name.isEmpty ? "Display \(index + 1)" : mon.name
+            let title = String(format: L10n.t("quake.move.monitor.item"), index + 1, name)
+            let item = NSMenuItem(
+                title: title,
+                action: #selector(QuakeMenuTarget.moveQuakeToMonitor(_:)),
+                keyEquivalent: ""
+            )
+            item.target = QuakeMenuTarget.shared
+            item.tag = Int(mon.id)
+            item.state = (mon.id == currentMonID) ? .on : .off
+            menu.addItem(item)
+        }
+
+        menu.addItem(NSMenuItem.separator())
+
+        let wsHeader = NSMenuItem(title: L10n.t("quake.move.workspaces"), action: nil, keyEquivalent: "")
+        wsHeader.isEnabled = false
+        menu.addItem(wsHeader)
+
+        let allWorkspaces = workspaces.workspaces.keys.sorted {
+            if let a = Int($0), let b = Int($1) { return a < b }
+            return $0 < $1
+        }
+        for wsID in allWorkspaces {
+            let title = String(format: L10n.t("quake.move.workspace.item"), wsID)
+            let item = NSMenuItem(
+                title: title,
+                action: #selector(QuakeMenuTarget.moveQuakeToWorkspace(_:)),
+                keyEquivalent: ""
+            )
+            item.target = QuakeMenuTarget.shared
+            item.representedObject = wsID
+            item.state = (wsID == currentWSID) ? .on : .off
+            menu.addItem(item)
+        }
+
+        QuakeMenuTarget.shared.onMoveToFocus = { [weak self] in
+            self?.moveQuakeToFocusedLocation()
+        }
+        QuakeMenuTarget.shared.onMoveToMonitor = { [weak self] monID in
+            self?.moveQuake(to: CGDirectDisplayID(monID))
+        }
+        QuakeMenuTarget.shared.onMoveToWorkspace = { [weak self] wsID in
+            self?.moveQuake(to: wsID)
+        }
+        QuakeMenuTarget.shared.onMenuClosed = { [weak self] in
+            self?.suppressQuakeDismissUntil = Date().addingTimeInterval(0.6)
+        }
+
+        menu.delegate = QuakeMenuTarget.shared
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height + 4), in: button)
+    }
+
+    func moveQuake(to monitorID: CGDirectDisplayID) {
+        guard let targetMon = monitors.monitors.first(where: { $0.id == monitorID }) else { return }
+        let currentWS = quake.activeWorkspaceID ?? workspaces.activeWorkspaceByMonitor[targetMon.id] ?? "1"
+        quake.setLocation(monitorID: targetMon.id, workspaceID: currentWS)
+        runtimeState.setQuakeLocation(monitorID: targetMon.id, workspaceID: currentWS)
+        persistRuntimeState()
+
+        guard quake.isVisible, let id = quake.windowID else { return }
+        let settings = configStore.config.settings.quake
+        let newFrame = quake.visibleFrame(settings: settings, monitor: targetMon)
+        ax.setMinimized(false, id: id)
+        ax.apply(frame: newFrame, to: id)
+        lastFrames[id] = newFrame
+        quake.refreshBlur(settings: settings, monitor: targetMon, frame: newFrame)
+        ax.focus(id)
+        refreshChrome()
+    }
+
+    func moveQuake(to workspaceID: String) {
+        let monID = quake.activeMonitorID ?? primaryMonitorID
+        quake.setLocation(monitorID: monID, workspaceID: workspaceID)
+        runtimeState.setQuakeLocation(monitorID: monID, workspaceID: workspaceID)
+        persistRuntimeState()
+
+        if workspaces.activeWorkspaceByMonitor[monID] != workspaceID {
+            switchWorkspace(id: workspaceID, on: monID)
+        }
+        guard quake.isVisible, let id = quake.windowID else { return }
+        if monitors.monitors.contains(where: { $0.id == monID }) {
+            reassertQuakeVisibleFrame(for: id)
+        }
+        ax.focus(id)
+        refreshChrome()
+    }
+
+    func moveQuakeToFocusedLocation() {
+        let mon = monitorUnderMouse() ?? monitorForAction() ?? primaryMonitor()
+        guard let mon else { return }
+        let ws = workspaces.activeWorkspaceByMonitor[mon.id] ?? "1"
+        quake.setLocation(monitorID: mon.id, workspaceID: ws)
+        runtimeState.setQuakeLocation(monitorID: mon.id, workspaceID: ws)
+        persistRuntimeState()
+
+        guard quake.isVisible, let id = quake.windowID else { return }
+        let settings = configStore.config.settings.quake
+        let newFrame = quake.visibleFrame(settings: settings, monitor: mon)
+        ax.setMinimized(false, id: id)
+        ax.apply(frame: newFrame, to: id)
+        lastFrames[id] = newFrame
+        quake.refreshBlur(settings: settings, monitor: mon, frame: newFrame)
+        ax.focus(id)
+        refreshChrome()
+    }
+
+}
+
+@MainActor
+final class QuakeMenuTarget: NSObject, NSMenuDelegate {
+    static let shared = QuakeMenuTarget()
+    var onMoveToFocus: (() -> Void)?
+    var onMoveToMonitor: ((Int) -> Void)?
+    var onMoveToWorkspace: ((String) -> Void)?
+    var onMenuClosed: (() -> Void)?
+
+    @objc func moveQuakeToFocus(_ sender: Any?) {
+        onMoveToFocus?()
+    }
+
+    @objc func moveQuakeToMonitor(_ sender: NSMenuItem) {
+        onMoveToMonitor?(sender.tag)
+    }
+
+    @objc func moveQuakeToWorkspace(_ sender: NSMenuItem) {
+        guard let wsID = sender.representedObject as? String else { return }
+        onMoveToWorkspace?(wsID)
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        onMenuClosed?()
+    }
 }

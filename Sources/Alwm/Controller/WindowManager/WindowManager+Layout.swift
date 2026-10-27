@@ -317,10 +317,15 @@ extension WindowManager {
             let missingLongEnough = Date().timeIntervalSince(firstMissing) >= 0.75
             if id == quake.windowID {
                 // Soft-delete: ⌘T / tab chrome must not immediately tear Quake down.
-                let count = (missingScanCounts[id] ?? 0) + 1
-                missingScanCounts[id] = count
-                if count >= 6 {
-                    scheduleConfirmQuakeClosed(suspectID: id)
+                if quake.isVisible {
+                    let count = (missingScanCounts[id] ?? 0) + 1
+                    missingScanCounts[id] = count
+                    if count >= 6 {
+                        scheduleConfirmQuakeClosed(suspectID: id)
+                    }
+                } else {
+                    missingScanCounts.removeValue(forKey: id)
+                    missingScanFirstSeenAt.removeValue(forKey: id)
                 }
                 continue
             }
@@ -466,9 +471,14 @@ extension WindowManager {
         forceTileExpandUntil = forceTileExpandUntil.filter { Date() < $0.value }
         // Use merged tracking (soft-missing kept) so a parked quake is not forgotten.
         if let qid = quake.windowID, merged[qid] == nil {
-            let count = missingScanCounts[qid] ?? 0
-            if count >= 6 {
-                scheduleConfirmQuakeClosed(suspectID: qid)
+            if quake.isVisible {
+                let count = missingScanCounts[qid] ?? 0
+                if count >= 6 {
+                    scheduleConfirmQuakeClosed(suspectID: qid)
+                }
+            } else {
+                missingScanCounts.removeValue(forKey: qid)
+                missingScanFirstSeenAt.removeValue(forKey: qid)
             }
             // Do not call forgetIfFullyGone on first blips — that clears visible Quake on ⌘T.
         }
@@ -2439,7 +2449,9 @@ extension WindowManager {
         // Quake scratchpad: always docked float on the configured edge (never tiled layout).
         if let qid = quake.windowID {
             let mon = monitorContainingQuakeWindow() ?? layoutMonitor
-            if quake.isVisible {
+            let quakeWS = quake.activeWorkspaceID
+            let quakeWSActive = quakeWS.map { activeIDs.contains($0) } ?? true
+            if quake.isVisible && quakeWSActive {
                 let frame = quake.visibleFrame(settings: configStore.config.settings.quake, monitor: mon)
                 target[qid] = frame
                 visibleIDs.insert(qid)

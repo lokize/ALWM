@@ -19,8 +19,15 @@ struct QuakeDismissButtonTests {
         let panel = try #require(NSApp.windows.first { $0.identifier?.rawValue == "alwm.quake.dismiss" && $0.isVisible })
         #expect(!AlwmChromeFocus.isInteractiveChrome(panel))
         let controls = try #require(panel.contentView as? NSStackView)
-        #expect(controls.views.count == 2)
-        let fullscreen = try #require(controls.views.first as? NSButton)
+        #expect(controls.views.count == 3)
+        #expect(quake.hasVisibleMoveButton)
+        let move = try #require(controls.views.first as? NSButton)
+        #expect(move.accessibilityLabel() == L10n.t("quake.move"))
+        var requestedMove = false
+        quake.onRequestChangeMonitorWorkspace = { _ in requestedMove = true }
+        move.performClick(nil)
+        #expect(requestedMove)
+        let fullscreen = try #require(controls.views[1] as? NSButton)
         let button = try #require(controls.views.last as? NSButton)
         #expect(fullscreen.accessibilityLabel() == L10n.t("overlay.fullscreen.expand"))
         var expanded = false
@@ -47,9 +54,30 @@ struct QuakeDismissButtonTests {
         )
 
         #expect(controls.maxY <= 900 - 24)
-        #expect(controls.width == 60)
+        #expect(controls.width == 92)
         #expect(controls.height == 28)
         #expect(OverlayChromeGeometry.notepadTopChromeInset(isFullscreen: true, topSafeInset: 24) >= 28)
         #expect(OverlayChromeGeometry.notepadTopChromeInset(isFullscreen: false, topSafeInset: 24) == 0)
+    }
+
+    @Test("quake location is maintained and can be updated")
+    @MainActor
+    func quakeLocationMaintained() {
+        let quake = QuakeTerminalController()
+        #expect(quake.activeMonitorID == nil)
+        #expect(quake.activeWorkspaceID == nil)
+
+        quake.setLocation(monitorID: 10, workspaceID: "3")
+        #expect(quake.activeMonitorID == 10)
+        #expect(quake.activeWorkspaceID == "3")
+
+        quake.setLocation(monitorID: 20, workspaceID: "5")
+        #expect(quake.activeMonitorID == 20)
+        #expect(quake.activeWorkspaceID == "5")
+
+        // Clearing after user close resets location
+        quake.clearAfterUserClose()
+        #expect(quake.activeMonitorID == nil)
+        #expect(quake.activeWorkspaceID == nil)
     }
 }
