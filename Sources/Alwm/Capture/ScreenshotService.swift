@@ -122,6 +122,26 @@ enum ScreenshotService {
         return try writePNG(image)
     }
 
+    /// Capture a single window (including windows covered by other apps).
+    static func captureWindow(_ target: CaptureWindowTarget) async throws -> URL {
+        guard Permissions.screenRecordingGranted() else { throw ShotError.noPermission }
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        guard let window = content.windows.first(where: { $0.windowID == target.id }) else {
+            // Window closed between selection and capture — fall back to its last frame.
+            return try await captureRegion(target.frame)
+        }
+        let filter = SCContentFilter(desktopIndependentWindow: window)
+        let config = SCStreamConfiguration()
+        let scale = CGFloat(filter.pointPixelScale)
+        let rect = filter.contentRect
+        config.width = max(1, Int(rect.width * scale))
+        config.height = max(1, Int(rect.height * scale))
+        config.showsCursor = false
+        config.captureResolution = .best
+        let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+        return try writePNG(image)
+    }
+
     private static func matchingDisplay(screen: NSScreen, in content: SCShareableContent) -> SCDisplay? {
         let num = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
         if let num, let match = content.displays.first(where: { $0.displayID == num }) {

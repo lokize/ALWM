@@ -1,6 +1,15 @@
 {
   "releases": [
     {
+      "version": "2.2.0",
+      "items": [
+        "Click windows in the capture overlay to record the whole window",
+        "Finalize the recording file before stopping the stream so the tail is not cut",
+        "Keep the display awake while recording and finalize gracefully if capture stops",
+        "Drag = region · Click = window · Enter = full display"
+      ]
+    },
+    {
       "version": "2.1.9",
       "items": [
         "Config updates",
@@ -254,12 +263,6 @@
       "version": "1.8.1",
       "items": [
         "Move the Tools heading into its card"
-      ]
-    },
-    {
-      "version": "1.8.0",
-      "items": [
-        "Make wallpaper navigation buttons fill the card"
       ]
     }
   ]

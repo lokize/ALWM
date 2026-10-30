@@ -21,6 +21,10 @@ final class CaptureController: NSObject {
             self.notify(title: L10n.t("capture.mic.unavailable.title"),
                         body: L10n.t("capture.mic.unavailable.body"))
         }
+        recorder.onUnexpectedStop = { [weak self] in
+            NSLog("[ALWM][Capture] recording stopped unexpectedly — finalizing file")
+            Task { [weak self] in await self?.stopRecording() }
+        }
     }
 
     func captureRegion() {
@@ -35,6 +39,8 @@ final class CaptureController: NSObject {
                     Task { await self.runScreenshot { try await ScreenshotService.captureRegion(rect) } }
                 case .fullDisplay(let screen):
                     Task { await self.runScreenshot { try await ScreenshotService.captureDisplay(screen) } }
+                case .window(let target):
+                    Task { await self.runScreenshot { try await ScreenshotService.captureWindow(target) } }
                 }
             }
         }
@@ -57,6 +63,7 @@ final class CaptureController: NSObject {
                 await stopRecording()
                 return
             }
+            guard !isStopping else { return }
             guard await ensureScreenRecording() else { return }
             overlay.present { [weak self] result in
                 guard let self else { return }
@@ -68,17 +75,19 @@ final class CaptureController: NSObject {
                         ?? NSScreen.main
                         ?? NSScreen.screens.first
                     guard let screen else { return }
-                    Task { await self.startRecording(screen: screen, region: rect) }
+                    Task { await self.startRecording(target: .region(screen, rect)) }
                 case .fullDisplay(let screen):
-                    Task { await self.startRecording(screen: screen, region: nil) }
+                    Task { await self.startRecording(target: .display(screen)) }
+                case .window(let target):
+                    Task { await self.startRecording(target: .window(target)) }
                 }
             }
         }
     }
 
-    private func startRecording(screen: NSScreen, region: NSRect?) async {
+    private func startRecording(target: ScreenRecorder.Target) async {
         do {
-            try await recorder.start(displayScreen: screen, region: region)
+            try await recorder.start(target: target)
             showRecordingHUD()
             notify(title: L10n.t("capture.record.started.title"),
                    body: L10n.t("capture.record.started.body"))
