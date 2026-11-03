@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "2.2.2",
+      "items": [
+        "Fix Notepad click-away dismissal and outside mouse selection",
+        "Improve offscreen parked window matching on sleep resume"
+      ]
+    },
+    {
       "version": "2.2.1",
       "items": [
         "Fix multi-monitor offscreen parking to prevent upper monitor windows leaking and flickering on lower monitor workspaces"
@@ -256,12 +263,6 @@
       "version": "1.8.3",
       "items": [
         "Center the Tools card heading like Recent Notes"
-      ]
-    },
-    {
-      "version": "1.8.2",
-      "items": [
-        "Separate recent notes and tools cards"
       ]
     }
   ]

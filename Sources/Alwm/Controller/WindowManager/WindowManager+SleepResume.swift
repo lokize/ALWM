@@ -130,7 +130,7 @@ enum ResumeFrameSelection {
         // Scrolled columns and maximized siblings are intentionally parked. Their
         // exact off-screen origin can change when displays reconnect after sleep.
         if !OffscreenParking.intersectsAnyMonitor(expected, monitors: monitorFrames) {
-            return !OffscreenParking.intersectsAnyMonitor(actual, monitors: monitorFrames)
+            return !OffscreenParking.isUsableOnscreenFrame(actual, monitors: monitorFrames)
         }
         // A horizontally scrolled column can be partly visible with its midpoint
         // outside the monitor. Compare its geometry instead of calling it parked.
@@ -226,6 +226,12 @@ extension WindowManager {
         _ = ejectWindowsListedOutsideStickyHome()
         retileAccidentalFloats(forceClearOverrides: true)
         enforceQuakeFloat()
+        if notepad.isVisible, let mon = monitorForAction() ?? primaryMonitor() {
+            let settings = configStore.config.settings.notepad
+            let visible = notepad.panelFrame(settings: settings, monitor: mon, visible: true)
+            notepad.refreshLayout(settings: settings, monitor: mon, visible: true, frame: visible)
+            updateOverlayInputMode()
+        }
         isBootstrapping = false
         postLaunchLayoutGraceUntil = Date().addingTimeInterval(6)
         adoptOrphanWindows(blockingReassign: true)
@@ -521,6 +527,12 @@ extension WindowManager {
         _ = ejectWindowsListedOutsideStickyHome()
         retileAccidentalFloats(forceClearOverrides: false)
         enforceQuakeFloat()
+        if notepad.isVisible, let mon = monitorForAction() ?? primaryMonitor() {
+            let settings = configStore.config.settings.notepad
+            let visible = notepad.panelFrame(settings: settings, monitor: mon, visible: true)
+            notepad.refreshLayout(settings: settings, monitor: mon, visible: true, frame: visible)
+            updateOverlayInputMode()
+        }
         isBootstrapping = false
         postLaunchLayoutGraceUntil = Date().addingTimeInterval(6)
         adoptOrphanWindows(blockingReassign: true)

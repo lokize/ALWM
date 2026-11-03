@@ -83,9 +83,10 @@ public final class NotepadController {
 
     func visibleAXFrame(settings: NotepadSettings) -> Rect? {
         guard isVisible, let monitor = currentMonitor else { return nil }
-        let frame = panelFrame(settings: settings, monitor: monitor, visible: true)
-        let mainHeight = Double(NSScreen.screens.first?.frame.height ?? CGFloat(monitor.frame.maxY))
-        return Rect(x: frame.minX, y: mainHeight - frame.maxY, width: frame.width, height: frame.height)
+        if fullscreenState.isFullscreen {
+            return monitor.frame
+        }
+        return QuakePanelGeometry.visibleFrame(settings: settings, monitor: monitor)
     }
 
     @discardableResult
@@ -124,9 +125,12 @@ public final class NotepadController {
         updateBlur(settings: settings, frame: target, monitor: monitor, visible: visible)
     }
 
-    public func containsClick(at cocoaPoint: NSPoint, settings: NotepadSettings, monitor: MonitorInfo) -> Bool {
-        guard isVisible, let panel else { return false }
-        return panel.frame.contains(cocoaPoint)
+    public func containsClick(at axPoint: CGPoint, settings: NotepadSettings, monitor: MonitorInfo) -> Bool {
+        guard isVisible else { return false }
+        if let axFrame = visibleAXFrame(settings: settings) {
+            return axFrame.contains(pointX: axPoint.x, pointY: axPoint.y)
+        }
+        return false
     }
 
     public var isKeyWindow: Bool {
@@ -268,6 +272,7 @@ public final class NotepadController {
             panel?.orderOut(nil)
             blurPanel?.orderOut(nil)
             isVisible = false
+            NSApp.deactivate()
             onVisibilityChanged?(false)
         }
     }

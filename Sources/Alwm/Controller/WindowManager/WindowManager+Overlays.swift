@@ -270,7 +270,7 @@ extension WindowManager {
     }
 
     func dismissOverlaysIfClickOutside() {
-        dismissOverlaysIfClickOutside(at: NSEvent.mouseLocation)
+        dismissOverlaysIfClickOutside(at: mouseLocationInAXCoordinates())
     }
 
     func dismissOverlaysIfClickOutside(at point: CGPoint) {
@@ -291,7 +291,7 @@ extension WindowManager {
     }
 
     func dismissNotepadIfClickOutside() {
-        dismissNotepadIfClickOutside(at: NSEvent.mouseLocation)
+        dismissNotepadIfClickOutside(at: mouseLocationInAXCoordinates())
     }
 
     func dismissNotepadIfClickOutside(at loc: CGPoint) {
@@ -348,11 +348,25 @@ extension WindowManager {
     func dismissNotepad(on monitor: MonitorInfo) {
         guard notepad.isVisible else { return }
         notepad.hide(settings: configStore.config.settings.notepad, monitor: monitor)
+        preferredOverlayFocus = nil
         updateOverlayInputMode()
+        if !overlaysCaptureFocus {
+            if let focused = workspaces.activeWorkspace(for: monitor.id)?.focusedWindowID {
+                ax.focus(focused)
+            }
+        }
+        DispatchQueue.main.async { [weak self] in
+            self?.applyWorkspaceVisibility(animated: false)
+            self?.refreshChrome()
+        }
     }
 
     func toggleNotepad(monitor: MonitorInfo) {
         let settings = configStore.config.settings.notepad
+        if notepad.isTargetVisible {
+            dismissNotepad(on: monitor)
+            return
+        }
         notepad.toggle(settings: settings, monitor: monitor)
         if notepad.isTargetVisible {
             preferredOverlayFocus = .notepad
@@ -379,7 +393,7 @@ extension WindowManager {
     }
 
     func dismissQuakeIfClickOutside() {
-        dismissQuakeIfClickOutside(at: NSEvent.mouseLocation)
+        dismissQuakeIfClickOutside(at: mouseLocationInAXCoordinates())
     }
 
     func dismissQuakeIfClickOutside(at loc: CGPoint) {

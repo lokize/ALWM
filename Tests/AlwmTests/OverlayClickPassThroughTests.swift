@@ -1,3 +1,4 @@
+import CoreGraphics
 import Testing
 @testable import Alwm
 
@@ -46,5 +47,34 @@ struct OverlayClickPassThroughTests {
             frontmostWindowOwnerPID: 99,
             ownProcessID: 42
         ))
+    }
+
+    @Test("Notepad containsClick correctly distinguishes AX coordinate inside vs outside")
+    @MainActor
+    func notepadContainsClickUsesAXCoordinates() {
+        let controller = NotepadController()
+        var settings = NotepadSettings.default
+        settings.enabled = true
+        let monitor = MonitorInfo(
+            id: 1,
+            frame: Rect(x: 0, y: 0, width: 1920, height: 1080),
+            visibleFrame: Rect(x: 0, y: 25, width: 1920, height: 1055),
+            name: "Main"
+        )
+        controller.show(settings: settings, monitor: monitor)
+        defer { controller.hide(settings: settings, monitor: monitor) }
+
+        guard let axFrame = controller.visibleAXFrame(settings: settings) else {
+            Issue.record("visibleAXFrame should not be nil when visible")
+            return
+        }
+
+        // Inside the panel in AX coordinates:
+        let insidePoint = CGPoint(x: axFrame.midX, y: axFrame.midY)
+        #expect(controller.containsClick(at: insidePoint, settings: settings, monitor: monitor))
+
+        // Outside the panel at the bottom of the screen in AX coordinates:
+        let outsidePoint = CGPoint(x: 960, y: 900)
+        #expect(!controller.containsClick(at: outsidePoint, settings: settings, monitor: monitor))
     }
 }

@@ -69,6 +69,22 @@ struct ResumeWorkspaceSelectionTests {
         ))
     }
 
+    @Test("a parked window clamped to an edge strip by macOS matches expected offscreen frame")
+    func acceptsEdgeClampedParkedWindow() {
+        let monitor = Rect(x: 0, y: 0, width: 1_200, height: 800)
+        let expectedParked = Rect(x: 5_000, y: 5_000, width: 800, height: 600)
+        // macOS clamps the window into a thin edge strip at the monitor edge:
+        let actualClamped = Rect(x: 1_160, y: 100, width: 40, height: 600)
+
+        #expect(ResumeFrameSelection.matches(
+            actual: actualClamped,
+            expected: expectedParked,
+            usable: monitor,
+            monitorFrames: [monitor],
+            minSize: Size(width: 200, height: 120)
+        ))
+    }
+
     @Test("an AX mass drop rearms recovery after previous attempts were exhausted")
     @MainActor
     func massDropRearmsRecovery() {
