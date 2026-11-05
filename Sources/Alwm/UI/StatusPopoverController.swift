@@ -18,6 +18,8 @@ public final class StatusPopoverController {
     private let anchorView: NSView
     private var pendingShowWorkItem: DispatchWorkItem?
     private var popoverCloseBridge: PopoverCloseBridge?
+    private var lastToggleUptime: UInt64 = 0
+    private var lastAnchorScreenFrame: NSRect?
 
     public var onToggleFocusFollowsMouse: (() -> Void)?
     public var onToggleBorders: (() -> Void)?
@@ -74,6 +76,7 @@ public final class StatusPopoverController {
         let bridge = PopoverCloseBridge { [weak self] in
             self?.removeClickOutsideMonitor()
             self?.anchorWindow.orderOut(nil)
+            self?.lastAnchorScreenFrame = nil
         }
         popoverCloseBridge = bridge
         popover.delegate = bridge
@@ -161,6 +164,13 @@ public final class StatusPopoverController {
 
     /// Anchor the menu under any view (workspace-bar status chip or menu-bar icon).
     public func toggle(relativeTo view: NSView) {
+        let now = DispatchTime.now().uptimeNanoseconds
+        // Debounce hardware switch chatter or rapid event bounces (<150ms).
+        if now > lastToggleUptime, (now - lastToggleUptime) < 150_000_000 {
+            return
+        }
+        lastToggleUptime = now
+
         pendingShowWorkItem?.cancel()
         pendingShowWorkItem = nil
         if popover.isShown {
@@ -169,25 +179,42 @@ public final class StatusPopoverController {
         }
         AppUpdateService.shared.checkForUpdates()
         resizeToFit()
-        placeAnchor(under: view)
-        // Defer past the opening mouse-up — otherwise transient/semitransient treats it as
-        // an outside click and closes immediately (common with custom status-bar overlays).
-        let work = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            self.popover.show(
-                relativeTo: self.anchorView.bounds,
-                of: self.anchorView,
-                preferredEdge: .minY
-            )
+
+        let anchorScreen: NSRect? = {
+            guard let window = view.window else { return nil }
+            return window.convertToScreen(view.convert(view.bounds, to: nil))
+        }()
+        lastAnchorScreenFrame = anchorScreen
+
+        if let button = view as? NSStatusBarButton, button.window != nil {
+            // Native NSStatusBarButton: show directly anchored to the status bar button.
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             NSApp.activate(ignoringOtherApps: true)
-            // Next turn — avoid treating the opening click as an outside dismiss.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
                 guard let self, self.popover.isShown else { return }
                 self.installClickOutsideMonitor()
             }
+        } else {
+            placeAnchor(under: view)
+            // Defer past the opening mouse-up — otherwise transient/semitransient treats it as
+            // an outside click and closes immediately (common with custom status-bar overlays).
+            let work = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                self.popover.show(
+                    relativeTo: self.anchorView.bounds,
+                    of: self.anchorView,
+                    preferredEdge: .minY
+                )
+                NSApp.activate(ignoringOtherApps: true)
+                // Next turn — avoid treating the opening click as an outside dismiss.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                    guard let self, self.popover.isShown else { return }
+                    self.installClickOutsideMonitor()
+                }
+            }
+            pendingShowWorkItem = work
+            DispatchQueue.main.async(execute: work)
         }
-        pendingShowWorkItem = work
-        DispatchQueue.main.async(execute: work)
     }
 
     public func close() {
@@ -196,6 +223,7 @@ public final class StatusPopoverController {
         removeClickOutsideMonitor()
         popover.performClose(nil)
         anchorWindow.orderOut(nil)
+        lastAnchorScreenFrame = nil
     }
 
     private var clickOutsideGlobal: Any?
@@ -229,7 +257,10 @@ public final class StatusPopoverController {
         if let win = popover.contentViewController?.view.window {
             if win.frame.insetBy(dx: -4, dy: -4).contains(loc) { return }
         }
-        // Ignore the tiny anchor under the status chip that opened the menu.
+        // Ignore the anchor / button that opened the menu so clicking it can cleanly toggle.
+        if let anchorScreen = lastAnchorScreenFrame, anchorScreen.insetBy(dx: -12, dy: -12).contains(loc) {
+            return
+        }
         if anchorWindow.frame.insetBy(dx: -12, dy: -12).contains(loc) { return }
         close()
     }

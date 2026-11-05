@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "2.2.1",
+      "items": [
+        "Open the status menu anchored directly to the menu-bar icon",
+        "Debounce rapid status icon clicks and keep the anchor click from dismissing the menu"
+      ]
+    },
+    {
       "version": "2.2.0",
       "items": [
         "Click windows in the capture overlay to record the whole window",
@@ -257,12 +264,6 @@
       "version": "1.8.2",
       "items": [
         "Separate recent notes and tools cards"
-      ]
-    },
-    {
-      "version": "1.8.1",
-      "items": [
-        "Move the Tools heading into its card"
       ]
     }
   ]
