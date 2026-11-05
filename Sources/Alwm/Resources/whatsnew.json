@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "2.3.0",
+      "items": [
+        "Fix focusFollowsMouse and settings persistence across restarts and updates",
+        "Auto-recover missing workspaces 5 and 6 on secondary monitors from runtime state"
+      ]
+    },
+    {
       "version": "2.2.9",
       "items": [
         "Window manager improvements",
@@ -270,12 +277,6 @@
       "version": "1.9.1",
       "items": [
         "Route mouse focus using the workspace under the pointer"
-      ]
-    },
-    {
-      "version": "1.9.0",
-      "items": [
-        "Keep focus borders on the window's live display after cross-monitor moves"
       ]
     }
   ]

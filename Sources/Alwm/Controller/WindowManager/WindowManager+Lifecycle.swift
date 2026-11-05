@@ -52,7 +52,87 @@ extension WindowManager {
         }
     }
 
+    func reconcileWorkspacesWithRuntimeState() {
+        var knownWorkspaceIDs = Set(configStore.config.workspaces.map(\.id))
+        var candidateIDs = Set<String>()
+
+        for wsID in runtimeState.snapshot.workspaceLayouts.keys {
+            candidateIDs.insert(wsID)
+        }
+        for wsID in runtimeState.snapshot.windowWorkspace.values {
+            candidateIDs.insert(wsID)
+        }
+        for wsID in runtimeState.snapshot.bundleWorkspace.values {
+            candidateIDs.insert(wsID)
+        }
+        for wsID in runtimeState.snapshot.lastWorkspaceByMonitor.values {
+            candidateIDs.insert(wsID)
+        }
+
+        let missingIDs = candidateIDs.subtracting(knownWorkspaceIDs).sorted { a, b in
+            if let ia = Int(a), let ib = Int(b) { return ia < ib }
+            return a < b
+        }
+
+        guard !missingIDs.isEmpty else { return }
+
+        let monitorAssignments = runtimeState.monitorIndexAssignments()
+        let lastWsByMon = runtimeState.snapshot.lastWorkspaceByMonitor
+        var recovered: [WorkspaceDefinition] = []
+
+        for wsID in missingIDs {
+            var targetMonitorIndex: Int? = nil
+            for (displayStr, lastWs) in lastWsByMon where lastWs == wsID {
+                if let displayID = CGDirectDisplayID(displayStr),
+                   let monIdx = monitorAssignments[displayID] {
+                    targetMonitorIndex = monIdx
+                    break
+                }
+            }
+            if targetMonitorIndex == nil {
+                if let num = Int(wsID), num >= 5 {
+                    targetMonitorIndex = 1
+                }
+            }
+
+            let def = WorkspaceDefinition(
+                id: wsID,
+                name: wsID,
+                layout: .niri,
+                monitorIndex: targetMonitorIndex
+            )
+            recovered.append(def)
+            knownWorkspaceIDs.insert(wsID)
+        }
+
+        if !recovered.isEmpty {
+            var updatedConfig = configStore.config
+            updatedConfig.workspaces.append(contentsOf: recovered)
+            // If secondary workspaces exist (5, 6), ensure workspace 4 is on monitor 0
+            if updatedConfig.workspaces.contains(where: { ($0.id == "5" || $0.id == "6") && $0.monitorIndex == 1 }) {
+                if let idx = updatedConfig.workspaces.firstIndex(where: { $0.id == "4" && $0.monitorIndex == 1 }) {
+                    updatedConfig.workspaces[idx].monitorIndex = 0
+                }
+            }
+            updatedConfig.workspaces.sort { a, b in
+                if let ia = Int(a.id), let ib = Int(b.id) { return ia < ib }
+                return a.id < b.id
+            }
+            updatedConfig.hotkeys = ConfigStore.syncWorkspaceHotkeys(
+                workspaces: updatedConfig.workspaces,
+                hotkeys: updatedConfig.hotkeys
+            )
+            configStore.replaceConfig(updatedConfig)
+            ConfigWriter.writeWorkspaces(updatedConfig.workspaces)
+            ConfigWriter.writeHotkeys(updatedConfig.hotkeys)
+            NSLog("ALWM: recovered %d workspace(s) from runtime state: %@",
+                  recovered.count,
+                  recovered.map(\.id).joined(separator: ", "))
+        }
+    }
+
     func syncWorkspacesToMonitors() {
+        reconcileWorkspacesWithRuntimeState()
         let saved = Dictionary(uniqueKeysWithValues: monitors.monitors.compactMap { mon in
             runtimeState.snapshot.lastWorkspaceByMonitor[String(mon.id)].map { (mon.id, $0) }
         })
@@ -268,7 +348,7 @@ extension WindowManager {
     func mutateSettings(_ body: (inout LayoutSettings) -> Void) {
         var config = configStore.config
         body(&config.settings)
-        ConfigWriter.write(config)
+        ConfigWriter.writeSettings(config.settings)
         configStore.replaceConfig(config)
         applyConfig(config)
         relayout(animated: true)

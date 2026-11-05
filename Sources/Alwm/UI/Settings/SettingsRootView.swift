@@ -23,6 +23,7 @@ struct SettingsRootView: View {
     @ObservedObject var updates = AppUpdateService.shared
     @ObservedObject var credits = CreditsService.shared
     @ObservedObject var loc = LocalizationController.shared
+    @ObservedObject var coordinator: SettingsPersistCoordinator
     let monitors: [MonitorInfo]
     let monitorIndexByID: [CGDirectDisplayID: Int]
     let runningAppsProvider: () -> [AppRuleRunningApp]
@@ -65,6 +66,7 @@ struct SettingsRootView: View {
         onUndoWindowAction: @escaping () -> Void = {},
         pluginsPreviewItems: [SettingsPluginItem]? = nil,
         onRerunOnboarding: @escaping () -> Void,
+        coordinator: SettingsPersistCoordinator? = nil,
         onRegisterFlush: (((@escaping () -> Void) -> Void))? = nil
     ) {
         _config = State(initialValue: config)
@@ -72,6 +74,7 @@ struct SettingsRootView: View {
         _pluginOrderRows = State(initialValue: PluginOrderInline.loadRows())
         _windowActionHistoryEntries = State(initialValue: windowActionHistory)
         _environmentProfiles = State(initialValue: environmentProfiles)
+        self.coordinator = coordinator ?? SettingsPersistCoordinator(config: config, onSave: onSave)
         self.monitors = monitors
         self.monitorIndexByID = monitorIndexByID
         self.runningAppsProvider = runningAppsProvider
@@ -90,7 +93,6 @@ struct SettingsRootView: View {
         self.onUndoWindowAction = onUndoWindowAction
         self.pluginsPreviewItems = pluginsPreviewItems
         self.onRerunOnboarding = onRerunOnboarding
-        onRegisterFlush?({ [self] in persist() })
     }
 
     var body: some View {
@@ -177,6 +179,8 @@ struct SettingsRootView: View {
         }
         .onChange(of: config) { oldConfig, newConfig in
             hasPendingLocalChanges = true
+            coordinator.hasPendingChanges = true
+            coordinator.liveConfig = newConfig
             ConfigWriter.writeChanges(from: oldConfig, to: newConfig)
             schedulePersist()
         }
@@ -185,7 +189,7 @@ struct SettingsRootView: View {
             PluginManager.shared.requestBarRefresh()
         }
         .onDisappear {
-            let shouldFlush = hasPendingLocalChanges
+            let shouldFlush = hasPendingLocalChanges || coordinator.hasPendingChanges
             persistTask?.cancel()
             persistTask = nil
             // Do not write the view's original snapshot when only another ALWM

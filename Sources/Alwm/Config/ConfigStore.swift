@@ -45,7 +45,16 @@ public final class ConfigStore: @unchecked Sendable {
             try Self.defaultGesturesTOML.write(to: ConfigPaths.gestures, atomically: true, encoding: .utf8)
         }
         if !fm.fileExists(atPath: ConfigPaths.workspaces.path) {
-            try Self.defaultWorkspacesTOML.write(to: ConfigPaths.workspaces, atomically: true, encoding: .utf8)
+            if let backups = try? fm.contentsOfDirectory(at: ConfigPaths.root, includingPropertiesForKeys: nil)
+                .filter({ $0.lastPathComponent.hasPrefix("workspaces.toml.pre-") })
+                .sorted(by: { $0.lastPathComponent > $1.lastPathComponent }),
+               let newest = backups.first,
+               let text = try? String(contentsOf: newest, encoding: .utf8),
+               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                try text.write(to: ConfigPaths.workspaces, atomically: true, encoding: .utf8)
+            } else {
+                try Self.defaultWorkspacesTOML.write(to: ConfigPaths.workspaces, atomically: true, encoding: .utf8)
+            }
         }
         let sample = ConfigPaths.appRulesDir.appendingPathComponent("float-system.toml.sample")
         if !fm.fileExists(atPath: sample.path) {
@@ -821,6 +830,18 @@ public final class ConfigStore: @unchecked Sendable {
     [[workspaces]]
     id = "4"
     name = "4"
+    layout = "niri"
+    monitorIndex = 0
+
+    [[workspaces]]
+    id = "5"
+    name = "5"
+    layout = "niri"
+    monitorIndex = 1
+
+    [[workspaces]]
+    id = "6"
+    name = "6"
     layout = "niri"
     monitorIndex = 1
     """

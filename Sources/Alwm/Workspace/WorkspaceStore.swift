@@ -161,6 +161,11 @@ public final class WorkspaceStore: @unchecked Sendable {
                 next[def.id] = WorkspaceState(id: def.id, name: def.name, layout: def.layout)
             }
         }
+        for (id, state) in workspaces where next[id] == nil {
+            if !state.columns.isEmpty {
+                next[id] = state
+            }
+        }
         workspaces = next
 
         let live = Set(monitors.map(\.id))

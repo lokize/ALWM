@@ -270,6 +270,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         }
 
         try configStore.load()
+        reconcileWorkspacesWithRuntimeState()
         WallpaperController.shared.runtimeState = runtimeState
         applyConfig(configStore.config)
         AppUpdateService.shared.checkForUpdates()

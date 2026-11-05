@@ -47,6 +47,10 @@ public final class SettingsWindowController {
         detachCloseObserver()
         let currentMonitors = monitorsProvider?() ?? []
         PluginManager.shared.settings.resolveMonitors(currentMonitors)
+        let coordinator = SettingsPersistCoordinator(config: config, onSave: { [weak self] c in self?.onSave?(c) })
+        self.pendingFlusher = { [weak coordinator] in
+            coordinator?.flushIfNeeded()
+        }
         let root = SettingsRootView(
             config: config,
             initialPane: pane,
@@ -73,7 +77,7 @@ public final class SettingsWindowController {
             windowActionHistory: windowActionHistoryProvider?() ?? [],
             onUndoWindowAction: { [weak self] in self?.onUndoWindowAction?() },
             onRerunOnboarding: { [weak self] in self?.onRerunOnboarding?() },
-            onRegisterFlush: { [weak self] flusher in self?.pendingFlusher = flusher }
+            coordinator: coordinator
         )
         let hosting = NSHostingController(rootView: root)
         let window = NSWindow(contentViewController: hosting)
