@@ -325,6 +325,14 @@ extension WindowManager {
             let missingLongEnough = Date().timeIntervalSince(firstMissing) >= 0.75
             if id == quake.windowID {
                 if !QuakeTerminalController.isWindowAlive(id) {
+                    if let app = NSRunningApplication(processIdentifier: id.pid), !app.isTerminated,
+                       let replacementNum = QuakeTerminalController.pickWindowServerWindowNumber(for: id.pid) {
+                        let replacement = WindowID(pid: id.pid, windowNumber: replacementNum)
+                        NSLog("ALWM Quake: soft-rebinding windowNumber churn %@ -> %@", id.token, replacement.token)
+                        quake.rebind(replacement)
+                        runtimeState.setQuakeWindowToken(replacement.token)
+                        continue
+                    }
                     NSLog("ALWM Quake: window %@ is no longer alive in WindowServer — closing", id.token)
                     handleQuakeWindowClosed()
                     continue

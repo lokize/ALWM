@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "version": "2.2.5",
+      "items": [
+        "Quake terminal sempre minimiza ao apertar Option+T e reabre a mesma sessão sem abrir duplicados"
+      ]
+    },
+    {
       "version": "2.2.4",
       "items": [
         "Salva layout completo e apps abertos ao fechar para restaurar no reboot",
@@ -260,12 +266,6 @@
       "version": "1.8.6",
       "items": [
         "Attach pasted images to Notepad notes"
-      ]
-    },
-    {
-      "version": "1.8.5",
-      "items": [
-        "Fix scrolling in Plugins and keep Settings scroll positions when editing workspaces or plugin order"
       ]
     }
   ]

@@ -123,6 +123,50 @@ public final class QuakeTerminalController {
         }
     }
 
+    public static func pickWindowServerWindowNumber(for pid: pid_t) -> Int? {
+        guard let list = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] else {
+            return nil
+        }
+        var candidates: [(number: Int, area: Double)] = []
+        for dict in list {
+            guard let ownerPID = (dict[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
+                  ownerPID == pid else { continue }
+            guard let layer = (dict[kCGWindowLayer as String] as? NSNumber)?.intValue,
+                  layer == 0 else { continue }
+            guard let num = (dict[kCGWindowNumber as String] as? NSNumber)?.intValue,
+                  num > 0 else { continue }
+            if let bounds = dict[kCGWindowBounds as String] as? [String: Any],
+               let w = (bounds["Width"] as? NSNumber)?.doubleValue,
+               let h = (bounds["Height"] as? NSNumber)?.doubleValue,
+               w >= 80, h >= 80 {
+                candidates.append((number: num, area: w * h))
+            }
+        }
+        return candidates.max(by: { $0.area < $1.area })?.number
+    }
+
+    public static func pickRunningAppWindow(
+        for bundleID: String,
+        in windows: [WindowID: ManagedWindow],
+        ax: AXTracker
+    ) -> WindowID? {
+        if let win = windows.values.first(where: { $0.bundleID == bundleID && $0.isScratchpad }) {
+            return win.id
+        }
+        if let win = windows.values.first(where: { $0.bundleID == bundleID && !$0.isIgnored }) {
+            return win.id
+        }
+        if let win = ax.currentWindows.first(where: { $0.bundleID == bundleID && !$0.isIgnored }) {
+            return win.id
+        }
+        for app in NSRunningApplication.runningApplications(withBundleIdentifier: bundleID) where !app.isTerminated {
+            if let num = pickWindowServerWindowNumber(for: app.processIdentifier) {
+                return WindowID(pid: app.processIdentifier, windowNumber: num)
+            }
+        }
+        return nil
+    }
+
     public func clearPendingAdopt() {
         pendingAdoptBundleID = nil
     }
@@ -176,15 +220,27 @@ public final class QuakeTerminalController {
             if windows[id] == nil && ax.currentAX[id] == nil {
                 onNeedRescan?()
             }
-            let isAlive = windows[id] != nil || ax.currentAX[id] != nil || Self.isWindowAlive(id)
+            var activeID = id
+            var isAlive = windows[id] != nil || ax.currentAX[id] != nil || Self.isWindowAlive(id)
+            if !isAlive {
+                // If the process is still running, check if WindowServer churned the windowNumber
+                if let app = NSRunningApplication(processIdentifier: id.pid), !app.isTerminated,
+                   let replacementNum = Self.pickWindowServerWindowNumber(for: id.pid) {
+                    activeID = WindowID(pid: id.pid, windowNumber: replacementNum)
+                    rebind(activeID)
+                    isAlive = true
+                }
+            }
+
             if isAlive {
-                if isVisible {
-                    NSLog("ALWM Quake: hide %@", id.token)
-                    hide(id: id, settings: settings, monitor: monitor, applyFrame: applyFrame)
+                let isFrontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier == activeID.pid
+                if isVisible || isFrontmost {
+                    NSLog("ALWM Quake: hide %@", activeID.token)
+                    hide(id: activeID, settings: settings, monitor: monitor, applyFrame: applyFrame)
                     focusTiled()
                 } else {
-                    NSLog("ALWM Quake: show existing %@", id.token)
-                    show(id: id, settings: settings, monitor: monitor, applyFrame: applyFrame, ax: ax)
+                    NSLog("ALWM Quake: show existing %@", activeID.token)
+                    show(id: activeID, settings: settings, monitor: monitor, applyFrame: applyFrame, ax: ax)
                 }
                 return
             }
@@ -194,12 +250,10 @@ public final class QuakeTerminalController {
             blurPanel?.orderOut(nil)
         }
 
-        // Prefer an already-adopted scratchpad — never yank a normal tiled/floating shell.
-        if let existing = windows.values.first(where: {
-            $0.bundleID == bundleID && $0.isScratchpad
-        }) {
-            NSLog("ALWM Quake: adopt scratchpad %@", existing.id.token)
-            adopt(existing.id, settings: settings, monitor: monitor, applyFrame: applyFrame, ax: ax)
+        // Never open duplicate terminals: reuse ANY existing window for this bundle
+        if let existingID = Self.pickRunningAppWindow(for: bundleID, in: windows, ax: ax) {
+            NSLog("ALWM Quake: reusing existing shell window %@", existingID.token)
+            adopt(existingID, settings: settings, monitor: monitor, applyFrame: applyFrame, ax: ax)
             return
         }
 
@@ -341,19 +395,26 @@ public final class QuakeTerminalController {
         presentationGeneration &+= 1
         activeMonitorID = monitor.id
         let visible = visibleFrame(settings: settings, monitor: monitor)
+        let bundleID = Self.resolveBundleID(configured: settings.bundleID)
         QuakeShellAppearance.sync(
-            bundleID: Self.resolveBundleID(configured: settings.bundleID),
+            bundleID: bundleID,
             settings: settings
         )
         updateBlur(settings: settings, frame: visible, monitor: monitor, visible: true)
         setVisible(true)
 
+        if let app = NSRunningApplication(processIdentifier: id.pid) {
+            _ = app.unhide()
+            app.activate(options: [.activateIgnoringOtherApps])
+        }
+        ax.revealMinimizedWindows(bundleIDs: [bundleID])
+        ax.setMinimized(false, id: id)
+
         // Snap open (no multi-step lerp). Mid-animation AX + applyWorkspaceVisibility used to
         // fight each other and leave siblings half-height / Quake stuck mid-slide.
         applyFrame(id, visible)
-        ax.setMinimized(false, id: id)
         ax.focus(id)
-        if Self.resolveBundleID(configured: settings.bundleID) == "com.mitchellh.ghostty" {
+        if bundleID == "com.mitchellh.ghostty" {
             if let script = QuakeShellAppearance.floatOnTopActionScript(windowID: id.windowNumber, enabled: true) {
                 runAppleScript(script, completion: {})
             }
@@ -615,6 +676,13 @@ public final class QuakeTerminalController {
         QuakeShellAppearance.sync(bundleID: bundleID, settings: settings)
         switch bundleID {
         case "com.apple.Terminal":
+            if let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == bundleID }) {
+                app.activate(options: [])
+                if Self.pickWindowServerWindowNumber(for: app.processIdentifier) != nil {
+                    completion()
+                    return
+                }
+            }
             let script = """
             tell application "Terminal"
               activate
@@ -626,6 +694,11 @@ public final class QuakeTerminalController {
             // Avoid AppleScript/System Events — they can hang forever and freeze ALWM.
             if let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == bundleID }) {
                 app.activate(options: [])
+                // If Ghostty already has any window in WindowServer, DO NOT spawn another!
+                if Self.pickWindowServerWindowNumber(for: app.processIdentifier) != nil {
+                    completion()
+                    return
+                }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
                     Self.postCommandN()
                     completion()
@@ -683,7 +756,15 @@ public final class QuakeTerminalController {
     private func pickNewestWindow(bundleID: String, in ax: AXTracker) -> WindowID? {
         let matches = ax.currentWindows.filter { $0.bundleID == bundleID && !$0.isIgnored }
         // Highest windowNumber is usually the newest.
-        return matches.max(by: { $0.id.windowNumber < $1.id.windowNumber })?.id
+        if let maxMatch = matches.max(by: { $0.id.windowNumber < $1.id.windowNumber })?.id {
+            return maxMatch
+        }
+        for app in NSRunningApplication.runningApplications(withBundleIdentifier: bundleID) where !app.isTerminated {
+            if let num = Self.pickWindowServerWindowNumber(for: app.processIdentifier) {
+                return WindowID(pid: app.processIdentifier, windowNumber: num)
+            }
+        }
+        return nil
     }
 
     public func forgetIfGone(windows: [WindowID: ManagedWindow]) {

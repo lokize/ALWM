@@ -224,4 +224,36 @@ struct OverlayToggleHotkeyTests {
         }
         quake.setVisibleForRecovery(false)
     }
+
+    @Test("Quake toggle reuses existing shell window and never launches duplicate terminal")
+    @MainActor
+    func quakeToggleReusesExistingShell() {
+        let quake = QuakeTerminalController()
+        let id = WindowID(pid: 888_888, windowNumber: 42)
+        let monitor = MonitorInfo(id: 1, frame: .init(x: 0, y: 0, width: 1440, height: 900), visibleFrame: .init(x: 0, y: 24, width: 1440, height: 876), name: "Test")
+        var settings = QuakeSettings.default
+        settings.bundleID = "example.existing-terminal"
+        settings.blur = false
+        settings.dismissOnClickOutside = false
+        let windows = [id: ManagedWindow(id: id, title: "Existing Terminal", bundleID: settings.bundleID, appName: "Terminal", frame: monitor.visibleFrame)]
+        let ax = AXTracker()
+
+        // 1. Initial toggle with windowID == nil adopts the existing shell window
+        quake.toggle(settings: settings, monitor: monitor, windows: windows, ax: ax, applyFrame: { _, _ in }, focusTiled: {})
+        #expect(quake.isVisible == true)
+        #expect(quake.windowID == id)
+        #expect(quake.isLaunchPending == false)
+
+        // 2. Pressing again while open minimizes/hides the same session
+        quake.toggle(settings: settings, monitor: monitor, windows: windows, ax: ax, applyFrame: { _, _ in }, focusTiled: {})
+        #expect(quake.isVisible == false)
+        #expect(quake.windowID == id)
+
+        // 3. Pressing again while hidden reopens the same session
+        quake.toggle(settings: settings, monitor: monitor, windows: windows, ax: ax, applyFrame: { _, _ in }, focusTiled: {})
+        #expect(quake.isVisible == true)
+        #expect(quake.windowID == id)
+
+        quake.setVisibleForRecovery(false)
+    }
 }

@@ -164,8 +164,24 @@ extension WindowManager {
                     if QuakeTerminalController.isWindowAlive(probeID) {
                         quake.rebind(probeID)
                         NSLog("ALWM Quake: rebound from live WindowServer token %@", token)
+                    } else if let app = NSRunningApplication(processIdentifier: pid), !app.isTerminated,
+                              let newNum = QuakeTerminalController.pickWindowServerWindowNumber(for: pid) {
+                        let replacement = WindowID(pid: pid, windowNumber: newNum)
+                        quake.rebind(replacement)
+                        runtimeState.setQuakeWindowToken(replacement.token)
+                        NSLog("ALWM Quake: rebound from live WindowServer PID %d → %@", pid, replacement.token)
                     }
                 }
+            }
+        }
+        if quake.windowID == nil {
+            let bundleID = QuakeTerminalController.resolveBundleID(
+                configured: configStore.config.settings.quake.bundleID
+            )
+            if let existingID = QuakeTerminalController.pickRunningAppWindow(for: bundleID, in: windowsByID, ax: ax) {
+                quake.rebind(existingID)
+                runtimeState.setQuakeWindowToken(existingID.token)
+                NSLog("ALWM Quake: auto-rebound running shell: %@", existingID.token)
             }
         }
         if quake.activeMonitorID == nil,
@@ -625,6 +641,12 @@ extension WindowManager {
         guard let monitor = monitorContainingQuakeWindow() ?? monitors.monitors.first else { return }
         let settings = configStore.config.settings.quake
         let frame = quake.visibleFrame(settings: settings, monitor: monitor)
+        let bundleID = QuakeTerminalController.resolveBundleID(configured: settings.bundleID)
+        if let app = NSRunningApplication(processIdentifier: id.pid) {
+            _ = app.unhide()
+            app.activate(options: [.activateIgnoringOtherApps])
+        }
+        ax.revealMinimizedWindows(bundleIDs: [bundleID])
         ax.setMinimized(false, id: id)
         ax.apply(frame: frame, to: id)
         ax.focus(id)
@@ -718,6 +740,12 @@ extension WindowManager {
             suppressQuakeDismissUntil = Date().addingTimeInterval(0.8)
             if quake.isVisible {
                 let frame = quake.visibleFrame(settings: settings, monitor: presentationMonitor)
+                let bundleID = QuakeTerminalController.resolveBundleID(configured: settings.bundleID)
+                if let app = NSRunningApplication(processIdentifier: id.pid) {
+                    _ = app.unhide()
+                    app.activate(options: [.activateIgnoringOtherApps])
+                }
+                ax.revealMinimizedWindows(bundleIDs: [bundleID])
                 ax.setMinimized(false, id: id)
                 ax.apply(frame: frame, to: id)
                 ax.focus(id)
