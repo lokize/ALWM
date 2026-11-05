@@ -583,6 +583,38 @@ struct ReliabilityRegressionTests {
         #expect(afterStackClose.focusedWindowID == ids[3])
     }
 
+    @Test("closing a window automatically expands surviving column to fill usable width")
+    @MainActor
+    func closingWindowExpandsSurvivingColumn() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let monitor = MonitorInfo(id: 1, frame: .init(x: 0, y: 0, width: 1440, height: 900), visibleFrame: .init(x: 0, y: 24, width: 1440, height: 876), name: "Test")
+        let manager = WindowManager(
+            runtimeState: RuntimeStateStore(url: root.appendingPathComponent("runtime.json")),
+            notesStore: NotesStore(root: root.appendingPathComponent("notes")),
+            monitors: MonitorStore(monitors: [monitor])
+        )
+        manager.isBootstrapping = false
+        manager.workspaces.configure(definitions: [.init(id: "1", name: "1")], monitors: [monitor])
+        let id1 = WindowID(pid: 999_851, windowNumber: 1)
+        let id2 = WindowID(pid: 999_852, windowNumber: 1)
+        let usable = manager.engine.usableArea(monitor: monitor.layoutFrame)
+        manager.windowsByID[id1] = ManagedWindow(id: id1, title: "App 1", bundleID: "example.app1", appName: "App1", frame: usable)
+        manager.windowsByID[id2] = ManagedWindow(id: id2, title: "App 2", bundleID: "example.app2", appName: "App2", frame: usable)
+        manager.windowWorkspace[id1] = "1"
+        manager.windowWorkspace[id2] = "1"
+        manager.workspaces.setWorkspace(WorkspaceState(id: "1", name: "1", columns: [
+            .init(windows: [id1], width: usable.width / 2),
+            .init(windows: [id2], width: usable.width / 2)
+        ]))
+
+        manager.handleUserClosedWindow(id2)
+
+        let ws = manager.workspaces.workspaces["1"]!
+        #expect(ws.columns.count == 1)
+        #expect(abs(ws.columns[0].width - usable.width) < 1.0)
+    }
+
     @Test("a compact second document window is not mistaken for a popup")
     @MainActor
     func compactSiblingWindowStillTiles() {

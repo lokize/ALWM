@@ -1672,13 +1672,14 @@ extension WindowManager {
         let tiledPending = pendingAXDestroyWorkItems.keys.filter {
             windowsByID[$0]?.isTiled == true && workspaces.workspaceID(containing: $0) != nil
         }
-        if tiledPending.count >= 2 {
+        let uniquePendingPIDs = Set(tiledPending.map(\.pid))
+        if uniquePendingPIDs.count >= 2 {
             for pending in pendingAXDestroyWorkItems.values { pending.cancel() }
             pendingAXDestroyWorkItems.removeAll()
             noteAXMassDropForRecovery()
             return
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: work)
     }
 
     func handleUserClosedWindow(_ id: WindowID) {
@@ -1732,6 +1733,7 @@ extension WindowManager {
         appRuleFramesApplied.remove(id)
 
         if let home, wasInColumns {
+            lastSnapSignature[home] = nil
             pruneVacantColumnSlots(wsID: home)
             if isHomeActiveOnAnyMonitor(home) {
                 snapWorkspaceTilesAfterColumnChange(home)

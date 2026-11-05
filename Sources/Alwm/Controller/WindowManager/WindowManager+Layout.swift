@@ -354,8 +354,6 @@ extension WindowManager {
             let isFloatGhost = windowsByID[id]?.isFloating == true && id != quake.windowID
             let home = windowWorkspace[id] ?? workspaces.workspaceID(containing: id)
             let homeWasActive = home.map { isHomeActiveOnAnyMonitor($0) } ?? false
-            // User clicked the red X on an active workspace — forget quickly (not a park blip).
-            // Never treat sleep/wake AX mass-drop as red-X (that quit Discord/WhatsApp — move.log).
             let closedOnActive = homeWasActive
                 && workspaces.workspaceID(containing: id) != nil
                 && !isApplyingVisibility
@@ -365,6 +363,7 @@ extension WindowManager {
                 : (isFloatGhost ? 2 : (closedOnActive ? 2 : 4))
             let count = (missingScanCounts[id] ?? 0) + 1
             missingScanCounts[id] = count
+
             // Closed windows vanish from AX — drop the column slot once stable (not on first blip).
             if workspaces.workspaceID(containing: id) != nil, !isMoveProtectedTile(id) {
                 if let home = workspaces.workspaceID(containing: id) {
@@ -382,6 +381,7 @@ extension WindowManager {
                     runtimeState.setAssignment(nil, for: id)
                     columnsStripped = true
                     if let home {
+                        lastSnapSignature[home] = nil
                         pruneVacantColumnSlots(wsID: home)
                         strippedLayouts.insert(home)
                     }
@@ -409,6 +409,7 @@ extension WindowManager {
                 }
                 if let home = workspaces.workspaceID(containing: id) {
                     strippedLayouts.insert(home)
+                    lastSnapSignature[home] = nil
                 }
                 if id == quake.windowID {
                     quake.forgetIfFullyGone(windows: [:])
@@ -426,6 +427,9 @@ extension WindowManager {
                 cancelSameBundleSiblingSettle(id)
             }
             // Keep last known ManagedWindow (until forgotten) so we can still park by sticky id.
+        }
+        if !removed.isEmpty, !isBootstrapping, !isResumeRecovering {
+            ax.scheduleScanAll(delay: 0.8)
         }
         for id in next {
             missingScanCounts.removeValue(forKey: id)
@@ -834,6 +838,10 @@ extension WindowManager {
             }
             let addedTiles = Set(added).subtracting(addedFloats)
             ingestRelayoutWorkItem?.cancel()
+            let homes = Set(addedTiles.compactMap { workspaces.workspaceID(containing: $0) })
+            for home in homes {
+                lastSnapSignature[home] = nil
+            }
             if !shouldDeferVisibilityRefreshFromIngest() {
                 if !addedTiles.isEmpty {
                     // Snap columns only — a full visibility pass hide/reveals the new tile in a loop.
@@ -864,7 +872,6 @@ extension WindowManager {
                         restoreWorkspaceLayoutsFromDisk()
                         prepareAllActiveWorkspaceLayouts()
                     } else {
-                        let homes = Set(addedTiles.compactMap { workspaces.workspaceID(containing: $0) })
                         for home in homes where isHomeActiveOnAnyMonitor(home) {
                             logMove("tile new-window snap ws=\(home) ids=\(addedTiles.map(\.token).joined(separator: ","))")
                             snapWorkspaceTilesAfterColumnChange(home)
@@ -872,6 +879,18 @@ extension WindowManager {
                     }
                 } else if !addedFloats.isEmpty {
                     revealActiveFloats(ids: addedFloats)
+                }
+            } else if !addedTiles.isEmpty {
+                let delay = max(0.1, max(
+                    suppressWorkspaceFollowUntil.timeIntervalSinceNow,
+                    suppressIngestReassignUntil.timeIntervalSinceNow
+                ) + 0.05)
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                    guard let self else { return }
+                    for home in homes where self.isHomeActiveOnAnyMonitor(home) {
+                        self.lastSnapSignature[home] = nil
+                        self.snapWorkspaceTilesAfterColumnChange(home)
+                    }
                 }
             }
         } else if !shouldDeferVisibilityRefreshFromIngest() {

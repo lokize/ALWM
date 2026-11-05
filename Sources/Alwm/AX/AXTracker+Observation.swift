@@ -440,7 +440,13 @@ extension AXTracker {
         guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
               app.activationPolicy == .regular else { return }
         observe(pid: app.processIdentifier)
-        scheduleScanAll(delay: 0.35)
+        scheduleScanAll(delay: 0.25)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) { [weak self] in
+            self?.scheduleScanAll(delay: 0)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.25) { [weak self] in
+            self?.scheduleScanAll(delay: 0)
+        }
     }
 
 
@@ -451,11 +457,12 @@ extension AXTracker {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .defaultMode)
         }
         observers.removeValue(forKey: pid)
-        let gone = axWindows.keys.filter { $0.pid == pid }
+        let gone = Set(axWindows.keys.filter { $0.pid == pid } + managed.keys.filter { $0.pid == pid })
         for id in gone {
             axWindows.removeValue(forKey: id)
             managed.removeValue(forKey: id)
             titleObservedTokens.remove(id.token)
+            delegate?.axTrackerWindowDidClose(id)
         }
         publish()
     }

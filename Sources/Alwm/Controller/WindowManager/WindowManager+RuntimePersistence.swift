@@ -937,7 +937,7 @@ extension WindowManager {
         engine.niri.snapViewToFocusedColumn(&ws, usableWidth: usable.width)
         ws.viewOffset = min(ws.viewOffset, engine.niri.maxViewOffset(workspace: ws, usable: usable))
         workspaces.setWorkspace(ws)
-        let signature = "\(ws.columns.count):\(structuralSnapSignature(for: ws))"
+        let signature = "\(ws.columns.count):\(structuralSnapSignature(for: ws)):\(Int(usable.width)):\(ws.columns.map { Int($0.width) })"
         if lastSnapSignature[wsID] == signature { return }
         lastSnapSignature[wsID] = signature
         markStructuralLayoutChange(wsID)

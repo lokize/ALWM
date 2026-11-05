@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "version": "2.2.8",
+      "items": [
+        "Accessibility bridge updates",
+        "Window manager improvements",
+        "Update ReliabilityRegressionTests"
+      ]
+    },
+    {
       "version": "2.2.7",
       "items": [
         "Window manager improvements",
@@ -268,13 +276,6 @@
       "items": [
         "Fix mouse focus across vertically offset monitors and inactive workspaces",
         "Improve wallpaper filenames with character and artwork names"
-      ]
-    },
-    {
-      "version": "1.8.8",
-      "items": [
-        "Focus follows mouse across displays",
-        "Rename wallpaper files without resolution prefixes"
       ]
     }
   ]
