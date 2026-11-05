@@ -173,6 +173,23 @@ extension WindowManager {
         syncTokenIndex()
     }
 
+    func persistRuntimeStateBeforeQuit() {
+        settingsUI.flushPendingChanges()
+        let wasBootstrapping = isBootstrapping
+        let wasResume = isResumeRecovering
+        let wasDestructive = allowDestructiveLayoutFlush
+        isBootstrapping = false
+        isResumeRecovering = false
+        allowDestructiveLayoutFlush = true
+        let all = Set(workspaces.workspaces.keys)
+        persistRuntimeState(forceWorkspaceLayouts: all)
+        allowDestructiveLayoutFlush = wasDestructive
+        isBootstrapping = wasBootstrapping
+        isResumeRecovering = wasResume
+        NSLog("ALWM: persisted runtime state before quit")
+        logMove("persist layouts before quit ws=\(all.sorted().joined(separator: ","))")
+    }
+
     func persistRuntimeStateBeforeUpdate() {
         let wasBootstrapping = isBootstrapping
         let wasResume = isResumeRecovering
@@ -215,7 +232,7 @@ extension WindowManager {
             for (id, wsID) in windowWorkspace {
                 runtimeState.setAssignment(wsID, for: id)
             }
-            if !layoutStillRecovering {
+            if !layoutStillRecovering || forceUserLayout {
                 runtimeState.pruneWindows(keeping: Set(windowsByID.keys))
             }
         }

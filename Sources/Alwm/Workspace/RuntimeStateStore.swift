@@ -125,10 +125,13 @@ public final class RuntimeStateStore: @unchecked Sendable {
         public var quakeWorkspaceID: String?
         /// Stable logical monitor slot keyed by the macOS display ID.
         public var monitorIndexByDisplay: [String: Int]
+        /// Persisted wallpaper file path by display ID ("all" or displayID number string).
+        public var lastWallpaperByScreen: [String: String]
 
         enum CodingKeys: String, CodingKey {
             case lastWorkspaceByMonitor, windowWorkspace, bundleWorkspace, lastWorkspace, workspaceLayouts
             case quakeWindowToken, quakeMonitorID, quakeWorkspaceID, monitorIndexByDisplay
+            case lastWallpaperByScreen
         }
 
         public init(
@@ -140,7 +143,8 @@ public final class RuntimeStateStore: @unchecked Sendable {
             quakeWindowToken: String? = nil,
             quakeMonitorID: String? = nil,
             quakeWorkspaceID: String? = nil,
-            monitorIndexByDisplay: [String: Int] = [:]
+            monitorIndexByDisplay: [String: Int] = [:],
+            lastWallpaperByScreen: [String: String] = [:]
         ) {
             self.lastWorkspaceByMonitor = lastWorkspaceByMonitor
             self.windowWorkspace = windowWorkspace
@@ -151,6 +155,7 @@ public final class RuntimeStateStore: @unchecked Sendable {
             self.quakeMonitorID = quakeMonitorID
             self.quakeWorkspaceID = quakeWorkspaceID
             self.monitorIndexByDisplay = monitorIndexByDisplay
+            self.lastWallpaperByScreen = lastWallpaperByScreen
         }
 
         public init(from decoder: Decoder) throws {
@@ -164,6 +169,7 @@ public final class RuntimeStateStore: @unchecked Sendable {
             quakeMonitorID = try c.decodeIfPresent(String.self, forKey: .quakeMonitorID)
             quakeWorkspaceID = try c.decodeIfPresent(String.self, forKey: .quakeWorkspaceID)
             monitorIndexByDisplay = try c.decodeIfPresent([String: Int].self, forKey: .monitorIndexByDisplay) ?? [:]
+            lastWallpaperByScreen = try c.decodeIfPresent([String: String].self, forKey: .lastWallpaperByScreen) ?? [:]
         }
     }
 
@@ -237,6 +243,18 @@ public final class RuntimeStateStore: @unchecked Sendable {
     public func setLastWorkspace(_ workspaceID: String, on monitorID: CGDirectDisplayID) {
         snapshot.lastWorkspaceByMonitor[String(monitorID)] = workspaceID
         snapshot.lastWorkspace = workspaceID
+    }
+
+    public func setLastWallpaper(_ path: String?, for screenKey: String) {
+        if let path {
+            snapshot.lastWallpaperByScreen[screenKey] = path
+        } else {
+            snapshot.lastWallpaperByScreen.removeValue(forKey: screenKey)
+        }
+    }
+
+    public func lastWallpaper(for screenKey: String) -> String? {
+        snapshot.lastWallpaperByScreen[screenKey]
     }
 
     public func setQuakeWindowToken(_ token: String?) {

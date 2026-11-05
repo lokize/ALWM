@@ -64,7 +64,8 @@ struct SettingsRootView: View {
         windowActionHistory: [WindowActionHistoryEntry] = [],
         onUndoWindowAction: @escaping () -> Void = {},
         pluginsPreviewItems: [SettingsPluginItem]? = nil,
-        onRerunOnboarding: @escaping () -> Void
+        onRerunOnboarding: @escaping () -> Void,
+        onRegisterFlush: (((@escaping () -> Void) -> Void))? = nil
     ) {
         _config = State(initialValue: config)
         _pane = State(initialValue: initialPane)
@@ -89,6 +90,7 @@ struct SettingsRootView: View {
         self.onUndoWindowAction = onUndoWindowAction
         self.pluginsPreviewItems = pluginsPreviewItems
         self.onRerunOnboarding = onRerunOnboarding
+        onRegisterFlush?({ [self] in persist() })
     }
 
     var body: some View {

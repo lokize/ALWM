@@ -270,6 +270,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         }
 
         try configStore.load()
+        WallpaperController.shared.runtimeState = runtimeState
         applyConfig(configStore.config)
         AppUpdateService.shared.checkForUpdates()
         configStore.onChange = { [weak self] config in
@@ -631,7 +632,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
     public func stop() {
         notepad.store.flushPendingSaves()
         overlayClickCapture.stop()
-        persistRuntimeState()
+        persistRuntimeStateBeforeQuit()
         for obs in systemObservers {
             NSWorkspace.shared.notificationCenter.removeObserver(obs)
             NotificationCenter.default.removeObserver(obs)

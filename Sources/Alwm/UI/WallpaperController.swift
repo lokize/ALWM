@@ -90,7 +90,16 @@ enum WallpaperCatalog {
 
     static func files(in directory: String, recursive: Bool) -> [URL] {
         guard !directory.isEmpty else { return [] }
-        let root = URL(fileURLWithPath: NSString(string: directory).expandingTildeInPath, isDirectory: true)
+        let expanded = NSString(string: directory).expandingTildeInPath
+        let root = URL(fileURLWithPath: expanded)
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: root.path, isDirectory: &isDir), !isDir.boolValue {
+            let ext = root.pathExtension.lowercased()
+            if imageExtensions.contains(ext) || videoExtensions.contains(ext) {
+                return [root]
+            }
+            return []
+        }
         let keys: [URLResourceKey] = [.isRegularFileKey]
         let urls: [URL]
         if recursive {
@@ -208,6 +217,7 @@ final class WallpaperController: ObservableObject {
         }
     }
 
+    public weak var runtimeState: RuntimeStateStore?
     private var settings: WallpaperSettings = .default
     private var timer: Timer?
     private var nextRotationDate: Date?
@@ -216,6 +226,7 @@ final class WallpaperController: ObservableObject {
     private var pendingByScreen: [String: URL] = [:]
     private var historyByScreen: [String: WallpaperNavigationHistory] = [:]
     private var observers: [NSObjectProtocol] = []
+    private var hasAppliedInitialWallpaper = false
     @Published private(set) var activeWallpaper: WallpaperNotificationContent.Payload?
     @Published private(set) var upcomingWallpaper: WallpaperNotificationContent.Payload?
     @Published private(set) var canGoToPreviousWallpaper = false
@@ -250,13 +261,19 @@ final class WallpaperController: ObservableObject {
         let screens = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.advance() }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if self.settings.rotationEnabled {
+                    self.advance()
+                } else {
+                    self.reapplyCurrent()
+                }
+            }
         }
         observers = [sleep, wake, screenSleep, screenWake, screens]
     }
 
     func apply(_ next: WallpaperSettings) {
-        guard settings != next else { return }
         let shouldAdvance = WallpaperUpdatePolicy.shouldAdvance(from: settings, to: next)
         let muteChanged = settings.videoMuted != next.videoMuted
         settings = next
@@ -268,12 +285,18 @@ final class WallpaperController: ObservableObject {
             activeWallpaper = nil
             upcomingWallpaper = nil
             updateRotationStatus()
+            hasAppliedInitialWallpaper = false
             return
         }
-        if shouldAdvance {
-            pendingByScreen.removeAll()
-            historyByScreen.removeAll()
-            advance(resetRotationTimer: false)
+        if shouldAdvance || !hasAppliedInitialWallpaper {
+            if !next.rotationEnabled && restorePersistedWallpapers() {
+                hasAppliedInitialWallpaper = true
+            } else {
+                pendingByScreen.removeAll()
+                historyByScreen.removeAll()
+                advance(resetRotationTimer: false)
+                hasAppliedInitialWallpaper = true
+            }
         } else if muteChanged {
             videoSessions.values.forEach { $0.setMuted(next.videoMuted) }
         }
@@ -480,20 +503,91 @@ final class WallpaperController: ObservableObject {
     }
 
     @discardableResult
+    func restorePersistedWallpapers() -> Bool {
+        guard settings.enabled, let runtime = runtimeState else { return false }
+        let screens = NSScreen.screens
+        guard !screens.isEmpty else { return false }
+        if settings.separatePerMonitor {
+            var appliedAny = false
+            for screen in screens {
+                let id = Self.displayID(of: screen)
+                let key = String(id)
+                guard let savedPath = runtime.lastWallpaper(for: key),
+                      FileManager.default.fileExists(atPath: savedPath) else { continue }
+                let url = URL(fileURLWithPath: savedPath)
+                if show(url, on: screen, id: id) {
+                    previousByScreen[key] = url
+                    appliedAny = true
+                }
+            }
+            if appliedAny {
+                updatePreviousAvailability()
+                return true
+            }
+        } else {
+            guard let savedPath = runtime.lastWallpaper(for: "all"),
+                  FileManager.default.fileExists(atPath: savedPath) else { return false }
+            let url = URL(fileURLWithPath: savedPath)
+            var appliedAny = false
+            for screen in screens {
+                let id = Self.displayID(of: screen)
+                if show(url, on: screen, id: id) {
+                    appliedAny = true
+                }
+            }
+            if appliedAny {
+                previousByScreen["all"] = url
+                activeWallpaper = notificationContent(for: url, in: settings.directory)
+                updatePreviousAvailability()
+                return true
+            }
+        }
+        return false
+    }
+
+    func reapplyCurrent() {
+        guard settings.enabled else { return }
+        let screens = NSScreen.screens
+        guard !screens.isEmpty else { return }
+        if settings.separatePerMonitor {
+            for screen in screens {
+                let id = Self.displayID(of: screen)
+                let key = String(id)
+                if let current = previousByScreen[key] ?? runtimeState?.lastWallpaper(for: key).map({ URL(fileURLWithPath: $0) }) {
+                    show(current, on: screen, id: id)
+                }
+            }
+        } else if let current = previousByScreen["all"] ?? runtimeState?.lastWallpaper(for: "all").map({ URL(fileURLWithPath: $0) }) {
+            for screen in screens {
+                show(current, on: screen, id: Self.displayID(of: screen))
+            }
+        } else {
+            advance(resetRotationTimer: false)
+        }
+    }
+
+    @discardableResult
     private func show(_ url: URL, on screen: NSScreen, id: CGDirectDisplayID) -> Bool {
         videoSessions.removeValue(forKey: id)?.stop()
+        let success: Bool
         if WallpaperCatalog.videoExtensions.contains(url.pathExtension.lowercased()) {
             videoSessions[id] = VideoSession(url: url, screen: screen, muted: settings.videoMuted)
-            return true
+            success = true
         } else {
             do {
                 try NSWorkspace.shared.setDesktopImageURL(url, for: screen)
-                return true
+                success = true
             } catch {
                 NSLog("ALWM wallpaper: failed to set %@: %@", url.path, error.localizedDescription)
-                return false
+                success = false
             }
         }
+        if success {
+            let key = settings.separatePerMonitor ? String(id) : "all"
+            runtimeState?.setLastWallpaper(url.path, for: key)
+            runtimeState?.save()
+        }
+        return success
     }
 
     private func pauseVideos() { videoSessions.values.forEach { $0.player.pause() } }
@@ -509,6 +603,7 @@ final class WallpaperController: ObservableObject {
         nextRotationDate = nil
         stopVideos()
         settings = .default
+        hasAppliedInitialWallpaper = false
         previousByScreen.removeAll()
         pendingByScreen.removeAll()
         historyByScreen.removeAll()

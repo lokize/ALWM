@@ -260,10 +260,13 @@ extension WindowManager {
         }
         guard let targetCol, let targetRow else { return false }
         let isFresh = Date().timeIntervalSince(windowFirstTrackedAt[id] ?? .distantPast) < 8
-        if isFresh, ws.columns.indices.contains(targetCol),
-           !ws.columns[targetCol].windows.filter({ $0 != id }).isEmpty {
-            // Don't pile a newly opened window onto an occupied snapshot column.
-            return false
+        if isFresh, ws.columns.indices.contains(targetCol) {
+            let currentWindows = ws.columns[targetCol].windows.filter({ $0 != id })
+            let snapExpectedCount = targetCol < snap.columns.count ? snap.columns[targetCol].windows.count : 1
+            if currentWindows.count >= snapExpectedCount {
+                // Don't pile a newly opened window onto an already full snapshot column.
+                return false
+            }
         }
 
         workspaces.removeWindowEverywhere(id)
@@ -317,10 +320,13 @@ extension WindowManager {
         }
         guard let targetCol else { return false }
         let isFresh = Date().timeIntervalSince(windowFirstTrackedAt[id] ?? .distantPast) < 8
-        if isFresh, ws.columns.indices.contains(targetCol),
-           !ws.columns[targetCol].windows.filter({ $0 != id }).isEmpty {
-            // Don't pile a newly opened window onto an occupied saved column.
-            return false
+        if isFresh, ws.columns.indices.contains(targetCol) {
+            let currentWindows = ws.columns[targetCol].windows.filter({ $0 != id })
+            let snapExpectedCount = targetCol < snap.columns.count ? snap.columns[targetCol].windows.count : 1
+            if currentWindows.count >= snapExpectedCount {
+                // Don't pile a newly opened window onto an already full saved column.
+                return false
+            }
         }
 
         workspaces.removeWindowEverywhere(id)

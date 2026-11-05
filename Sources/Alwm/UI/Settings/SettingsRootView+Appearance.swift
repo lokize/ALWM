@@ -5,10 +5,10 @@ import AlwmPluginAPI
 @MainActor
 enum WallpaperDirectoryPickerPresentation {
     static func configure(_ panel: NSOpenPanel) {
-        panel.canChooseFiles = false
+        panel.canChooseFiles = true
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.prompt = "Usar pasta"
+        panel.prompt = "Escolher"
         panel.level = .statusBar
     }
 

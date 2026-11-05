@@ -10,6 +10,7 @@ public final class SettingsWindowController {
 
     var window: NSWindow?
     var closeObserver: NSObjectProtocol?
+    private var pendingFlusher: (() -> Void)?
     /// Separate from `window` so close/teardown can mutate the window without
     /// overlapping exclusivity when `isVisible` is read from persist → applyConfig.
     var presented = false
@@ -69,7 +70,8 @@ public final class SettingsWindowController {
             onApplyEnvironmentProfile: { [weak self] in self?.onApplyEnvironmentProfile?($0) ?? false },
             windowActionHistory: windowActionHistoryProvider?() ?? [],
             onUndoWindowAction: { [weak self] in self?.onUndoWindowAction?() },
-            onRerunOnboarding: { [weak self] in self?.onRerunOnboarding?() }
+            onRerunOnboarding: { [weak self] in self?.onRerunOnboarding?() },
+            onRegisterFlush: { [weak self] flusher in self?.pendingFlusher = flusher }
         )
         let hosting = NSHostingController(rootView: root)
         let window = NSWindow(contentViewController: hosting)
@@ -118,9 +120,16 @@ public final class SettingsWindowController {
         tearDownPresentedWindow(notifyHidden: true, orderOut: false)
     }
 
+    public func flushPendingChanges() {
+        pendingFlusher?()
+        pendingFlusher = nil
+    }
+
     /// Clear presentation state before releasing `window` so re-entrant
     /// `isVisible` / `refreshBorder` during dealloc cannot conflict.
     func tearDownPresentedWindow(notifyHidden: Bool, orderOut: Bool = true) {
+        pendingFlusher?()
+        pendingFlusher = nil
         let wasPresented = presented || window != nil
         presented = false
         let closing = window

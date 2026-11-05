@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "2.2.4",
+      "items": [
+        "Salva layout completo e apps abertos ao fechar para restaurar no reboot",
+        "Persiste papel de parede selecionado e restaura sem trocar"
+      ]
+    },
+    {
       "version": "2.2.3",
       "items": [
         "Window manager improvements",
@@ -259,12 +266,6 @@
       "version": "1.8.5",
       "items": [
         "Fix scrolling in Plugins and keep Settings scroll positions when editing workspaces or plugin order"
-      ]
-    },
-    {
-      "version": "1.8.4",
-      "items": [
-        "Place settings, plugins, and news side by side"
       ]
     }
   ]
