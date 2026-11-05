@@ -377,7 +377,8 @@ public final class HotkeyManager: @unchecked Sendable {
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
         var chars: String?
         var ignoring: String?
-        if let ns = NSEvent(cgEvent: event) {
+        let needsChars = tapBindings.contains { isAllowedWhileOverlayActive($0.action) && $0.isGrave }
+        if needsChars, let ns = NSEvent(cgEvent: event) {
             chars = ns.characters
             ignoring = ns.charactersIgnoringModifiers
         }

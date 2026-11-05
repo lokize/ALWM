@@ -454,6 +454,7 @@ extension WindowManager {
     }
 
     public func handleAction(_ action: String) {
+        clearLayoutMutationFreezeForUserInteraction()
         if action == "undo.last" {
             undoLastWindowAction()
             return

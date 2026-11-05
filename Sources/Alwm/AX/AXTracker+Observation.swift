@@ -243,6 +243,7 @@ extension AXTracker {
             observe(pid: pid)
 
             let appEl = AXUIElementCreateApplication(pid)
+            AXUIElementSetMessagingTimeout(appEl, 0.1)
             var windowsValue: AnyObject?
             let copyStatus = AXUIElementCopyAttributeValue(
                 appEl,
@@ -369,6 +370,7 @@ extension AXTracker {
         {
             _ = app.unhide()
             let appElement = AXUIElementCreateApplication(app.processIdentifier)
+            AXUIElementSetMessagingTimeout(appElement, 0.1)
             var windowsValue: AnyObject?
             guard AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsValue) == .success,
                   let elements = windowsValue as? [AXUIElement]

@@ -764,4 +764,36 @@ struct ReliabilityRegressionTests {
         let reopened = NotesStore(root: root.appendingPathComponent("notes"))
         #expect(reopened.page(page.id)?.title == "Saved before sleep")
     }
+
+    @Test("user interaction clears layout mutation freeze immediately")
+    @MainActor
+    func userInteractionClearsFreeze() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let manager = manager(root: root)
+        manager.isResumeRecovering = true
+        manager.layoutMutationFrozenUntil = Date().addingTimeInterval(300)
+        manager.softPersistProtectMissingTokens = true
+        manager.resumeRecoveryEligibleUntil = Date().addingTimeInterval(300)
+
+        #expect(manager.isLayoutMutationFrozen)
+        manager.clearLayoutMutationFreezeForUserInteraction()
+        #expect(!manager.isLayoutMutationFrozen)
+        #expect(!manager.isResumeRecovering)
+    }
+
+    @Test("needsLayoutRecovery returns false outside recovery window even with fewer live tiles")
+    @MainActor
+    func needsLayoutRecoveryFalseOutsideEligibility() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let manager = manager(root: root)
+        manager.isResumeRecovering = false
+        manager.resumeRecoveryEligibleUntil = Date.distantPast
+        manager.workspaces.configure(definitions: [.init(id: "1", name: "1")], monitors: [])
+        // Snapshot has 3 tiles saved, but live has 0
+        let ref = RuntimeStateStore.WindowRef(token: "999999:1", bundleID: "a", appName: "A", title: "A")
+        manager.runtimeState.setWorkspaceLayout(.init(columns: [.init(windows: [ref, ref, ref], width: 800)]), for: "1")
+        #expect(!manager.needsLayoutRecovery(force: false))
+    }
 }

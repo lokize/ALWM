@@ -177,6 +177,7 @@ extension WindowManager {
     func needsLayoutRecovery(force: Bool) -> Bool {
         if force { return true }
         if layoutRecoveryAttempts >= maxLayoutRecoveryAttempts { return false }
+        guard isResumeRecovering || Date() < resumeRecoveryEligibleUntil else { return false }
         if windowsByID.isEmpty, savedTiledWindowCount() > 0 { return true }
         let saved = savedTiledWindowCount()
         let live = liveTiledWindowCount()
@@ -251,17 +252,13 @@ extension WindowManager {
         if recovered {
             finishResumeRecoverySuccessfully()
         } else if layoutRecoveryAttempts >= maxLayoutRecoveryAttempts {
-            // Stop hammering AX, but keep disk freeze briefly so a partial layout isn't saved.
             cancelPendingResumeRecovery()
             layoutRecoveryAttempts = maxLayoutRecoveryAttempts
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-                guard let self, self.isResumeRecovering else { return }
-                self.isResumeRecovering = false
-                self.resumeRecoveryEligibleUntil = Date.distantPast
-                self.softPersistProtectMissingTokens = false
-                self.layoutMutationFrozenUntil = Date.distantPast
-                NSLog("ALWM: layout recovery gave up — disk snapshot preserved")
-            }
+            isResumeRecovering = false
+            resumeRecoveryEligibleUntil = Date.distantPast
+            softPersistProtectMissingTokens = false
+            layoutMutationFrozenUntil = Date.distantPast
+            NSLog("ALWM: layout recovery gave up — disk snapshot preserved")
         }
         NSLog(
             "ALWM: layout recovery #%d — windows=%d savedTiles=%d liveTiles=%d recovered=%@",
@@ -359,8 +356,8 @@ extension WindowManager {
         // wipes softPersist on the next isLayoutMutationFrozen check (eligible was distantPast),
         // ingest treats the AX mass-drop as red-X closes, and quit-last-window kills Discord /
         // WhatsApp / Safari (move.log 2026-09-18T15:53:33Z).
-        resumeRecoveryEligibleUntil = Date().addingTimeInterval(24 * 60 * 60)
-        layoutMutationFrozenUntil = Date().addingTimeInterval(24 * 60 * 60)
+        resumeRecoveryEligibleUntil = Date().addingTimeInterval(30)
+        layoutMutationFrozenUntil = Date().addingTimeInterval(30)
         // Capture fingerprint while memory still looks good (before any soft write).
         if liveTiledWindowCount() > 0 {
             preSleepLayoutFingerprint = layoutContentFingerprint()
@@ -374,12 +371,12 @@ extension WindowManager {
         // Idle assertions can be dropped across sleep — put them back immediately.
         SleepAssertion.reassertIfNeeded()
         cancelPendingRebalances()
-        resumeRecoveryEligibleUntil = Date().addingTimeInterval(300)
+        resumeRecoveryEligibleUntil = Date().addingTimeInterval(15)
         layoutRecoveryAttempts = 0
         isResumeRecovering = true
         // Keep softPersistProtectMissingTokens until finishResumeRecoverySuccessfully.
         softPersistProtectMissingTokens = true
-        layoutMutationFrozenUntil = Date().addingTimeInterval(300)
+        layoutMutationFrozenUntil = Date().addingTimeInterval(15)
         lastVisibilitySignature = nil
         lastSnapSignature.removeAll()
         forceTileExpandUntil.removeAll()
@@ -447,6 +444,19 @@ extension WindowManager {
         // Safe to refresh disk tokens (window numbers may have changed) now that layout matches.
         persistRuntimeState()
         preSleepLayoutFingerprint = nil
+    }
+
+    public func clearLayoutMutationFreezeForUserInteraction() {
+        if isResumeRecovering || Date() < layoutMutationFrozenUntil || softPersistProtectMissingTokens {
+            cancelPendingResumeRecovery()
+            layoutRecoveryAttempts = maxLayoutRecoveryAttempts
+            isResumeRecovering = false
+            resumeRecoveryEligibleUntil = Date.distantPast
+            softPersistProtectMissingTokens = false
+            layoutMutationFrozenUntil = Date.distantPast
+            allowDestructiveLayoutFlush = true
+            NSLog("ALWM: cleared layout mutation freeze for user interaction")
+        }
     }
 
     func scheduleStaggeredResumeRecovery() {
@@ -553,9 +563,10 @@ extension WindowManager {
             && layoutContentMatchesDiskSnapshot()
         if recovered {
             finishResumeRecoverySuccessfully()
+        } else if layoutRecoveryAttempts < maxLayoutRecoveryAttempts {
+            runLayoutRecoveryIfNeeded(force: false, delay: 2.5)
         } else {
-            // Keep disk snapshot intact until AX catches up — never persist partial columns.
-            runLayoutRecoveryIfNeeded(force: true, delay: 2.5)
+            finishResumeRecoverySuccessfully()
         }
         NSLog(
             "ALWM: resume recovery — windows=%d savedTiles=%d liveTiles=%d recovered=%@ fpOK=%@",

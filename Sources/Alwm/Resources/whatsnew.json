@@ -1,6 +1,18 @@
 {
   "releases": [
     {
+      "version": "2.2.6",
+      "items": [
+        "Accessibility bridge updates",
+        "Window manager improvements",
+        "Input handling updates",
+        "Runtime support updates",
+        "UI updates",
+        "Update OverlayClickPassThroughTests",
+        "Update ReliabilityRegressionTests"
+      ]
+    },
+    {
       "version": "2.2.5",
       "items": [
         "Quake terminal sempre minimiza ao apertar Option+T e reabre a mesma sessão sem abrir duplicados"
@@ -260,12 +272,6 @@
       "version": "1.8.7",
       "items": [
         "Focus follows mouse uses the latest pointer position across displays"
-      ]
-    },
-    {
-      "version": "1.8.6",
-      "items": [
-        "Attach pasted images to Notepad notes"
       ]
     }
   ]

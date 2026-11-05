@@ -98,6 +98,7 @@ enum AlwmChromeFocus {
     private static func axFrontmostMenuBarHasOpenMenu() -> Bool {
         guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier else { return false }
         let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, 0.05)
         var barObj: CFTypeRef?
         guard AXUIElementCopyAttributeValue(app, kAXMenuBarAttribute as CFString, &barObj) == .success,
               let bar = barObj

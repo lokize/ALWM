@@ -73,27 +73,25 @@ extension WindowManager {
     func setupStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: statusMarquee.preferredStatusLength)
         let clickBridge = StatusItemClickBridge { [weak self] button in
-            Task { @MainActor in
-                guard let self else { return }
-                let s = self.configStore.config.settings
-                self.statusPopover.update(
-                    focusFollowsMouse: s.focusFollowsMouse,
-                    borders: s.borders.enabled,
-                    workspaceBar: s.workspaceBar.enabled,
-                    preventSleep: s.preventDisplaySleep,
-                    developerMode: s.developerMode,
-                    version: AlwmVersion.installed,
-                    isRecording: self.capture.isRecording,
-                    recentNotes: self.notepad.store.recentPreviews()
-                )
-                self.statusPopover.toggle(relativeTo: button)
-            }
+            guard let self else { return }
+            let s = self.configStore.config.settings
+            self.statusPopover.update(
+                focusFollowsMouse: s.focusFollowsMouse,
+                borders: s.borders.enabled,
+                workspaceBar: s.workspaceBar.enabled,
+                preventSleep: s.preventDisplaySleep,
+                developerMode: s.developerMode,
+                version: AlwmVersion.installed,
+                isRecording: self.capture.isRecording,
+                recentNotes: self.notepad.store.recentPreviews()
+            )
+            self.statusPopover.toggle(relativeTo: button)
         }
         statusItemClickBridge = clickBridge
         if let button = item.button {
             button.target = clickBridge
             button.action = #selector(StatusItemClickBridge.clicked(_:))
-            button.sendAction(on: [.leftMouseUp])
+            button.sendAction(on: [.leftMouseDown, .leftMouseUp])
             button.setButtonType(.momentaryLight)
             button.isEnabled = true
             button.appearsDisabled = false

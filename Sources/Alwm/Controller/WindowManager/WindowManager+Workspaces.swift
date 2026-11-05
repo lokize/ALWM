@@ -1014,6 +1014,7 @@ extension WindowManager {
     }
 
     func performMoveWindow(requestedID: WindowID, to workspaceID: String, follow: Bool = false) {
+        clearLayoutMutationFreezeForUserInteraction()
         guard workspaces.workspaces[workspaceID] != nil else { return }
         let fromHint = windowWorkspace[requestedID]
             ?? runtimeState.assignment(for: requestedID)

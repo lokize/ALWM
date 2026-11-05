@@ -77,4 +77,18 @@ struct OverlayClickPassThroughTests {
         let outsidePoint = CGPoint(x: 960, y: 900)
         #expect(!controller.containsClick(at: outsidePoint, settings: settings, monitor: monitor))
     }
+
+    @Test("menu bar clicks are never consumed so status bar menus remain clickable")
+    func menuBarClicksPassThrough() {
+        let overlay = Rect(x: 100, y: 100, width: 500, height: 300)
+        // Click at top of screen in system menu bar strip (y <= 32 in AX coordinates)
+        #expect(!OverlayClickCapturePolicy.shouldConsumeOutsideClick(
+            pointX: 500,
+            pointY: 15,
+            visibleFrames: [overlay],
+            dismissOnClickOutside: true,
+            frontmostWindowOwnerPID: 99,
+            ownProcessID: 42
+        ))
+    }
 }

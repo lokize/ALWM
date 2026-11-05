@@ -48,6 +48,7 @@ enum OverlayClickCapturePolicy {
         guard dismissOnClickOutside, !visibleFrames.isEmpty else { return false }
         let insideOverlay = visibleFrames.contains { $0.contains(pointX: pointX, pointY: pointY) }
         guard !insideOverlay else { return false }
+        if pointY <= 32 { return false }
         return frontmostWindowOwnerPID != ownProcessID
     }
 
@@ -172,16 +173,6 @@ extension WindowManager {
                         NSLog("ALWM Quake: rebound from live WindowServer PID %d → %@", pid, replacement.token)
                     }
                 }
-            }
-        }
-        if quake.windowID == nil {
-            let bundleID = QuakeTerminalController.resolveBundleID(
-                configured: configStore.config.settings.quake.bundleID
-            )
-            if let existingID = QuakeTerminalController.pickRunningAppWindow(for: bundleID, in: windowsByID, ax: ax) {
-                quake.rebind(existingID)
-                runtimeState.setQuakeWindowToken(existingID.token)
-                NSLog("ALWM Quake: auto-rebound running shell: %@", existingID.token)
             }
         }
         if quake.activeMonitorID == nil,
