@@ -324,6 +324,11 @@ extension WindowManager {
             missingScanFirstSeenAt[id] = firstMissing
             let missingLongEnough = Date().timeIntervalSince(firstMissing) >= 0.75
             if id == quake.windowID {
+                if !QuakeTerminalController.isWindowAlive(id) {
+                    NSLog("ALWM Quake: window %@ is no longer alive in WindowServer — closing", id.token)
+                    handleQuakeWindowClosed()
+                    continue
+                }
                 // Soft-delete: ⌘T / tab chrome must not immediately tear Quake down.
                 if quake.isVisible {
                     let count = (missingScanCounts[id] ?? 0) + 1
@@ -562,19 +567,30 @@ extension WindowManager {
                     ? nil
                     : (windowWorkspace[id] ?? runtimeState.assignment(for: id))
                         .flatMap { existingWorkspaces.contains($0) ? $0 : nil })
-            let openingRule = stickyHome == nil && snapshotHome == nil
-                ? AppRules.preferredWorkspaceForOpening(rules: rules, window: win)
-                : nil
-            if let selectedHome = InitialWorkspaceSelection.resolve(
-                rule: openingRule,
-                sticky: stickyHome,
-                savedLayout: snapshotHome,
-                bundle: nil,
-                existing: existingWorkspaces
-            ) {
-                let rule = selectedHome == openingRule
-                    ? AppRules.matching(rules: rules, window: win)
-                    : nil
+            let isNewlyAdded = added.contains(id)
+            let configuredRuleHome = AppRules.preferredWorkspace(rules: rules, window: win)
+                .flatMap { existingWorkspaces.contains($0) ? $0 : nil }
+            let openingRule: String? = {
+                if !isResumeRecovering, configuredRuleHome != nil, (isNewlyAdded || liveColumnHome == nil) {
+                    return configuredRuleHome
+                }
+                if stickyHome == nil, snapshotHome == nil {
+                    return configuredRuleHome
+                }
+                return nil
+            }()
+            let selectedHome: String? = {
+                if let openingRule { return openingRule }
+                return InitialWorkspaceSelection.resolve(
+                    rule: nil,
+                    sticky: stickyHome,
+                    savedLayout: snapshotHome,
+                    bundle: nil,
+                    existing: existingWorkspaces
+                )
+            }()
+            if let selectedHome {
+                let rule = AppRules.matching(rules: rules, window: win)
                 let targetMon = rule.flatMap { monitorForAppRule($0, window: win) }
                     ?? displayMonitor(forHome: selectedHome, fallback: monitor)
                 assignWindow(id, to: selectedHome, on: targetMon)
@@ -1040,8 +1056,6 @@ extension WindowManager {
             if f.maxX > usable.maxX { f.x = max(usable.x, usable.maxX - f.width) }
         }
         if f.height > usable.height { f.height = usable.height }
-        if f.y < usable.y { f.y = usable.y }
-        if f.maxY > usable.maxY { f.y = max(usable.y, usable.maxY - f.height) }
         if f.y < usable.y { f.y = usable.y }
         if f.maxY > usable.maxY { f.height = max(48, usable.maxY - f.y) }
         return f
@@ -2188,8 +2202,8 @@ extension WindowManager {
         }
     }
 
-    func reinsertOrphanTiles() {
-        if Date() < suppressIngestReassignUntil { return }
+    func reinsertOrphanTiles(force: Bool = false) {
+        if !force, Date() < suppressIngestReassignUntil { return }
         let monitorFrames = monitors.monitors.map(\.frame)
         for (id, win) in windowsByID {
             guard !win.isIgnored, quake.windowID != id, !isQuakeOwned(id) else { continue }

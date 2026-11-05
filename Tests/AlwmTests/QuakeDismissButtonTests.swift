@@ -38,6 +38,7 @@ struct QuakeDismissButtonTests {
         quake.onDismiss = { [weak quake] in
             dismissed = true
             quake?.setVisibleForRecovery(false)
+            quake?.hideBlur()
         }
         button.performClick(nil)
         #expect(dismissed)
@@ -79,5 +80,12 @@ struct QuakeDismissButtonTests {
         quake.clearAfterUserClose()
         #expect(quake.activeMonitorID == nil)
         #expect(quake.activeWorkspaceID == nil)
+    }
+
+    @Test("isWindowAlive returns false for dead or non-existent window IDs")
+    @MainActor
+    func isWindowAliveRejectsDeadIDs() {
+        let fakeID = WindowID(pid: 9999999, windowNumber: -9999)
+        #expect(!QuakeTerminalController.isWindowAlive(fakeID))
     }
 }

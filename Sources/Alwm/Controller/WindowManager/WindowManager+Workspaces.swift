@@ -84,7 +84,7 @@ extension WindowManager {
             // Cold start / recovery only — routine switches keep in-memory columns.
             // Restoring from disk every switch was stealing windows into WS1 via fuzzy bundle match.
             restoreWorkspaceLayout(for: id)
-            retileAccidentalFloats(forceClearOverrides: false)
+            retileAccidentalFloats(forceClearOverrides: true)
             persistRuntimeState()
         } else {
             // Switch-back: re-apply saved column order/widths for windows already sticky here.

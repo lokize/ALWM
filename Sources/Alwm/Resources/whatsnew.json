@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "version": "2.2.3",
+      "items": [
+        "Window manager improvements",
+        "UI updates",
+        "Update QuakeDismissButtonTests"
+      ]
+    },
+    {
       "version": "2.2.2",
       "items": [
         "Fix Notepad click-away dismissal and outside mouse selection",
@@ -257,12 +265,6 @@
       "version": "1.8.4",
       "items": [
         "Place settings, plugins, and news side by side"
-      ]
-    },
-    {
-      "version": "1.8.3",
-      "items": [
-        "Center the Tools card heading like Recent Notes"
       ]
     }
   ]

@@ -104,18 +104,23 @@ public final class QuakeTerminalController {
     }
 
     public static func isWindowAlive(_ id: WindowID) -> Bool {
+        guard id.windowNumber > 0, let targetCGID = CGWindowID(exactly: id.windowNumber) else {
+            return false
+        }
         if let app = NSRunningApplication(processIdentifier: id.pid), app.isTerminated {
             return false
         }
-        guard let list = CGWindowListCopyWindowInfo([.optionIncludingWindow], CGWindowID(id.windowNumber)) as? [[String: Any]],
-              let first = list.first else {
+        guard let list = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] else {
             return false
         }
-        if let ownerPID = (first[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
-           ownerPID != id.pid {
-            return false
+        return list.contains { dict in
+            guard let num = dict[kCGWindowNumber as String] as? CGWindowID,
+                  num == targetCGID else { return false }
+            if let ownerPID = (dict[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value {
+                return ownerPID == id.pid
+            }
+            return true
         }
-        return true
     }
 
     public func clearPendingAdopt() {
@@ -171,7 +176,8 @@ public final class QuakeTerminalController {
             if windows[id] == nil && ax.currentAX[id] == nil {
                 onNeedRescan?()
             }
-            if isVisible || windows[id] != nil || ax.currentAX[id] != nil || Self.isWindowAlive(id) {
+            let isAlive = windows[id] != nil || ax.currentAX[id] != nil || Self.isWindowAlive(id)
+            if isAlive {
                 if isVisible {
                     NSLog("ALWM Quake: hide %@", id.token)
                     hide(id: id, settings: settings, monitor: monitor, applyFrame: applyFrame)
@@ -182,9 +188,10 @@ public final class QuakeTerminalController {
                 }
                 return
             }
-            NSLog("ALWM Quake: stale id %@ — clearing", id.token)
+            NSLog("ALWM Quake: dead/stale id %@ — clearing", id.token)
             windowID = nil
             setVisible(false)
+            blurPanel?.orderOut(nil)
         }
 
         // Prefer an already-adopted scratchpad — never yank a normal tiled/floating shell.
@@ -480,13 +487,24 @@ public final class QuakeTerminalController {
                 accessibilityDescription: label
             )
         }
-        let screen = NSScreen.screens.first
-        let mainHeight = screen.map { Double($0.frame.height) } ?? frame.maxY
+        let primaryH = NSScreen.screens.first?.frame.height ?? CGFloat(frame.maxY)
+        let cocoaFrame = NSRect(x: frame.x, y: primaryH - CGFloat(frame.maxY), width: frame.width, height: frame.height)
+        let screen = NSScreen.screens.first { $0.frame.intersects(cocoaFrame) } ?? NSScreen.screens.first
+        let primaryHeight = Double(primaryH)
+        let topInset: Double = {
+            guard let screen else { return 0 }
+            let axScreenTop = Double(primaryH - screen.frame.maxY)
+            if abs(frame.y - axScreenTop) < 10 {
+                return OverlayChromeGeometry.topSafeInset(for: screen)
+            }
+            return 0
+        }()
         let controlFrame = OverlayChromeGeometry.controlPanelFrame(
             overlayFrame: frame,
-            mainScreenHeight: mainHeight,
-            topSafeInset: OverlayChromeGeometry.topSafeInset(for: screen)
+            mainScreenHeight: primaryHeight,
+            topSafeInset: topInset
         )
+        dismissButtonPanel?.level = .statusBar
         dismissButtonPanel?.setFrame(NSRect(
             x: controlFrame.x,
             y: controlFrame.y,

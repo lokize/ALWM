@@ -516,6 +516,7 @@ extension WindowManager {
     func handleQuakeWindowClosed() {
         quakeCloseConfirmWorkItem?.cancel()
         quakeCloseConfirmWorkItem = nil
+        quakeHasBeenOpenedInSession = false
         let closedID = quake.windowID
         quake.clearAfterUserClose()
         runtimeState.setQuakeWindowToken(nil)
@@ -632,18 +633,19 @@ extension WindowManager {
     }
 
     func toggleQuake(monitor: MonitorInfo) {
-        let isFirstOpening = (quake.activeMonitorID == nil)
+        let isFirstOpening = !quakeHasBeenOpenedInSession || (quake.activeMonitorID == nil && quake.activeWorkspaceID == nil)
         let targetMon: MonitorInfo
         let targetWS: String
 
         if isFirstOpening {
-            let focusMon = monitorForAction() ?? monitorUnderMouse() ?? primaryMonitor() ?? monitor
+            let focusMon = monitorUnderMouse() ?? monitorForAction() ?? primaryMonitor() ?? monitor
             let focusWS = workspaces.activeWorkspaceByMonitor[focusMon.id] ?? "1"
             quake.setLocation(monitorID: focusMon.id, workspaceID: focusWS)
             runtimeState.setQuakeLocation(monitorID: focusMon.id, workspaceID: focusWS)
             persistRuntimeState()
             targetMon = focusMon
             targetWS = focusWS
+            quakeHasBeenOpenedInSession = true
         } else {
             let savedMon = quake.activeMonitorID.flatMap { id in monitors.monitors.first(where: { $0.id == id }) }
             targetMon = savedMon ?? primaryMonitor() ?? monitor

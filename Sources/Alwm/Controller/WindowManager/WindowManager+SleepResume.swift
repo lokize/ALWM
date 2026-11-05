@@ -525,7 +525,8 @@ extension WindowManager {
         restoreWorkspaceLayoutsFromDisk()
         // Soft heal only — full heal ejects soft-missing AX windows and wrecks restore.
         _ = ejectWindowsListedOutsideStickyHome()
-        retileAccidentalFloats(forceClearOverrides: false)
+        retileAccidentalFloats(forceClearOverrides: true)
+        reinsertOrphanTiles(force: true)
         enforceQuakeFloat()
         if notepad.isVisible, let mon = monitorForAction() ?? primaryMonitor() {
             let settings = configStore.config.settings.notepad

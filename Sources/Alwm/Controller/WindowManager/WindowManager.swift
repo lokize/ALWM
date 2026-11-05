@@ -89,6 +89,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
     var quakeFrameUpdateGeneration: UInt64 = 0
 
     var quakeCloseConfirmWorkItem: DispatchWorkItem?
+    var quakeHasBeenOpenedInSession = false
     var suppressNotepadDismissUntil = Date.distantPast
     enum OverlayFocusTarget { case quake, notepad }
 

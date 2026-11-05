@@ -507,7 +507,7 @@ extension WindowManager {
                let home = workspaces.activeWorkspaceByMonitor[monitor.id] {
                 if let last = lastTileMoveDedupe,
                    last.0 == action, last.1 == home,
-                   Date().timeIntervalSince(last.2) < 0.35 {
+                   Date().timeIntervalSince(last.2) < 0.08 {
                     return
                 }
                 lastTileMoveDedupe = (action, home, Date())
@@ -703,14 +703,16 @@ extension WindowManager {
         // leaves tiles mid-frame (especially after scratchpad adopt).
         let syncLayout = action.hasPrefix("resize.") || action.hasPrefix("move.")
             || action == "column.maximize" || action == "maximize.column"
-        if action.hasPrefix("move.") {
+        let isTileMutationAction = action.hasPrefix("move.") || action.hasPrefix("resize.")
+            || action == "column.maximize" || action == "maximize.column"
+        if isTileMutationAction {
             let home = workspaces.activeWorkspaceByMonitor[monitor.id]
                 ?? actionTargetTileWindow(on: monitor).flatMap { authoritativeHome(for: $0) }
             if let home {
                 persistRuntimeState(forceWorkspaceLayouts: [home])
             }
         }
-        if action.hasPrefix("move."), let home = workspaces.activeWorkspaceByMonitor[monitor.id]
+        if isTileMutationAction, let home = workspaces.activeWorkspaceByMonitor[monitor.id]
             ?? actionTargetTileWindow(on: monitor).flatMap({ authoritativeHome(for: $0) }) {
             let layoutMon = displayMonitor(forHome: home, fallback: monitor)
             suppressGeometryEnforce(for: 0.5)
@@ -722,8 +724,6 @@ extension WindowManager {
             )
             applyAllActiveStackColumns()
             scheduleTileFrameEnforcement(stackAnchor: stackResizeTarget)
-        } else if action.hasPrefix("resize.") || action.hasPrefix("move.") {
-            relayoutWithFrameRetry(stackAnchor: stackResizeTarget, on: monitor)
         } else {
             relayout(animated: !syncLayout, on: monitor)
         }
