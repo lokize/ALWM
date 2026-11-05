@@ -1280,7 +1280,7 @@ extension WindowManager {
             return false
         }
 
-        if let axID = axFocusedWindowID ?? ax.frontmostFocusedWindowID(), isActionable(axID) {
+        if let axID = ax.frontmostFocusedWindowID() ?? axFocusedWindowID, isActionable(axID) {
             if prefersActiveWorkspace(axID) { return axID }
             if let win = windowsByID[axID], let bid = win.bundleID, !bid.isEmpty {
                 let candidates = windowsByID.values.filter { candidate in
@@ -1301,20 +1301,21 @@ extension WindowManager {
     }
 
     func monitorForTileAction() -> MonitorInfo? {
+        if let axID = ax.frontmostFocusedWindowID() ?? axFocusedWindowID,
+           let home = authoritativeHome(for: axID) ?? workspaces.workspaceID(containing: axID) {
+            let underMouse = monitorForWorkspaceCycle()
+            let mon = displayMonitor(forHome: home, fallback: underMouse)
+            if actionTargetTileWindow(on: mon) != nil {
+                primaryMonitorID = mon.id
+                return mon
+            }
+        }
         let underMouse = monitorForWorkspaceCycle()
         if let activeWS = workspaces.activeWorkspaceByMonitor[underMouse.id],
            workspaces.workspaces[activeWS] != nil,
            actionTargetTileWindow(on: underMouse) != nil {
             primaryMonitorID = underMouse.id
             return underMouse
-        }
-        if let axID = axFocusedWindowID ?? ax.frontmostFocusedWindowID(),
-           let home = authoritativeHome(for: axID) ?? workspaces.workspaceID(containing: axID) {
-            let mon = displayMonitor(forHome: home, fallback: underMouse)
-            if actionTargetTileWindow(on: mon) != nil {
-                primaryMonitorID = mon.id
-                return mon
-            }
         }
         for mon in monitors.monitors {
             if actionTargetTileWindow(on: mon) != nil {
@@ -1332,7 +1333,7 @@ extension WindowManager {
         }
         let columnIDs = Set(ws.columns.flatMap(\.windows))
 
-        if let axID = axFocusedWindowID ?? ax.frontmostFocusedWindowID(),
+        if let axID = ax.frontmostFocusedWindowID() ?? axFocusedWindowID,
            columnIDs.contains(axID),
            windowsByID[axID]?.isTiled == true {
             return axID
@@ -1393,9 +1394,17 @@ extension WindowManager {
                 guard var healed = workspaces.workspaces[home],
                       engine.locate(id, in: healed) != nil
                 else { return }
+                if let loc = engine.locate(id, in: healed) {
+                    healed.focusedColumn = loc.col
+                    healed.focusedWindowInColumn[loc.col] = loc.row
+                }
                 body(&healed)
                 workspaces.setWorkspace(healed)
                 return
+            }
+            if let loc = engine.locate(id, in: ws) {
+                ws.focusedColumn = loc.col
+                ws.focusedWindowInColumn[loc.col] = loc.row
             }
             body(&ws)
             workspaces.setWorkspace(ws)

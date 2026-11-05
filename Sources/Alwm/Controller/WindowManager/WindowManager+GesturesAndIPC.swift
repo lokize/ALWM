@@ -715,6 +715,8 @@ extension WindowManager {
         }
         if isTileMutationAction, let home = workspaces.activeWorkspaceByMonitor[monitor.id]
             ?? actionTargetTileWindow(on: monitor).flatMap({ authoritativeHome(for: $0) }) {
+            markStructuralLayoutChange(home)
+            lastSnapSignature[home] = nil
             let layoutMon = displayMonitor(forHome: home, fallback: monitor)
             suppressGeometryEnforce(for: 0.5)
             applyWorkspaceTileLayout(

@@ -615,6 +615,48 @@ struct ReliabilityRegressionTests {
         #expect(abs(ws.columns[0].width - usable.width) < 1.0)
     }
 
+    @Test("moving a window up or down in a stack works on the first try even with un-synced column focus")
+    @MainActor
+    func moveUpDownInStackWorksFirstTry() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let monitor = MonitorInfo(id: 1, frame: .init(x: 0, y: 0, width: 1440, height: 900), visibleFrame: .init(x: 0, y: 24, width: 1440, height: 876), name: "Test")
+        let manager = WindowManager(
+            runtimeState: RuntimeStateStore(url: root.appendingPathComponent("runtime.json")),
+            notesStore: NotesStore(root: root.appendingPathComponent("notes")),
+            monitors: MonitorStore(monitors: [monitor])
+        )
+        manager.isBootstrapping = false
+        manager.workspaces.configure(definitions: [.init(id: "1", name: "1")], monitors: [monitor])
+        let idTop = WindowID(pid: 999_861, windowNumber: 1)
+        let idBottom = WindowID(pid: 999_862, windowNumber: 1)
+        let usable = manager.engine.usableArea(monitor: monitor.layoutFrame)
+        manager.windowsByID[idTop] = ManagedWindow(id: idTop, title: "Top App", bundleID: "example.top", appName: "Top", frame: usable)
+        manager.windowsByID[idBottom] = ManagedWindow(id: idBottom, title: "Bottom App", bundleID: "example.bottom", appName: "Bottom", frame: usable)
+        manager.windowWorkspace[idTop] = "1"
+        manager.windowWorkspace[idBottom] = "1"
+        // Workspace state initially has focusedWindowInColumn = 0 (pointing to top window)
+        manager.workspaces.setWorkspace(WorkspaceState(
+            id: "1", name: "1",
+            columns: [.init(windows: [idTop, idBottom], width: usable.width)],
+            focusedColumn: 0,
+            focusedWindowInColumn: [0: 0]
+        ))
+
+        // Now user focuses bottom window (e.g. via AX) and triggers move.up
+        manager.axFocusedWindowID = idBottom
+        manager.handleAction("move.up")
+
+        var ws = manager.workspaces.workspaces["1"]!
+        // idBottom should now be at row 0 (above idTop) on the FIRST attempt!
+        #expect(ws.columns[0].windows == [idBottom, idTop])
+
+        // Now trigger move.down to move it back down
+        manager.handleAction("move.down")
+        ws = manager.workspaces.workspaces["1"]!
+        #expect(ws.columns[0].windows == [idTop, idBottom])
+    }
+
     @Test("a compact second document window is not mistaken for a popup")
     @MainActor
     func compactSiblingWindowStillTiles() {

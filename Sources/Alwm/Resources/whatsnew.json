@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "2.2.9",
+      "items": [
+        "Window manager improvements",
+        "Update ReliabilityRegressionTests"
+      ]
+    },
+    {
       "version": "2.2.8",
       "items": [
         "Accessibility bridge updates",
@@ -269,13 +276,6 @@
       "version": "1.9.0",
       "items": [
         "Keep focus borders on the window's live display after cross-monitor moves"
-      ]
-    },
-    {
-      "version": "1.8.9",
-      "items": [
-        "Fix mouse focus across vertically offset monitors and inactive workspaces",
-        "Improve wallpaper filenames with character and artwork names"
       ]
     }
   ]
