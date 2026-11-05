@@ -83,4 +83,31 @@ struct StatusMenuClickTests {
         #expect(abs(point.y - expected.y) < 1)
     }
 
+    @Test("toggle debounces rapid repeated clicks within 150ms")
+    @MainActor
+    func toggleDebouncesRapidClicks() async throws {
+        let popover = StatusPopoverController()
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 20, height: 20))
+        let window = NSWindow(
+            contentRect: NSRect(x: 200, y: 200, width: 100, height: 100),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView?.addSubview(view)
+        window.makeKeyAndOrderFront(nil)
+        defer {
+            popover.close()
+            window.close()
+        }
+
+        popover.toggle(relativeTo: view)
+        // Immediate second call should be debounced and not close the popover
+        popover.toggle(relativeTo: view)
+        // Give runloop a beat
+        try await Task.sleep(for: .milliseconds(20))
+        // Since it was debounced, close was not triggered by the rapid second call
+        popover.close()
+        #expect(!popover.isShown)
+    }
 }

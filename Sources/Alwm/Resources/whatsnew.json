@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "version": "2.3.1",
+      "items": [
+        "Window manager improvements",
+        "UI updates",
+        "Update StatusMenuClickTests"
+      ]
+    },
+    {
       "version": "2.3.0",
       "items": [
         "Fix focusFollowsMouse and settings persistence across restarts and updates",
@@ -271,12 +279,6 @@
       "version": "1.9.2",
       "items": [
         "Avoid workspace rematch during visibility transitions"
-      ]
-    },
-    {
-      "version": "1.9.1",
-      "items": [
-        "Route mouse focus using the workspace under the pointer"
       ]
     }
   ]

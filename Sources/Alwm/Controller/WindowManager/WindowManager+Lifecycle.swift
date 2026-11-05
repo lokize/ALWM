@@ -171,7 +171,7 @@ extension WindowManager {
         if let button = item.button {
             button.target = clickBridge
             button.action = #selector(StatusItemClickBridge.clicked(_:))
-            button.sendAction(on: [.leftMouseDown, .leftMouseUp])
+            button.sendAction(on: [.leftMouseUp])
             button.setButtonType(.momentaryLight)
             button.isEnabled = true
             button.appearsDisabled = false
