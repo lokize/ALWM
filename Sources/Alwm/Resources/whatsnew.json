@@ -1,6 +1,15 @@
 {
   "releases": [
     {
+      "version": "2.2.7",
+      "items": [
+        "Window manager improvements",
+        "Plugin host updates",
+        "Settings UI updates",
+        "Update PluginSettingsStoreTests"
+      ]
+    },
+    {
       "version": "2.2.6",
       "items": [
         "Accessibility bridge updates",
@@ -266,12 +275,6 @@
       "items": [
         "Focus follows mouse across displays",
         "Rename wallpaper files without resolution prefixes"
-      ]
-    },
-    {
-      "version": "1.8.7",
-      "items": [
-        "Focus follows mouse uses the latest pointer position across displays"
       ]
     }
   ]

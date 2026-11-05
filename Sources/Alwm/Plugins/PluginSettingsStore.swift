@@ -80,6 +80,8 @@ public struct PluginUserState: Equatable, Sendable, Identifiable {
 public final class PluginSettingsStore: @unchecked Sendable {
     public private(set) var states: [String: PluginUserState] = [:]
     public private(set) var defaultDisplayMonitorID: CGDirectDisplayID = CGMainDisplayID()
+    public private(set) var defaultDisplayMonitorName: String = ""
+    public private(set) var defaultDisplayMonitorIdentity: String = ""
     private let url: URL
 
     public init(url: URL = ConfigPaths.root.appendingPathComponent("plugins.toml")) {
@@ -154,10 +156,53 @@ public final class PluginSettingsStore: @unchecked Sendable {
         save()
     }
 
-    public func setDefaultDisplayMonitorID(_ id: CGDirectDisplayID) {
-        guard defaultDisplayMonitorID != id else { return }
+    public func setDefaultDisplayMonitor(id: CGDirectDisplayID, name: String = "", identity: String = "") {
+        let changed = defaultDisplayMonitorID != id
+            || (!name.isEmpty && defaultDisplayMonitorName != name)
+            || (!identity.isEmpty && defaultDisplayMonitorIdentity != identity)
+        guard changed else { return }
         defaultDisplayMonitorID = id
+        if !name.isEmpty { defaultDisplayMonitorName = name }
+        if !identity.isEmpty { defaultDisplayMonitorIdentity = identity }
         save()
+    }
+
+    public func setDefaultDisplayMonitorID(_ id: CGDirectDisplayID) {
+        setDefaultDisplayMonitor(id: id, name: defaultDisplayMonitorName, identity: defaultDisplayMonitorIdentity)
+    }
+
+    public func resolveMonitors(_ monitors: [MonitorInfo]) {
+        guard !monitors.isEmpty else { return }
+        // 1. Try matching by stable identity
+        if !defaultDisplayMonitorIdentity.isEmpty,
+           let matched = monitors.first(where: { $0.stableIdentity == defaultDisplayMonitorIdentity }) {
+            if defaultDisplayMonitorID != matched.id || defaultDisplayMonitorName != matched.name {
+                defaultDisplayMonitorID = matched.id
+                defaultDisplayMonitorName = matched.name
+                save()
+            }
+            return
+        }
+        // 2. Try matching by monitor name (e.g. "MSI MAG401QR")
+        if !defaultDisplayMonitorName.isEmpty,
+           let matched = monitors.first(where: { $0.name.localizedCaseInsensitiveCompare(defaultDisplayMonitorName) == .orderedSame }) {
+            if defaultDisplayMonitorID != matched.id || defaultDisplayMonitorIdentity != matched.stableIdentity {
+                defaultDisplayMonitorID = matched.id
+                defaultDisplayMonitorIdentity = matched.stableIdentity
+                save()
+            }
+            return
+        }
+        // 3. Try matching by current display ID
+        if let matched = monitors.first(where: { $0.id == defaultDisplayMonitorID }) {
+            if defaultDisplayMonitorName.isEmpty || defaultDisplayMonitorIdentity.isEmpty {
+                defaultDisplayMonitorName = matched.name
+                defaultDisplayMonitorIdentity = matched.stableIdentity
+                save()
+            }
+            return
+        }
+        // If neither matched (e.g. monitor temporarily disconnected), keep saved preferences intact.
     }
 
     public func upsert(_ state: PluginUserState) {
@@ -165,7 +210,7 @@ public final class PluginSettingsStore: @unchecked Sendable {
         save()
     }
 
-    /// Legacy TOML without `installed`: treat previously enabled plugins as installed.
+    /// Legacy TOML without `installed`: treat previously enabled plugins as installed.\
     public func migrateInstalledFlags() {
         var changed = false
         for (id, var s) in states {
@@ -205,6 +250,20 @@ public final class PluginSettingsStore: @unchecked Sendable {
             s.order = index
             states[id] = s
         }
+        // Keep non-reordered entries sequentially distinct to prevent collisions.
+        let reorderedSet = Set(ids)
+        var nextOrderIndex = ids.count
+        let remainingSorted = states.values
+            .filter { !reorderedSet.contains($0.id) }
+            .sorted { a, b in
+                if a.order != b.order { return a.order < b.order }
+                return a.id < b.id
+            }
+        for var s in remainingSorted {
+            s.order = nextOrderIndex
+            nextOrderIndex += 1
+            states[s.id] = s
+        }
         save()
     }
 
@@ -231,6 +290,8 @@ public final class PluginSettingsStore: @unchecked Sendable {
         var fileIndex = 0
         var migrationCompleted = false
         var loadedDefaultMonitorID = CGMainDisplayID()
+        var loadedDefaultMonitorName = ""
+        var loadedDefaultMonitorIdentity = ""
 
         func flush() {
             guard let id = currentID else { return }
@@ -259,6 +320,14 @@ public final class PluginSettingsStore: @unchecked Sendable {
             if line.isEmpty || line.hasPrefix("#") { continue }
             if line.hasPrefix("default_display_monitor_id"), let raw = Self.stringValue(line), let id = UInt32(raw) {
                 loadedDefaultMonitorID = id
+                continue
+            }
+            if line.hasPrefix("default_display_monitor_name"), let raw = Self.stringValue(line) {
+                loadedDefaultMonitorName = raw
+                continue
+            }
+            if line.hasPrefix("default_display_monitor_identity"), let raw = Self.stringValue(line) {
+                loadedDefaultMonitorIdentity = raw
                 continue
             }
             if line.hasPrefix("plugin_display_migration") {
@@ -299,12 +368,16 @@ public final class PluginSettingsStore: @unchecked Sendable {
         }
         states = next
         defaultDisplayMonitorID = loadedDefaultMonitorID
+        defaultDisplayMonitorName = loadedDefaultMonitorName
+        defaultDisplayMonitorIdentity = loadedDefaultMonitorIdentity
         if needsDisplayMigration { save() }
     }
 
     public func save() {
         var lines: [String] = [
             "default_display_monitor_id = \(defaultDisplayMonitorID)",
+            "default_display_monitor_name = \"\(defaultDisplayMonitorName)\"",
+            "default_display_monitor_identity = \"\(defaultDisplayMonitorIdentity)\"",
             "plugin_display_migration = 1",
             ""
         ]

@@ -299,6 +299,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
                 if restored { self.restorePersistedWorkspaces() }
                 self.lastTopologyMonitors = self.monitors.monitors
                 self.rememberCurrentDisplayTopology()
+                PluginManager.shared.settings.resolveMonitors(self.monitors.monitors)
                 self.relayout(animated: false)
                 if topologyChanged { self.runLayoutRecoveryIfNeeded(force: true, delay: 0.6) }
                 self.refreshChrome()
@@ -310,6 +311,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         lastTopologyMonitors = monitors.monitors
         rememberCurrentDisplayTopology()
         loadStickyAssignmentsFromDisk()
+        PluginManager.shared.settings.resolveMonitors(monitors.monitors)
 
         // Grace BEFORE first ingest — mass AX delivery must rematch from disk, not snap to MSI/WS1.
         postLaunchLayoutGraceUntil = Date().addingTimeInterval(20)

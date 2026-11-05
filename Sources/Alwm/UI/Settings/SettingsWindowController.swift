@@ -45,10 +45,12 @@ public final class SettingsWindowController {
             tearDownPresentedWindow(notifyHidden: true)
         }
         detachCloseObserver()
+        let currentMonitors = monitorsProvider?() ?? []
+        PluginManager.shared.settings.resolveMonitors(currentMonitors)
         let root = SettingsRootView(
             config: config,
             initialPane: pane,
-            monitors: monitorsProvider?() ?? [],
+            monitors: currentMonitors,
             monitorIndexByID: monitorIndexByIDProvider?() ?? [:],
             runningAppsProvider: { [weak self] in self?.runningAppsProvider?() ?? [] },
             openAppRuleSnapshotsProvider: { [weak self] in self?.openAppRuleSnapshotsProvider?() ?? [] },

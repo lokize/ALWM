@@ -237,9 +237,26 @@ extension SettingsRootView {
                 Text(L10n.t("wsbar.plugins_default_monitor"))
                     .foregroundStyle(.secondary)
                 Picker(L10n.t("wsbar.plugins_default_monitor"), selection: Binding(
-                    get: { PluginManager.shared.settings.defaultDisplayMonitorID },
+                    get: {
+                        let currentID = PluginManager.shared.settings.defaultDisplayMonitorID
+                        if monitors.contains(where: { $0.id == currentID }) {
+                            return currentID
+                        }
+                        if let matched = monitors.first(where: {
+                            (!PluginManager.shared.settings.defaultDisplayMonitorIdentity.isEmpty && $0.stableIdentity == PluginManager.shared.settings.defaultDisplayMonitorIdentity) ||
+                            (!PluginManager.shared.settings.defaultDisplayMonitorName.isEmpty && $0.name.localizedCaseInsensitiveCompare(PluginManager.shared.settings.defaultDisplayMonitorName) == .orderedSame)
+                        }) {
+                            return matched.id
+                        }
+                        return currentID
+                    },
                     set: { id in
-                        PluginManager.shared.settings.setDefaultDisplayMonitorID(id)
+                        let matched = monitors.first(where: { $0.id == id })
+                        PluginManager.shared.settings.setDefaultDisplayMonitor(
+                            id: id,
+                            name: matched?.name ?? "",
+                            identity: matched?.stableIdentity ?? ""
+                        )
                         PluginManager.shared.requestBarRefresh()
                     }
                 )) {

@@ -51,6 +51,64 @@ struct PluginSettingsStoreTests {
         #expect(PluginBarDisplay.all.matches(5678, defaultMonitorID: reloaded.defaultDisplayMonitorID))
     }
 
+    @Test("default monitor persists name and identity across dynamic display ID reassignment")
+    func resolvesDefaultMonitorByNameAcrossDynamicDisplayIDChanges() {
+        let url = temporarySettingsURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = PluginSettingsStore(url: url)
+        store.setDefaultDisplayMonitor(
+            id: 3,
+            name: "MSI MAG401QR",
+            identity: "display:13929:16037:msi mag401qr:2560x1080#0"
+        )
+
+        let reloaded = PluginSettingsStore(url: url)
+        #expect(reloaded.defaultDisplayMonitorID == 3)
+        #expect(reloaded.defaultDisplayMonitorName == "MSI MAG401QR")
+        #expect(reloaded.defaultDisplayMonitorIdentity == "display:13929:16037:msi mag401qr:2560x1080#0")
+
+        // Simulate reboot: CoreGraphics assigns ID 1 to MSI MAG401QR and ID 2 to built-in display
+        let newMonitors = [
+            MonitorInfo(
+                id: 2,
+                frame: Rect(x: 0, y: 0, width: 1440, height: 900),
+                visibleFrame: Rect(x: 0, y: 0, width: 1440, height: 875),
+                name: "Built-in Display",
+                stableIdentity: "display:0:0:builtin#0"
+            ),
+            MonitorInfo(
+                id: 1,
+                frame: Rect(x: 1440, y: 0, width: 2560, height: 1080),
+                visibleFrame: Rect(x: 1440, y: 0, width: 2560, height: 1055),
+                name: "MSI MAG401QR",
+                stableIdentity: "display:13929:16037:msi mag401qr:2560x1080#0"
+            )
+        ]
+
+        reloaded.resolveMonitors(newMonitors)
+        #expect(reloaded.defaultDisplayMonitorID == 1)
+        #expect(reloaded.defaultDisplayMonitorName == "MSI MAG401QR")
+    }
+
+    @Test("reorder guarantees unique sequential order without collision")
+    func reorderMaintainsCollisionFreeOrdering() {
+        let url = temporarySettingsURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = PluginSettingsStore(url: url)
+        store.upsert(PluginUserState(id: "p1", enabled: true, order: 0))
+        store.upsert(PluginUserState(id: "p2", enabled: true, order: 1))
+        store.upsert(PluginUserState(id: "p3", enabled: false, order: 2))
+
+        // Reorder enabled plugins in reverse: p2 first, then p1
+        store.reorder(["p2", "p1"])
+
+        let reloaded = PluginSettingsStore(url: url)
+        #expect(reloaded.state(for: "p2").order == 0)
+        #expect(reloaded.state(for: "p1").order == 1)
+        #expect(reloaded.state(for: "p3").order == 2)
+        #expect(reloaded.orderedIDs(catalogIDs: ["p1", "p2", "p3"]) == ["p2", "p1", "p3"])
+    }
+
     private func temporarySettingsURL() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("alwm-plugin-settings-\(UUID().uuidString).toml")
