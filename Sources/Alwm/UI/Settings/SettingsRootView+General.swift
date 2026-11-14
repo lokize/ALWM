@@ -43,8 +43,11 @@ extension SettingsRootView {
             Section {
                 Toggle(L10n.t("general.launch_at_login"), isOn: $config.settings.launchAtLogin)
                     .toggleStyle(.switch)
-                Toggle(L10n.t("general.prevent_sleep"), isOn: $config.settings.preventDisplaySleep)
-                    .toggleStyle(.switch)
+                Picker(L10n.t("general.prevent_sleep"), selection: $config.settings.sleepPreventionMode) {
+                    ForEach(SleepPreventionMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
             } header: {
                 Text(L10n.t("general.power"))
             } footer: {

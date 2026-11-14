@@ -83,6 +83,7 @@ enum ConfigWriter {
         theme = "\(settings.theme.rawValue)"
         language = "\(settings.language.rawValue)"
         showMenuBarStatusLabel = \(settings.showMenuBarStatusLabel)
+        sleepPreventionMode = "\(settings.sleepPreventionMode.rawValue)"
         preventDisplaySleep = \(settings.preventDisplaySleep)
         launchAtLogin = \(settings.launchAtLogin)
         onboardingCompleted = \(settings.onboardingCompleted)

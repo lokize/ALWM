@@ -80,7 +80,7 @@ extension WindowManager {
                     focusFollowsMouse: s.focusFollowsMouse,
                     borders: s.borders.enabled,
                     workspaceBar: s.workspaceBar.enabled,
-                    preventSleep: s.preventDisplaySleep,
+                    preventSleepMode: s.sleepPreventionMode,
                     developerMode: s.developerMode,
                     version: AlwmVersion.installed,
                     isRecording: self.capture.isRecording,
@@ -110,8 +110,8 @@ extension WindowManager {
         statusPopover.onToggleWorkspaceBar = { [weak self] in
             self?.mutateSettings { $0.workspaceBar.enabled.toggle() }
         }
-        statusPopover.onTogglePreventSleep = { [weak self] in
-            self?.mutateSettings { $0.preventDisplaySleep.toggle() }
+        statusPopover.onSetPreventSleepMode = { [weak self] mode in
+            self?.mutateSettings { $0.sleepPreventionMode = mode }
         }
         statusPopover.onOpenSettings = { [weak self] in self?.handleAction("settings.open") }
         statusPopover.onOpenPlugins = { [weak self] in self?.handleAction("settings.open.plugins") }
@@ -175,7 +175,7 @@ extension WindowManager {
             focusFollowsMouse: settings.focusFollowsMouse,
             borders: settings.borders.enabled,
             workspaceBar: settings.workspaceBar.enabled,
-            preventSleep: settings.preventDisplaySleep,
+            preventSleepMode: settings.sleepPreventionMode,
             developerMode: settings.developerMode,
             version: AlwmVersion.installed,
             isRecording: capture.isRecording,

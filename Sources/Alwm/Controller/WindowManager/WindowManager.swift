@@ -416,7 +416,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
                     focusFollowsMouse: s.focusFollowsMouse,
                     borders: s.borders.enabled,
                     workspaceBar: s.workspaceBar.enabled,
-                    preventSleep: s.preventDisplaySleep,
+                    preventSleepMode: s.sleepPreventionMode,
                     developerMode: s.developerMode,
                     version: AlwmVersion.installed,
                     isRecording: self.capture.isRecording,
@@ -638,7 +638,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         for work in resumeRecoveryWorkItems { work.cancel() }
         resumeRecoveryWorkItems.removeAll()
         quake.hideBlur()
-        SleepAssertion.setPreventDisplaySleep(false)
+        SleepAssertion.setMode(.off)
         WallpaperController.shared.stop()
         // Update quit already persisted layouts — don't yank every window onscreen
         // (that raced the replace helper and scrambled the next restore).
@@ -696,7 +696,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         setupGestures()
         applyAppearanceTheme(config.settings.theme)
         LocalizationController.shared.apply(config.settings.language)
-        SleepAssertion.setPreventDisplaySleep(config.settings.preventDisplaySleep)
+        SleepAssertion.setMode(config.settings.sleepPreventionMode)
         LaunchAtLogin.setEnabled(config.settings.launchAtLogin)
         WallpaperController.shared.apply(config.settings.wallpaper)
         let rulesSig = Self.appRulesSignature(config.rules)
