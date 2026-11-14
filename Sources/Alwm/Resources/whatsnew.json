@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "2.3.5",
+      "items": [
+        "Integrate sleep prevention mode selector",
+        "Refine menu-bar chrome exclusion in test environments"
+      ]
+    },
+    {
       "version": "2.3.4",
       "items": [
         "Config updates",
