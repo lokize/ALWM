@@ -79,7 +79,14 @@ enum AlwmChromeFocus {
             kCGNullWindowID
         ) as? [[String: Any]] else { return false }
 
+        let myPID = getpid()
         for info in infos {
+            if let pid = (info[kCGWindowOwnerPID as String] as? NSNumber)?.intValue ?? (info[kCGWindowOwnerPID as String] as? Int) {
+                if pid_t(pid) == myPID { continue }
+            }
+            if let owner = info[kCGWindowOwnerName as String] as? String, owner == "ALWM" {
+                continue
+            }
             let layer = (info[kCGWindowLayer as String] as? NSNumber)?.intValue
                 ?? (info[kCGWindowLayer as String] as? Int)
                 ?? 0

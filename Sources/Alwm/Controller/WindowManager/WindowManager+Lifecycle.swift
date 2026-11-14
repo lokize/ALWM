@@ -153,19 +153,21 @@ extension WindowManager {
     func setupStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: statusMarquee.preferredStatusLength)
         let clickBridge = StatusItemClickBridge { [weak self] button in
-            guard let self else { return }
-            let s = self.configStore.config.settings
-            self.statusPopover.update(
-                focusFollowsMouse: s.focusFollowsMouse,
-                borders: s.borders.enabled,
-                workspaceBar: s.workspaceBar.enabled,
-                preventSleep: s.preventDisplaySleep,
-                developerMode: s.developerMode,
-                version: AlwmVersion.installed,
-                isRecording: self.capture.isRecording,
-                recentNotes: self.notepad.store.recentPreviews()
-            )
-            self.statusPopover.toggle(relativeTo: button)
+            Task { @MainActor in
+                guard let self else { return }
+                let s = self.configStore.config.settings
+                self.statusPopover.update(
+                    focusFollowsMouse: s.focusFollowsMouse,
+                    borders: s.borders.enabled,
+                    workspaceBar: s.workspaceBar.enabled,
+                    preventSleepMode: s.sleepPreventionMode,
+                    developerMode: s.developerMode,
+                    version: AlwmVersion.installed,
+                    isRecording: self.capture.isRecording,
+                    recentNotes: self.notepad.store.recentPreviews()
+                )
+                self.statusPopover.toggle(relativeTo: button)
+            }
         }
         statusItemClickBridge = clickBridge
         if let button = item.button {
@@ -188,8 +190,8 @@ extension WindowManager {
         statusPopover.onToggleWorkspaceBar = { [weak self] in
             self?.mutateSettings { $0.workspaceBar.enabled.toggle() }
         }
-        statusPopover.onTogglePreventSleep = { [weak self] in
-            self?.mutateSettings { $0.preventDisplaySleep.toggle() }
+        statusPopover.onSetPreventSleepMode = { [weak self] mode in
+            self?.mutateSettings { $0.sleepPreventionMode = mode }
         }
         statusPopover.onOpenSettings = { [weak self] in self?.handleAction("settings.open") }
         statusPopover.onOpenPlugins = { [weak self] in self?.handleAction("settings.open.plugins") }
@@ -253,7 +255,7 @@ extension WindowManager {
             focusFollowsMouse: settings.focusFollowsMouse,
             borders: settings.borders.enabled,
             workspaceBar: settings.workspaceBar.enabled,
-            preventSleep: settings.preventDisplaySleep,
+            preventSleepMode: settings.sleepPreventionMode,
             developerMode: settings.developerMode,
             version: AlwmVersion.installed,
             isRecording: capture.isRecording,

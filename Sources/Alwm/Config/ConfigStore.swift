@@ -221,7 +221,12 @@ public final class ConfigStore: @unchecked Sendable {
         if let v = table.theme, let theme = AppTheme(rawValue: v) { s.theme = theme }
         if let v = table.language, let lang = AppLanguage(rawValue: v) { s.language = lang }
         if let v = table.showMenuBarStatusLabel { s.showMenuBarStatusLabel = v }
-        if let v = table.preventDisplaySleep { s.preventDisplaySleep = v }
+        if let rawMode = table.sleepPreventionMode,
+           let mode = SleepPreventionMode(rawValue: rawMode) {
+            s.sleepPreventionMode = mode
+        } else if let v = table.preventDisplaySleep {
+            s.sleepPreventionMode = v ? .systemAndDisplay : .off
+        }
         if let v = table.launchAtLogin { s.launchAtLogin = v }
         if let v = table.onboardingCompleted { s.onboardingCompleted = v }
 
@@ -456,6 +461,7 @@ public final class ConfigStore: @unchecked Sendable {
         var theme: String?
         var language: String?
         var showMenuBarStatusLabel: Bool?
+        var sleepPreventionMode: String?
         var preventDisplaySleep: Bool?
         var launchAtLogin: Bool?
         var onboardingCompleted: Bool?
@@ -577,6 +583,7 @@ public final class ConfigStore: @unchecked Sendable {
     theme = "system"
     language = "system"
     showMenuBarStatusLabel = true
+    sleepPreventionMode = "off"
     preventDisplaySleep = false
     launchAtLogin = true
     onboardingCompleted = false

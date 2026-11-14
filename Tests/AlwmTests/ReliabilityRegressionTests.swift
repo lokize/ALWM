@@ -151,6 +151,7 @@ struct ReliabilityRegressionTests {
         manager.transientPopupDetector = { _ in false }
         manager.isBootstrapping = false
         manager.workspaces.configure(definitions: [.init(id: "1", name: "1")], monitors: [monitor])
+        manager.workspaces.switchWorkspace(id: "1", on: monitor.id, monitors: [monitor])
         let a = WindowID(pid: 111, windowNumber: 1)
         let b = WindowID(pid: 112, windowNumber: 2)
         manager.windowsByID[a] = ManagedWindow(id: a, title: "A", bundleID: "a", appName: "A", frame: monitor.visibleFrame)

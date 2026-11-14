@@ -438,6 +438,34 @@ public enum AppTheme: String, Sendable, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// Controls whether ALWM prevents idle system sleep, display sleep, or both.
+public enum SleepPreventionMode: String, Sendable, Codable, CaseIterable, Identifiable {
+    case off
+    case systemOnly
+    case systemAndDisplay
+
+    public var id: String { rawValue }
+
+    public var preventsSystemSleep: Bool { self != .off }
+    public var preventsDisplaySleep: Bool { self == .systemAndDisplay }
+
+    public var title: String {
+        switch self {
+        case .off: return L10n.t("menu.prevent_sleep.mode.off")
+        case .systemOnly: return L10n.t("menu.prevent_sleep.mode.system")
+        case .systemAndDisplay: return L10n.t("menu.prevent_sleep.mode.both")
+        }
+    }
+
+    public var detail: String {
+        switch self {
+        case .off: return L10n.t("menu.prevent_sleep.mode.detail.off")
+        case .systemOnly: return L10n.t("menu.prevent_sleep.mode.detail.system")
+        case .systemAndDisplay: return L10n.t("menu.prevent_sleep.mode.detail.both")
+        }
+    }
+}
+
 public struct LayoutSettings: Equatable, Sendable {
     public var gap: Double
     public var outerGap: Double
@@ -453,7 +481,12 @@ public struct LayoutSettings: Equatable, Sendable {
     /// UI language: `system` follows macOS, otherwise an explicit BCP-47 code.
     public var language: AppLanguage
     public var showMenuBarStatusLabel: Bool
-    public var preventDisplaySleep: Bool
+    public var sleepPreventionMode: SleepPreventionMode
+    /// Legacy setting name retained for clients that still read/write the old toggle.
+    public var preventDisplaySleep: Bool {
+        get { sleepPreventionMode == .systemAndDisplay }
+        set { sleepPreventionMode = newValue ? .systemAndDisplay : .off }
+    }
     /// Open ALWM automatically when the user logs in.
     public var launchAtLogin: Bool
     public var onboardingCompleted: Bool
@@ -532,7 +565,8 @@ public struct LayoutSettings: Equatable, Sendable {
         wallpaper: WallpaperSettings = .default,
         quake: QuakeSettings,
         notepad: NotepadSettings,
-        gestures: GestureSettings
+        gestures: GestureSettings,
+        sleepPreventionMode: SleepPreventionMode? = nil
     ) {
         self.gap = gap
         self.outerGap = outerGap
@@ -547,7 +581,8 @@ public struct LayoutSettings: Equatable, Sendable {
         self.theme = theme
         self.language = language
         self.showMenuBarStatusLabel = showMenuBarStatusLabel
-        self.preventDisplaySleep = preventDisplaySleep
+        self.sleepPreventionMode = sleepPreventionMode
+            ?? (preventDisplaySleep ? .systemAndDisplay : .off)
         self.launchAtLogin = launchAtLogin
         self.onboardingCompleted = onboardingCompleted
         self.borders = borders
