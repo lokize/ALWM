@@ -468,6 +468,16 @@ extension WindowManager {
             toggleQuake(monitor: monitor)
             return
         }
+        if action == "notepad.toggle" {
+            guard let monitor = notepad.activeMonitor ?? monitorUnderMouse() ?? monitorForAction() ?? primaryMonitor() else { return }
+            toggleNotepad(monitor: monitor)
+            return
+        }
+        if action == "notepad.new" {
+            guard let monitor = monitorUnderMouse() ?? monitorForAction() ?? primaryMonitor() else { return }
+            openNewNotepad(monitor: monitor)
+            return
+        }
         let historyKind: WindowActionKind? = {
             if action.hasPrefix("resize.") { return .resize }
             if ["move.left", "move.right", "move.up", "move.down"].contains(action) { return .move }
@@ -744,6 +754,11 @@ extension WindowManager {
              "resize.left", "resize.right", "resize.up", "resize.down",
              "column.maximize", "maximize.column",
              "float.toggle", "float.on", "float.off":
+            if action.hasPrefix("resize.") || action == "column.maximize" || action == "maximize.column" {
+                if let target = actionTargetTileWindow(on: monitor) {
+                    syncAppRuleOnWindowResized(id: target)
+                }
+            }
             if action.hasPrefix("move."),
                let home = workspaces.activeWorkspaceByMonitor[monitor.id],
                let ws = workspaces.workspaces[home] {

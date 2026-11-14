@@ -380,6 +380,11 @@ extension WindowManager {
         lastVisibilitySignature = nil
         lastSnapSignature.removeAll()
         forceTileExpandUntil.removeAll()
+
+        // Re-establish system input hooks dropped or desynced by macOS sleep
+        setupFocusFollowsMouse()
+        hotkeys.register(bindings: configStore.config.hotkeys)
+        updateOverlayInputMode()
     }
 
     /// Accessibility can drop several windows without delivering a macOS wake event.
@@ -506,6 +511,7 @@ extension WindowManager {
         // Displays can rearrange after lid open / Clamshell — refresh geometry first.
         monitors.refresh()
         syncWorkspacesToMonitors()
+        setupFocusFollowsMouse()
 
         // Prefer disk snapshot over whatever drifted in memory during sleep.
         runtimeState.load()

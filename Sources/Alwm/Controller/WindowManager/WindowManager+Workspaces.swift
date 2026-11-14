@@ -1143,6 +1143,9 @@ extension WindowManager {
             persistRuntimeState(forceWorkspaceLayouts: forcePersist)
             allowDestructiveLayoutFlush = wasDestructive
             logMove("move float live=\(id.token) → ws=\(workspaceID) sticky=\(windowWorkspace[id] ?? "?")")
+            if crossWorkspace {
+                syncAppRuleOnWindowMoved(id: id, to: workspaceID)
+            }
             if isHomeActiveOnAnyMonitor(workspaceID) {
                 revealActiveFloats(ids: [id])
                 focusWindow(id, raise: true)
@@ -1218,6 +1221,10 @@ extension WindowManager {
         logMove(
             "move done live=\(id.token) from=\(fromHome ?? "?") → ws=\(workspaceID) cross=\(crossWorkspace) slot=\(slot) sticky=\(windowWorkspace[id] ?? "?")"
         )
+
+        if crossWorkspace {
+            syncAppRuleOnWindowMoved(id: id, to: workspaceID)
+        }
 
         if crossWorkspace, let ws = workspaces.workspaces[workspaceID] {
             for col in ws.columns {

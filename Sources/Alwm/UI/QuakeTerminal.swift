@@ -233,8 +233,7 @@ public final class QuakeTerminalController {
             }
 
             if isAlive {
-                let isFrontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier == activeID.pid
-                if isVisible || isFrontmost {
+                if isVisible {
                     NSLog("ALWM Quake: hide %@", activeID.token)
                     hide(id: activeID, settings: settings, monitor: monitor, applyFrame: applyFrame)
                     focusTiled()

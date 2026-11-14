@@ -133,8 +133,8 @@ struct ResumeWorkspaceSelectionTests {
         ) == nil)
     }
 
-    @Test("resume keeps the saved home ahead of an app rule for a reappearing window")
-    func savedWindowHomeBeatsAppRuleAfterResume() {
+    @Test("app rule is respected before everything else even if a saved layout exists")
+    func appRuleBeatsSavedHome() {
         let existing: Set<String> = ["1", "2", "3"]
 
         #expect(InitialWorkspaceSelection.resolve(
@@ -144,7 +144,7 @@ struct ResumeWorkspaceSelectionTests {
             bundle: "2",
             active: "2",
             existing: existing
-        ) == "1")
+        ) == "3")
     }
 
     @Test("a genuinely new app window opens in the active workspace without an app rule")

@@ -972,9 +972,11 @@ extension WindowManager {
         let newTokenSets = columns.map { Set($0.windows.map(\.token)) }
         if liveTokenSets == newTokenSets {
             for i in columns.indices {
-                columns[i].width = live.columns[i].width
-                columns[i].isMaximized = live.columns[i].isMaximized
-                columns[i].restoreWidth = live.columns[i].restoreWidth
+                if live.columns[i].width > 0 {
+                    columns[i].width = live.columns[i].width
+                    columns[i].isMaximized = live.columns[i].isMaximized
+                    columns[i].restoreWidth = live.columns[i].restoreWidth
+                }
             }
             return
         }

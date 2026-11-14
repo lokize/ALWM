@@ -164,6 +164,17 @@ extension WindowManager {
             var needsRelayout = false
 
             for id in pending {
+                if let win = self.windowsByID[id], win.isFloating {
+                    if let f = self.ax.currentFrame(of: id) {
+                        var updated = win
+                        updated.frame = f
+                        self.windowsByID[id] = updated
+                        self.savedFrames[id] = f
+                        self.lastFrames[id] = f
+                        self.syncAppRuleOnWindowResized(id: id)
+                    }
+                    continue
+                }
                 guard let win = self.windowsByID[id], win.isTiled else { continue }
                 guard self.quake.windowID != id else { continue }
                 if Date().timeIntervalSince(self.windowFirstTrackedAt[id] ?? .distantPast) < self.newWindowColumnGrace {
@@ -582,19 +593,11 @@ extension WindowManager {
             let isNewlyAdded = added.contains(id)
             let configuredRuleHome = AppRules.preferredWorkspace(rules: rules, window: win)
                 .flatMap { existingWorkspaces.contains($0) ? $0 : nil }
-            let openingRule: String? = {
-                if !isResumeRecovering, configuredRuleHome != nil, (isNewlyAdded || liveColumnHome == nil) {
-                    return configuredRuleHome
-                }
-                if stickyHome == nil, snapshotHome == nil {
-                    return configuredRuleHome
-                }
-                return nil
-            }()
+            let openingRule: String? = configuredRuleHome
             let selectedHome: String? = {
                 if let openingRule { return openingRule }
                 return InitialWorkspaceSelection.resolve(
-                    rule: nil,
+                    rule: configuredRuleHome,
                     sticky: stickyHome,
                     savedLayout: snapshotHome,
                     bundle: nil,
@@ -640,10 +643,11 @@ extension WindowManager {
                 continue
             }
 
-            if let home = initialWorkspaceForNewWindow(for: win, on: monitor) {
+            let targetMon = monitorUnderMouse() ?? monitor
+            if let home = initialWorkspaceForNewWindow(for: win, on: targetMon) {
                 let rule = AppRules.matching(rules: rules, window: win)
                 let target = rule.flatMap { monitorForAppRule($0, window: win) }
-                    ?? displayMonitor(forHome: home, fallback: monitor)
+                    ?? displayMonitor(forHome: home, fallback: targetMon)
                 assignWindow(id, to: home, on: target)
             }
         }

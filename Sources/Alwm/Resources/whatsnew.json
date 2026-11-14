@@ -1,6 +1,15 @@
 {
   "releases": [
     {
+      "version": "2.3.2",
+      "items": [
+        "Window manager improvements",
+        "UI updates",
+        "Settings UI updates",
+        "Update ResumeWorkspaceSelectionTests"
+      ]
+    },
+    {
       "version": "2.3.1",
       "items": [
         "Window manager improvements",
@@ -273,12 +282,6 @@
       "version": "1.9.3",
       "items": [
         "Follow mouse focus across workspace boundaries and expand quit button"
-      ]
-    },
-    {
-      "version": "1.9.2",
-      "items": [
-        "Avoid workspace rematch during visibility transitions"
       ]
     }
   ]

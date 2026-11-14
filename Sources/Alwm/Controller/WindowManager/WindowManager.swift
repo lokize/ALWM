@@ -96,9 +96,16 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
     var preferredOverlayFocus: OverlayFocusTarget?
 
     var overlaysCaptureFocus: Bool {
-        // Keep the overlay's input mode for its whole visible lifetime. AX/frontmost
-        // focus updates can arrive after the OS has already started activating a tile.
-        notepad.isVisible || quake.isVisible
+        if notepad.isVisible { return true }
+        if quake.isVisible {
+            if let qid = quake.windowID {
+                if let app = NSRunningApplication(processIdentifier: qid.pid), app.isTerminated {
+                    return false
+                }
+            }
+            return true
+        }
+        return false
     }
 
     var statusItem: NSStatusItem?
@@ -301,6 +308,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
                 self.lastTopologyMonitors = self.monitors.monitors
                 self.rememberCurrentDisplayTopology()
                 PluginManager.shared.settings.resolveMonitors(self.monitors.monitors)
+                self.setupFocusFollowsMouse()
                 self.relayout(animated: false)
                 if topologyChanged { self.runLayoutRecoveryIfNeeded(force: true, delay: 0.6) }
                 self.refreshChrome()
