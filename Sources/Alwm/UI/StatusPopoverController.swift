@@ -74,6 +74,7 @@ public final class StatusPopoverController {
         popover.behavior = .semitransient
         popover.animates = true
         let bridge = PopoverCloseBridge { [weak self] in
+            WallpaperController.shared.stopCountdown()
             self?.removeClickOutsideMonitor()
             self?.anchorWindow.orderOut(nil)
             self?.lastAnchorScreenFrame = nil
@@ -177,6 +178,7 @@ public final class StatusPopoverController {
             close()
             return
         }
+        WallpaperController.shared.startCountdown()
         AppUpdateService.shared.checkForUpdates()
         resizeToFit()
 
@@ -218,12 +220,27 @@ public final class StatusPopoverController {
     }
 
     public func close() {
+        WallpaperController.shared.stopCountdown()
         pendingShowWorkItem?.cancel()
         pendingShowWorkItem = nil
         removeClickOutsideMonitor()
-        popover.performClose(nil)
+        let wasAnimated = popover.animates
+        popover.animates = false
+        popover.close()
+        popover.animates = wasAnimated
         anchorWindow.orderOut(nil)
         lastAnchorScreenFrame = nil
+    }
+
+    deinit {
+        MainActor.assumeIsolated {
+            WallpaperController.shared.stopCountdown()
+            pendingShowWorkItem?.cancel()
+            removeClickOutsideMonitor()
+            popover.animates = false
+            popover.close()
+            anchorWindow.orderOut(nil)
+        }
     }
 
     private var clickOutsideGlobal: Any?

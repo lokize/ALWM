@@ -2222,6 +2222,15 @@ extension WindowManager {
             }
         }
 
+        // Memory optimization: prune dead window references from tracking dictionaries
+        let trackedIDs = Set(windowsByID.keys)
+        missingScanCounts = missingScanCounts.filter { trackedIDs.contains($0.key) }
+        lastFrames = lastFrames.filter { trackedIDs.contains($0.key) }
+        savedFrames = savedFrames.filter { trackedIDs.contains($0.key) }
+        windowFirstTrackedAt = windowFirstTrackedAt.filter { trackedIDs.contains($0.key) }
+        forcedFloatVisibleUntil = forcedFloatVisibleUntil.filter { trackedIDs.contains($0.key) }
+        forcedTiledUntil = forcedTiledUntil.filter { trackedIDs.contains($0.key) }
+
         if changed, configStore.config.settings.developerMode {
             NSLog("ALWM: healed stale column entries")
         }

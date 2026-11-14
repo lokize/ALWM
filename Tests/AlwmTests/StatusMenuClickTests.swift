@@ -43,9 +43,13 @@ struct StatusMenuClickTests {
             backing: .buffered,
             defer: false
         )
+        window.isReleasedWhenClosed = false
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        defer { window.close() }
+        defer {
+            window.orderOut(nil)
+            window.close()
+        }
         var received: CGPoint?
         let bridge = StatusMenuClickOutsideBridge { received = $0 }
         let token = try #require(bridge.installLocal())
@@ -94,10 +98,12 @@ struct StatusMenuClickTests {
             backing: .buffered,
             defer: false
         )
+        window.isReleasedWhenClosed = false
         window.contentView?.addSubview(view)
         window.makeKeyAndOrderFront(nil)
         defer {
             popover.close()
+            window.orderOut(nil)
             window.close()
         }
 
@@ -108,6 +114,7 @@ struct StatusMenuClickTests {
         try await Task.sleep(for: .milliseconds(20))
         // Since it was debounced, close was not triggered by the rapid second call
         popover.close()
+        try await Task.sleep(for: .milliseconds(100))
         #expect(!popover.isShown)
     }
 }

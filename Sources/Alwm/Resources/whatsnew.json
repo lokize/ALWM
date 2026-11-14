@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "2.3.3",
+      "items": [
+        "Performance optimizations: reduce RAM, CPU, and GPU footprint",
+        "Smart on-demand wallpaper countdown and AX popup caching"
+      ]
+    },
+    {
       "version": "2.3.2",
       "items": [
         "Window manager improvements",
@@ -276,12 +283,6 @@
       "version": "1.9.4",
       "items": [
         "Make quit action span full menu width"
-      ]
-    },
-    {
-      "version": "1.9.3",
-      "items": [
-        "Follow mouse focus across workspace boundaries and expand quit button"
       ]
     }
   ]

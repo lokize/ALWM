@@ -176,6 +176,11 @@ struct SettingsRootView: View {
             if newPane != .hotkeys {
                 hotkeySearch = ""
             }
+            if newPane == .wallpapers {
+                WallpaperController.shared.startCountdown()
+            } else {
+                WallpaperController.shared.stopCountdown()
+            }
         }
         .onChange(of: config) { oldConfig, newConfig in
             hasPendingLocalChanges = true
@@ -188,7 +193,13 @@ struct SettingsRootView: View {
             LocalizationController.shared.apply(language)
             PluginManager.shared.requestBarRefresh()
         }
+        .onAppear {
+            if pane == .wallpapers {
+                WallpaperController.shared.startCountdown()
+            }
+        }
         .onDisappear {
+            WallpaperController.shared.stopCountdown()
             let shouldFlush = hasPendingLocalChanges || coordinator.hasPendingChanges
             persistTask?.cancel()
             persistTask = nil

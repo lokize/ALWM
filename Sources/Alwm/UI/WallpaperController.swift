@@ -461,27 +461,53 @@ final class WallpaperController: ObservableObject {
         nextRotationDate = nil
         guard settings.enabled, settings.rotationEnabled else {
             updateRotationStatus()
+            stopCountdown()
             return
         }
         let interval = min(86400, max(1, settings.intervalSeconds))
         nextRotationDate = Date().addingTimeInterval(interval)
         updateRotationStatus()
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        let t = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.rotationTimerFired() }
         }
+        t.tolerance = min(5.0, max(0.5, interval * 0.1))
+        timer = t
     }
 
     private func rotationTimerFired() {
-        guard let nextRotationDate else {
+        guard nextRotationDate != nil else {
             updateRotationStatus()
             return
         }
-        if nextRotationDate <= Date() {
-            advance(resetRotationTimer: false)
-            scheduleRotation()
-        } else {
-            updateRotationStatus()
+        advance(resetRotationTimer: false)
+        scheduleRotation()
+    }
+
+    private var countdownTimer: Timer?
+    private var isCountdownActive = false
+
+    public func startCountdown() {
+        isCountdownActive = true
+        updateRotationStatus()
+        guard countdownTimer == nil else { return }
+        let c = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                guard self.isCountdownActive else {
+                    self.stopCountdown()
+                    return
+                }
+                self.updateRotationStatus()
+            }
         }
+        c.tolerance = 0.2
+        countdownTimer = c
+    }
+
+    public func stopCountdown() {
+        isCountdownActive = false
+        countdownTimer?.invalidate()
+        countdownTimer = nil
     }
 
     private func updateRotationStatus() {
