@@ -68,6 +68,37 @@ struct WorkspaceVisibilityReconciliationTests {
         } == true)
     }
 
+    @Test("a parked edge strip on its own home monitor is not considered a leak")
+    func edgeStripOnHomeMonitorDoesNotLeak() {
+        let msi = MonitorInfo(
+            id: 2,
+            frame: Rect(x: 0, y: 0, width: 3440, height: 1440),
+            visibleFrame: Rect(x: 0, y: 0, width: 3440, height: 1410),
+            name: "MSI"
+        )
+        let hdmi = MonitorInfo(
+            id: 3,
+            frame: Rect(x: 774, y: 1440, width: 1920, height: 1080),
+            visibleFrame: Rect(x: 774, y: 1440, width: 1920, height: 1080),
+            name: "HDMI"
+        )
+        // Workspace 2 is active on MSI, Workspace 5 active on HDMI.
+        let active = [msi.id: "2", hdmi.id: "5"]
+        let clampedOnMSI = Rect(x: 3400, y: 500, width: 40, height: 714)
+
+        #expect(OffscreenParking.isEdgeStrip(clampedOnMSI, monitors: [msi.frame, hdmi.frame]))
+        #expect(!WorkspaceMonitorLeakPolicy.frameLeaksWrongMonitor(
+            home: "2", frame: clampedOnMSI, monitors: [msi, hdmi], activeWorkspaceByMonitor: active
+        ))
+
+        // But if an edge strip from workspace 2 touches HDMI (the wrong monitor), it IS a leak:
+        let clampedOnHDMI = Rect(x: 2654, y: 2000, width: 40, height: 500)
+        #expect(OffscreenParking.isEdgeStrip(clampedOnHDMI, monitors: [msi.frame, hdmi.frame]))
+        #expect(WorkspaceMonitorLeakPolicy.frameLeaksWrongMonitor(
+            home: "2", frame: clampedOnHDMI, monitors: [msi, hdmi], activeWorkspaceByMonitor: active
+        ))
+    }
+
     @Test("same logical visibility signature still reconciles a window moved by its app")
     func liveFrameDriftRequiresReconciliation() {
         #expect(!VisibilityPassPolicy.shouldSkip(

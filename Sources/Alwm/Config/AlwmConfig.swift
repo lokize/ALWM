@@ -189,7 +189,9 @@ public struct AlwmConfig: Equatable, Sendable {
             WorkspaceDefinition(id: "1", name: "1", layout: .niri, monitorIndex: 0),
             WorkspaceDefinition(id: "2", name: "2", layout: .niri, monitorIndex: 0),
             WorkspaceDefinition(id: "3", name: "3", layout: .dwindle, monitorIndex: 0),
-            WorkspaceDefinition(id: "4", name: "4", layout: .niri, monitorIndex: 1)
+            WorkspaceDefinition(id: "4", name: "4", layout: .niri, monitorIndex: 0),
+            WorkspaceDefinition(id: "5", name: "5", layout: .niri, monitorIndex: 1),
+            WorkspaceDefinition(id: "6", name: "6", layout: .niri, monitorIndex: 1)
         ],
         rules: [
             AppRule(bundleID: "com.apple.systempreferences", mode: .float),

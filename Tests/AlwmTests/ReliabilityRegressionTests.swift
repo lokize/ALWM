@@ -151,6 +151,7 @@ struct ReliabilityRegressionTests {
         manager.transientPopupDetector = { _ in false }
         manager.isBootstrapping = false
         manager.workspaces.configure(definitions: [.init(id: "1", name: "1")], monitors: [monitor])
+        manager.workspaces.switchWorkspace(id: "1", on: monitor.id, monitors: [monitor])
         let a = WindowID(pid: 111, windowNumber: 1)
         let b = WindowID(pid: 112, windowNumber: 2)
         manager.windowsByID[a] = ManagedWindow(id: a, title: "A", bundleID: "a", appName: "A", frame: monitor.visibleFrame)
@@ -583,6 +584,80 @@ struct ReliabilityRegressionTests {
         #expect(afterStackClose.focusedWindowID == ids[3])
     }
 
+    @Test("closing a window automatically expands surviving column to fill usable width")
+    @MainActor
+    func closingWindowExpandsSurvivingColumn() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let monitor = MonitorInfo(id: 1, frame: .init(x: 0, y: 0, width: 1440, height: 900), visibleFrame: .init(x: 0, y: 24, width: 1440, height: 876), name: "Test")
+        let manager = WindowManager(
+            runtimeState: RuntimeStateStore(url: root.appendingPathComponent("runtime.json")),
+            notesStore: NotesStore(root: root.appendingPathComponent("notes")),
+            monitors: MonitorStore(monitors: [monitor])
+        )
+        manager.isBootstrapping = false
+        manager.workspaces.configure(definitions: [.init(id: "1", name: "1")], monitors: [monitor])
+        let id1 = WindowID(pid: 999_851, windowNumber: 1)
+        let id2 = WindowID(pid: 999_852, windowNumber: 1)
+        let usable = manager.engine.usableArea(monitor: monitor.layoutFrame)
+        manager.windowsByID[id1] = ManagedWindow(id: id1, title: "App 1", bundleID: "example.app1", appName: "App1", frame: usable)
+        manager.windowsByID[id2] = ManagedWindow(id: id2, title: "App 2", bundleID: "example.app2", appName: "App2", frame: usable)
+        manager.windowWorkspace[id1] = "1"
+        manager.windowWorkspace[id2] = "1"
+        manager.workspaces.setWorkspace(WorkspaceState(id: "1", name: "1", columns: [
+            .init(windows: [id1], width: usable.width / 2),
+            .init(windows: [id2], width: usable.width / 2)
+        ]))
+
+        manager.handleUserClosedWindow(id2)
+
+        let ws = manager.workspaces.workspaces["1"]!
+        #expect(ws.columns.count == 1)
+        #expect(abs(ws.columns[0].width - usable.width) < 1.0)
+    }
+
+    @Test("moving a window up or down in a stack works on the first try even with un-synced column focus")
+    @MainActor
+    func moveUpDownInStackWorksFirstTry() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let monitor = MonitorInfo(id: 1, frame: .init(x: 0, y: 0, width: 1440, height: 900), visibleFrame: .init(x: 0, y: 24, width: 1440, height: 876), name: "Test")
+        let manager = WindowManager(
+            runtimeState: RuntimeStateStore(url: root.appendingPathComponent("runtime.json")),
+            notesStore: NotesStore(root: root.appendingPathComponent("notes")),
+            monitors: MonitorStore(monitors: [monitor])
+        )
+        manager.isBootstrapping = false
+        manager.workspaces.configure(definitions: [.init(id: "1", name: "1")], monitors: [monitor])
+        let idTop = WindowID(pid: 999_861, windowNumber: 1)
+        let idBottom = WindowID(pid: 999_862, windowNumber: 1)
+        let usable = manager.engine.usableArea(monitor: monitor.layoutFrame)
+        manager.windowsByID[idTop] = ManagedWindow(id: idTop, title: "Top App", bundleID: "example.top", appName: "Top", frame: usable)
+        manager.windowsByID[idBottom] = ManagedWindow(id: idBottom, title: "Bottom App", bundleID: "example.bottom", appName: "Bottom", frame: usable)
+        manager.windowWorkspace[idTop] = "1"
+        manager.windowWorkspace[idBottom] = "1"
+        // Workspace state initially has focusedWindowInColumn = 0 (pointing to top window)
+        manager.workspaces.setWorkspace(WorkspaceState(
+            id: "1", name: "1",
+            columns: [.init(windows: [idTop, idBottom], width: usable.width)],
+            focusedColumn: 0,
+            focusedWindowInColumn: [0: 0]
+        ))
+
+        // Now user focuses bottom window (e.g. via AX) and triggers move.up
+        manager.axFocusedWindowID = idBottom
+        manager.handleAction("move.up")
+
+        var ws = manager.workspaces.workspaces["1"]!
+        // idBottom should now be at row 0 (above idTop) on the FIRST attempt!
+        #expect(ws.columns[0].windows == [idBottom, idTop])
+
+        // Now trigger move.down to move it back down
+        manager.handleAction("move.down")
+        ws = manager.workspaces.workspaces["1"]!
+        #expect(ws.columns[0].windows == [idTop, idBottom])
+    }
+
     @Test("a compact second document window is not mistaken for a popup")
     @MainActor
     func compactSiblingWindowStillTiles() {
@@ -763,5 +838,37 @@ struct ReliabilityRegressionTests {
         manager.prepareForSystemSleep()
         let reopened = NotesStore(root: root.appendingPathComponent("notes"))
         #expect(reopened.page(page.id)?.title == "Saved before sleep")
+    }
+
+    @Test("user interaction clears layout mutation freeze immediately")
+    @MainActor
+    func userInteractionClearsFreeze() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let manager = manager(root: root)
+        manager.isResumeRecovering = true
+        manager.layoutMutationFrozenUntil = Date().addingTimeInterval(300)
+        manager.softPersistProtectMissingTokens = true
+        manager.resumeRecoveryEligibleUntil = Date().addingTimeInterval(300)
+
+        #expect(manager.isLayoutMutationFrozen)
+        manager.clearLayoutMutationFreezeForUserInteraction()
+        #expect(!manager.isLayoutMutationFrozen)
+        #expect(!manager.isResumeRecovering)
+    }
+
+    @Test("needsLayoutRecovery returns false outside recovery window even with fewer live tiles")
+    @MainActor
+    func needsLayoutRecoveryFalseOutsideEligibility() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let manager = manager(root: root)
+        manager.isResumeRecovering = false
+        manager.resumeRecoveryEligibleUntil = Date.distantPast
+        manager.workspaces.configure(definitions: [.init(id: "1", name: "1")], monitors: [])
+        // Snapshot has 3 tiles saved, but live has 0
+        let ref = RuntimeStateStore.WindowRef(token: "999999:1", bundleID: "a", appName: "A", title: "A")
+        manager.runtimeState.setWorkspaceLayout(.init(columns: [.init(windows: [ref, ref, ref], width: 800)]), for: "1")
+        #expect(!manager.needsLayoutRecovery(force: false))
     }
 }

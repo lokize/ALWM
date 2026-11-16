@@ -8,6 +8,27 @@ extension SettingsRootView {
 
     var layoutPane: some View {
         Form {
+            Section("Layout por Workspace") {
+                if config.workspaces.isEmpty {
+                    Text("Nenhum workspace configurado.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach($config.workspaces) { $ws in
+                        HStack {
+                            Text("Workspace \(ws.id)\(ws.name.isEmpty || ws.name == ws.id ? "" : " (\(ws.name))")")
+                                .frame(minWidth: 120, alignment: .leading)
+                            Spacer()
+                            Picker("", selection: $ws.layout) {
+                                ForEach(WorkspaceLayoutStyle.allCases) { style in
+                                    Text(style.label).tag(style)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .frame(maxWidth: 260)
+                        }
+                    }
+                }
+            }
             Section("Columns") {
                 labeledSlider("Inner gap", value: $config.settings.gap, range: 0...40)
                 labeledSlider("Outer gap", value: $config.settings.outerGap, range: 0...40)

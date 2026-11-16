@@ -82,4 +82,26 @@ struct ConfigDiskPersistenceTests {
         #expect(ruleText.contains("workspace = \"6\""))
         #expect(ruleText.contains("width = 1200.0"))
     }
+
+    @Test("sleep prevention mode round-trips and legacy booleans migrate")
+    func sleepPreventionModePersistenceAndMigration() throws {
+        var config = AlwmConfig.default
+        config.settings.sleepPreventionMode = .systemOnly
+
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("alwm-sleep-mode-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try ConfigWriter.write(config, to: root)
+
+        let settingsText = try String(contentsOf: root.appendingPathComponent("settings.toml"), encoding: .utf8)
+        #expect(settingsText.contains("sleepPreventionMode = \"systemOnly\""))
+        let saved = try ConfigStore.parseSettings(settingsText)
+        #expect(saved.sleepPreventionMode == .systemOnly)
+        #expect(saved.sleepPreventionMode.preventsSystemSleep)
+        #expect(!saved.sleepPreventionMode.preventsDisplaySleep)
+        #expect(!saved.preventDisplaySleep)
+
+        let legacy = try ConfigStore.parseSettings("preventDisplaySleep = true")
+        #expect(legacy.sleepPreventionMode == .systemAndDisplay)
+    }
 }

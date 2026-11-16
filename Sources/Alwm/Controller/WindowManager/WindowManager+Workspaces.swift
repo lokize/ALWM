@@ -84,7 +84,7 @@ extension WindowManager {
             // Cold start / recovery only — routine switches keep in-memory columns.
             // Restoring from disk every switch was stealing windows into WS1 via fuzzy bundle match.
             restoreWorkspaceLayout(for: id)
-            retileAccidentalFloats(forceClearOverrides: false)
+            retileAccidentalFloats(forceClearOverrides: true)
             persistRuntimeState()
         } else {
             // Switch-back: re-apply saved column order/widths for windows already sticky here.
@@ -413,8 +413,10 @@ extension WindowManager {
                     guard let live = liveFrameForVisibility(id) else { continue }
                     if OffscreenParking.isUsableOnscreenFrame(live, monitors: monitors) {
                         var parkFrame = savedFrames[id] ?? live
-                        parkFrame.x = OffscreenParking.parkOrigin(monitors: monitors, preferred: nil).x
-                        parkFrame.y = OffscreenParking.parkOrigin(monitors: monitors, preferred: nil).y
+                        let preferredMon = monitors.first { $0.contains(pointX: live.midX, pointY: live.midY) } ?? monitors.first
+                        let origin = OffscreenParking.parkOrigin(monitors: monitors, preferred: preferredMon)
+                        parkFrame.x = origin.x
+                        parkFrame.y = origin.y
                         ax.parkOffscreen(frame: parkFrame, id: id, monitors: monitors)
                     } else {
                         ax.reparkIfLeaking(
@@ -1012,6 +1014,7 @@ extension WindowManager {
     }
 
     func performMoveWindow(requestedID: WindowID, to workspaceID: String, follow: Bool = false) {
+        clearLayoutMutationFreezeForUserInteraction()
         guard workspaces.workspaces[workspaceID] != nil else { return }
         let fromHint = windowWorkspace[requestedID]
             ?? runtimeState.assignment(for: requestedID)
@@ -1140,6 +1143,9 @@ extension WindowManager {
             persistRuntimeState(forceWorkspaceLayouts: forcePersist)
             allowDestructiveLayoutFlush = wasDestructive
             logMove("move float live=\(id.token) → ws=\(workspaceID) sticky=\(windowWorkspace[id] ?? "?")")
+            if crossWorkspace {
+                syncAppRuleOnWindowMoved(id: id, to: workspaceID)
+            }
             if isHomeActiveOnAnyMonitor(workspaceID) {
                 revealActiveFloats(ids: [id])
                 focusWindow(id, raise: true)
@@ -1216,6 +1222,10 @@ extension WindowManager {
             "move done live=\(id.token) from=\(fromHome ?? "?") → ws=\(workspaceID) cross=\(crossWorkspace) slot=\(slot) sticky=\(windowWorkspace[id] ?? "?")"
         )
 
+        if crossWorkspace {
+            syncAppRuleOnWindowMoved(id: id, to: workspaceID)
+        }
+
         if crossWorkspace, let ws = workspaces.workspaces[workspaceID] {
             for col in ws.columns {
                 for wid in col.windows {
@@ -1277,7 +1287,7 @@ extension WindowManager {
             return false
         }
 
-        if let axID = axFocusedWindowID ?? ax.frontmostFocusedWindowID(), isActionable(axID) {
+        if let axID = ax.frontmostFocusedWindowID() ?? axFocusedWindowID, isActionable(axID) {
             if prefersActiveWorkspace(axID) { return axID }
             if let win = windowsByID[axID], let bid = win.bundleID, !bid.isEmpty {
                 let candidates = windowsByID.values.filter { candidate in
@@ -1298,20 +1308,21 @@ extension WindowManager {
     }
 
     func monitorForTileAction() -> MonitorInfo? {
+        if let axID = ax.frontmostFocusedWindowID() ?? axFocusedWindowID,
+           let home = authoritativeHome(for: axID) ?? workspaces.workspaceID(containing: axID) {
+            let underMouse = monitorForWorkspaceCycle()
+            let mon = displayMonitor(forHome: home, fallback: underMouse)
+            if actionTargetTileWindow(on: mon) != nil {
+                primaryMonitorID = mon.id
+                return mon
+            }
+        }
         let underMouse = monitorForWorkspaceCycle()
         if let activeWS = workspaces.activeWorkspaceByMonitor[underMouse.id],
            workspaces.workspaces[activeWS] != nil,
            actionTargetTileWindow(on: underMouse) != nil {
             primaryMonitorID = underMouse.id
             return underMouse
-        }
-        if let axID = axFocusedWindowID ?? ax.frontmostFocusedWindowID(),
-           let home = authoritativeHome(for: axID) ?? workspaces.workspaceID(containing: axID) {
-            let mon = displayMonitor(forHome: home, fallback: underMouse)
-            if actionTargetTileWindow(on: mon) != nil {
-                primaryMonitorID = mon.id
-                return mon
-            }
         }
         for mon in monitors.monitors {
             if actionTargetTileWindow(on: mon) != nil {
@@ -1329,7 +1340,7 @@ extension WindowManager {
         }
         let columnIDs = Set(ws.columns.flatMap(\.windows))
 
-        if let axID = axFocusedWindowID ?? ax.frontmostFocusedWindowID(),
+        if let axID = ax.frontmostFocusedWindowID() ?? axFocusedWindowID,
            columnIDs.contains(axID),
            windowsByID[axID]?.isTiled == true {
             return axID
@@ -1390,9 +1401,17 @@ extension WindowManager {
                 guard var healed = workspaces.workspaces[home],
                       engine.locate(id, in: healed) != nil
                 else { return }
+                if let loc = engine.locate(id, in: healed) {
+                    healed.focusedColumn = loc.col
+                    healed.focusedWindowInColumn[loc.col] = loc.row
+                }
                 body(&healed)
                 workspaces.setWorkspace(healed)
                 return
+            }
+            if let loc = engine.locate(id, in: ws) {
+                ws.focusedColumn = loc.col
+                ws.focusedWindowInColumn[loc.col] = loc.row
             }
             body(&ws)
             workspaces.setWorkspace(ws)
@@ -1669,13 +1688,14 @@ extension WindowManager {
         let tiledPending = pendingAXDestroyWorkItems.keys.filter {
             windowsByID[$0]?.isTiled == true && workspaces.workspaceID(containing: $0) != nil
         }
-        if tiledPending.count >= 2 {
+        let uniquePendingPIDs = Set(tiledPending.map(\.pid))
+        if uniquePendingPIDs.count >= 2 {
             for pending in pendingAXDestroyWorkItems.values { pending.cancel() }
             pendingAXDestroyWorkItems.removeAll()
             noteAXMassDropForRecovery()
             return
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: work)
     }
 
     func handleUserClosedWindow(_ id: WindowID) {
@@ -1729,6 +1749,7 @@ extension WindowManager {
         appRuleFramesApplied.remove(id)
 
         if let home, wasInColumns {
+            lastSnapSignature[home] = nil
             pruneVacantColumnSlots(wsID: home)
             if isHomeActiveOnAnyMonitor(home) {
                 snapWorkspaceTilesAfterColumnChange(home)

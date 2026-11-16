@@ -119,12 +119,19 @@ public final class RuntimeStateStore: @unchecked Sendable {
         public var workspaceLayouts: [String: WorkspaceLayoutSnapshot]
         /// Persisted Quake scratchpad window token (`pid:windowNumber`).
         public var quakeWindowToken: String?
+        /// Persisted Quake active display ID.
+        public var quakeMonitorID: String?
+        /// Persisted Quake active workspace ID.
+        public var quakeWorkspaceID: String?
         /// Stable logical monitor slot keyed by the macOS display ID.
         public var monitorIndexByDisplay: [String: Int]
+        /// Persisted wallpaper file path by display ID ("all" or displayID number string).
+        public var lastWallpaperByScreen: [String: String]
 
         enum CodingKeys: String, CodingKey {
             case lastWorkspaceByMonitor, windowWorkspace, bundleWorkspace, lastWorkspace, workspaceLayouts
-            case quakeWindowToken, monitorIndexByDisplay
+            case quakeWindowToken, quakeMonitorID, quakeWorkspaceID, monitorIndexByDisplay
+            case lastWallpaperByScreen
         }
 
         public init(
@@ -134,7 +141,10 @@ public final class RuntimeStateStore: @unchecked Sendable {
             lastWorkspace: String? = nil,
             workspaceLayouts: [String: WorkspaceLayoutSnapshot] = [:],
             quakeWindowToken: String? = nil,
-            monitorIndexByDisplay: [String: Int] = [:]
+            quakeMonitorID: String? = nil,
+            quakeWorkspaceID: String? = nil,
+            monitorIndexByDisplay: [String: Int] = [:],
+            lastWallpaperByScreen: [String: String] = [:]
         ) {
             self.lastWorkspaceByMonitor = lastWorkspaceByMonitor
             self.windowWorkspace = windowWorkspace
@@ -142,7 +152,10 @@ public final class RuntimeStateStore: @unchecked Sendable {
             self.lastWorkspace = lastWorkspace
             self.workspaceLayouts = workspaceLayouts
             self.quakeWindowToken = quakeWindowToken
+            self.quakeMonitorID = quakeMonitorID
+            self.quakeWorkspaceID = quakeWorkspaceID
             self.monitorIndexByDisplay = monitorIndexByDisplay
+            self.lastWallpaperByScreen = lastWallpaperByScreen
         }
 
         public init(from decoder: Decoder) throws {
@@ -153,7 +166,10 @@ public final class RuntimeStateStore: @unchecked Sendable {
             lastWorkspace = try c.decodeIfPresent(String.self, forKey: .lastWorkspace)
             workspaceLayouts = try c.decodeIfPresent([String: WorkspaceLayoutSnapshot].self, forKey: .workspaceLayouts) ?? [:]
             quakeWindowToken = try c.decodeIfPresent(String.self, forKey: .quakeWindowToken)
+            quakeMonitorID = try c.decodeIfPresent(String.self, forKey: .quakeMonitorID)
+            quakeWorkspaceID = try c.decodeIfPresent(String.self, forKey: .quakeWorkspaceID)
             monitorIndexByDisplay = try c.decodeIfPresent([String: Int].self, forKey: .monitorIndexByDisplay) ?? [:]
+            lastWallpaperByScreen = try c.decodeIfPresent([String: String].self, forKey: .lastWallpaperByScreen) ?? [:]
         }
     }
 
@@ -229,8 +245,25 @@ public final class RuntimeStateStore: @unchecked Sendable {
         snapshot.lastWorkspace = workspaceID
     }
 
+    public func setLastWallpaper(_ path: String?, for screenKey: String) {
+        if let path {
+            snapshot.lastWallpaperByScreen[screenKey] = path
+        } else {
+            snapshot.lastWallpaperByScreen.removeValue(forKey: screenKey)
+        }
+    }
+
+    public func lastWallpaper(for screenKey: String) -> String? {
+        snapshot.lastWallpaperByScreen[screenKey]
+    }
+
     public func setQuakeWindowToken(_ token: String?) {
         snapshot.quakeWindowToken = token
+    }
+
+    public func setQuakeLocation(monitorID: CGDirectDisplayID?, workspaceID: String?) {
+        snapshot.quakeMonitorID = monitorID.map { String($0) }
+        snapshot.quakeWorkspaceID = workspaceID
     }
 
     public func monitorIndexAssignments() -> [CGDirectDisplayID: Int] {

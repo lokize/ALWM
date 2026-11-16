@@ -89,15 +89,23 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
     var quakeFrameUpdateGeneration: UInt64 = 0
 
     var quakeCloseConfirmWorkItem: DispatchWorkItem?
+    var quakeHasBeenOpenedInSession = false
     var suppressNotepadDismissUntil = Date.distantPast
     enum OverlayFocusTarget { case quake, notepad }
 
     var preferredOverlayFocus: OverlayFocusTarget?
 
     var overlaysCaptureFocus: Bool {
-        // Keep the overlay's input mode for its whole visible lifetime. AX/frontmost
-        // focus updates can arrive after the OS has already started activating a tile.
-        notepad.isVisible || quake.isVisible
+        if notepad.isVisible { return true }
+        if quake.isVisible {
+            if let qid = quake.windowID {
+                if let app = NSRunningApplication(processIdentifier: qid.pid), app.isTerminated {
+                    return false
+                }
+            }
+            return true
+        }
+        return false
     }
 
     var statusItem: NSStatusItem?
@@ -269,6 +277,8 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         }
 
         try configStore.load()
+        reconcileWorkspacesWithRuntimeState()
+        WallpaperController.shared.runtimeState = runtimeState
         applyConfig(configStore.config)
         AppUpdateService.shared.checkForUpdates()
         configStore.onChange = { [weak self] config in
@@ -297,6 +307,8 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
                 if restored { self.restorePersistedWorkspaces() }
                 self.lastTopologyMonitors = self.monitors.monitors
                 self.rememberCurrentDisplayTopology()
+                PluginManager.shared.settings.resolveMonitors(self.monitors.monitors)
+                self.setupFocusFollowsMouse()
                 self.relayout(animated: false)
                 if topologyChanged { self.runLayoutRecoveryIfNeeded(force: true, delay: 0.6) }
                 self.refreshChrome()
@@ -308,6 +320,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         lastTopologyMonitors = monitors.monitors
         rememberCurrentDisplayTopology()
         loadStickyAssignmentsFromDisk()
+        PluginManager.shared.settings.resolveMonitors(monitors.monitors)
 
         // Grace BEFORE first ingest — mass AX delivery must rematch from disk, not snap to MSI/WS1.
         postLaunchLayoutGraceUntil = Date().addingTimeInterval(20)
@@ -416,7 +429,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
                     focusFollowsMouse: s.focusFollowsMouse,
                     borders: s.borders.enabled,
                     workspaceBar: s.workspaceBar.enabled,
-                    preventSleep: s.preventDisplaySleep,
+                    preventSleepMode: s.sleepPreventionMode,
                     developerMode: s.developerMode,
                     version: AlwmVersion.installed,
                     isRecording: self.capture.isRecording,
@@ -600,6 +613,9 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         }
         quake.onDismiss = { [weak self] in self?.dismissQuake() }
         quake.onToggleFullscreen = { [weak self] in self?.toggleQuakeFullscreen() }
+        quake.onRequestChangeMonitorWorkspace = { [weak self] button in
+            self?.showQuakeMoveMenu(from: button)
+        }
         quake.onVisibilityChanged = { [weak self] _ in
             self?.updateOverlayInputMode()
         }
@@ -627,7 +643,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
     public func stop() {
         notepad.store.flushPendingSaves()
         overlayClickCapture.stop()
-        persistRuntimeState()
+        persistRuntimeStateBeforeQuit()
         for obs in systemObservers {
             NSWorkspace.shared.notificationCenter.removeObserver(obs)
             NotificationCenter.default.removeObserver(obs)
@@ -638,7 +654,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         for work in resumeRecoveryWorkItems { work.cancel() }
         resumeRecoveryWorkItems.removeAll()
         quake.hideBlur()
-        SleepAssertion.setPreventDisplaySleep(false)
+        SleepAssertion.setMode(.off)
         WallpaperController.shared.stop()
         // Update quit already persisted layouts — don't yank every window onscreen
         // (that raced the replace helper and scrambled the next restore).
@@ -696,7 +712,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         setupGestures()
         applyAppearanceTheme(config.settings.theme)
         LocalizationController.shared.apply(config.settings.language)
-        SleepAssertion.setPreventDisplaySleep(config.settings.preventDisplaySleep)
+        SleepAssertion.setMode(config.settings.sleepPreventionMode)
         LaunchAtLogin.setEnabled(config.settings.launchAtLogin)
         WallpaperController.shared.apply(config.settings.wallpaper)
         let rulesSig = Self.appRulesSignature(config.rules)

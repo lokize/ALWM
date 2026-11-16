@@ -9,11 +9,16 @@ public final class FocusBorderOverlay {
     private var width: CGFloat = 3
     private var color: NSColor = NSColor(red: 0.31, green: 0.76, blue: 0.97, alpha: 1)
 
+    private var lastRect: NSRect?
+    private var lastRadius: CGFloat?
+
     public init() {}
 
     public func updateStyle(width: Double, hex: String) {
         self.width = CGFloat(width)
         self.color = NSColor(hex: hex) ?? self.color
+        lastRect = nil
+        lastRadius = nil
         applyLayerStyle(cornerRadius: currentCornerRadius())
     }
 
@@ -39,6 +44,11 @@ public final class FocusBorderOverlay {
             width: frame.width + pad * 2,
             height: frame.height + pad * 2
         )
+        if let window, window.isVisible, lastRect == rect, lastRadius == radius {
+            return
+        }
+        lastRect = rect
+        lastRadius = radius
         if window == nil {
             let w = NSWindow(
                 contentRect: rect,
@@ -67,6 +77,8 @@ public final class FocusBorderOverlay {
     }
 
     public func hide() {
+        lastRect = nil
+        lastRadius = nil
         window?.orderOut(nil)
     }
 

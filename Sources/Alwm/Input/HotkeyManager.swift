@@ -113,11 +113,10 @@ public final class HotkeyManager: @unchecked Sendable {
         guard overlayKeyboardCaptureActive != active else { return }
         overlayKeyboardCaptureActive = active
         unregisterAllCarbonHotkeys()
-        if active {
-            tearDownEventTap()
-        } else {
-            if Permissions.inputMonitoringGranted() {
-                installEventTapIfNeeded()
+        if Permissions.inputMonitoringGranted() {
+            installEventTapIfNeeded()
+            if let tap = eventTap {
+                CGEvent.tapEnable(tap: tap, enable: true)
             }
         }
         installNSMonitorIfNeeded()
@@ -305,12 +304,9 @@ public final class HotkeyManager: @unchecked Sendable {
 
     private func handleTap(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            if let tap = eventTap, !overlayKeyboardCaptureActive {
+            if let tap = eventTap {
                 CGEvent.tapEnable(tap: tap, enable: true)
             }
-            return Unmanaged.passUnretained(event)
-        }
-        if overlayKeyboardCaptureActive {
             return Unmanaged.passUnretained(event)
         }
         guard type == .keyDown else {
@@ -323,7 +319,7 @@ public final class HotkeyManager: @unchecked Sendable {
         guard !flags.isEmpty else {
             return Unmanaged.passUnretained(event)
         }
-        if shouldDeferHotkeys?() == true {
+        if overlayKeyboardCaptureActive || shouldDeferHotkeys?() == true {
             return handleOverlayAllowedTap(event: event, flags: flags)
         }
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
@@ -381,7 +377,8 @@ public final class HotkeyManager: @unchecked Sendable {
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
         var chars: String?
         var ignoring: String?
-        if let ns = NSEvent(cgEvent: event) {
+        let needsChars = tapBindings.contains { isAllowedWhileOverlayActive($0.action) && $0.isGrave }
+        if needsChars, let ns = NSEvent(cgEvent: event) {
             chars = ns.characters
             ignoring = ns.charactersIgnoringModifiers
         }

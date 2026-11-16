@@ -92,9 +92,12 @@ extension AXTracker {
     public func parkAndHide(frame: Rect, id: WindowID, monitors: [Rect] = []) {
         withMutation {
             guard let ax = axWindows[id] else { return }
+            let preferred = monitors.first { $0.contains(pointX: frame.midX, pointY: frame.midY) }
+                ?? monitors.first { $0.contains(pointX: ax.frame.midX, pointY: ax.frame.midY) }
+                ?? monitors.first
             let park = monitors.isEmpty
                 ? (x: frame.x, y: frame.y)
-                : OffscreenParking.parkOrigin(monitors: monitors, preferred: nil)
+                : OffscreenParking.parkOrigin(monitors: monitors, preferred: preferred)
             // Keep real size — collapsing to 1×1 is rejected by Safari/Electron and macOS
             // clamps a visible strip of the full window onto the display edge.
             let parked = OffscreenParking.parkedFrame(origin: park, sizeFrom: frame, live: ax.frame)
@@ -111,9 +114,12 @@ extension AXTracker {
     public func parkOffscreen(frame: Rect, id: WindowID, monitors: [Rect] = []) {
         withMutation {
             guard let ax = axWindows[id] else { return }
+            let preferred = monitors.first { $0.contains(pointX: frame.midX, pointY: frame.midY) }
+                ?? monitors.first { $0.contains(pointX: ax.frame.midX, pointY: ax.frame.midY) }
+                ?? monitors.first
             let origin = monitors.isEmpty
                 ? (x: frame.x, y: frame.y)
-                : OffscreenParking.parkOrigin(monitors: monitors, preferred: nil)
+                : OffscreenParking.parkOrigin(monitors: monitors, preferred: preferred)
             let parked = OffscreenParking.parkedFrame(origin: origin, sizeFrom: frame, live: ax.frame)
             ax.frame = parked
             if !framesApproximatelyEqual(ax.frame, parked, epsilon: 8) {
@@ -125,7 +131,9 @@ extension AXTracker {
 
     /// Last applied off-screen park frame for an id (best-effort readback).
     public func currentParkedFrame(of id: WindowID, sizeFrom: Rect, monitors: [Rect]) -> Rect {
-        let origin = OffscreenParking.parkOrigin(monitors: monitors, preferred: nil)
+        let preferred = monitors.first { $0.contains(pointX: sizeFrom.midX, pointY: sizeFrom.midY) }
+            ?? monitors.first
+        let origin = OffscreenParking.parkOrigin(monitors: monitors, preferred: preferred)
         let live = axWindows[id]?.frame ?? sizeFrom
         return OffscreenParking.parkedFrame(origin: origin, sizeFrom: sizeFrom, live: live)
     }
@@ -150,7 +158,9 @@ extension AXTracker {
             let parkedBleed = OffscreenParking.intersectsAnyMonitor(frame, monitors: monitors)
                 && !OffscreenParking.isUsableOnscreenFrame(frame, monitors: monitors)
             guard edgeStrip || parkedBleed else { return }
-            let park = OffscreenParking.parkOrigin(monitors: monitors, preferred: nil)
+            let preferred = monitors.first { $0.contains(pointX: frame.midX, pointY: frame.midY) }
+                ?? monitors.first
+            let park = OffscreenParking.parkOrigin(monitors: monitors, preferred: preferred)
             let parked = OffscreenParking.parkedFrame(origin: park, sizeFrom: frame, live: frame)
             ax.frame = parked
             if allowMinimize {

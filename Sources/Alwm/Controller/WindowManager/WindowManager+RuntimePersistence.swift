@@ -173,6 +173,23 @@ extension WindowManager {
         syncTokenIndex()
     }
 
+    func persistRuntimeStateBeforeQuit() {
+        settingsUI.flushPendingChanges()
+        let wasBootstrapping = isBootstrapping
+        let wasResume = isResumeRecovering
+        let wasDestructive = allowDestructiveLayoutFlush
+        isBootstrapping = false
+        isResumeRecovering = false
+        allowDestructiveLayoutFlush = true
+        let all = Set(workspaces.workspaces.keys)
+        persistRuntimeState(forceWorkspaceLayouts: all)
+        allowDestructiveLayoutFlush = wasDestructive
+        isBootstrapping = wasBootstrapping
+        isResumeRecovering = wasResume
+        NSLog("ALWM: persisted runtime state before quit")
+        logMove("persist layouts before quit ws=\(all.sorted().joined(separator: ","))")
+    }
+
     func persistRuntimeStateBeforeUpdate() {
         let wasBootstrapping = isBootstrapping
         let wasResume = isResumeRecovering
@@ -215,7 +232,7 @@ extension WindowManager {
             for (id, wsID) in windowWorkspace {
                 runtimeState.setAssignment(wsID, for: id)
             }
-            if !layoutStillRecovering {
+            if !layoutStillRecovering || forceUserLayout {
                 runtimeState.pruneWindows(keeping: Set(windowsByID.keys))
             }
         }
@@ -920,7 +937,7 @@ extension WindowManager {
         engine.niri.snapViewToFocusedColumn(&ws, usableWidth: usable.width)
         ws.viewOffset = min(ws.viewOffset, engine.niri.maxViewOffset(workspace: ws, usable: usable))
         workspaces.setWorkspace(ws)
-        let signature = "\(ws.columns.count):\(structuralSnapSignature(for: ws))"
+        let signature = "\(ws.columns.count):\(structuralSnapSignature(for: ws)):\(Int(usable.width)):\(ws.columns.map { Int($0.width) })"
         if lastSnapSignature[wsID] == signature { return }
         lastSnapSignature[wsID] = signature
         markStructuralLayoutChange(wsID)
@@ -955,9 +972,11 @@ extension WindowManager {
         let newTokenSets = columns.map { Set($0.windows.map(\.token)) }
         if liveTokenSets == newTokenSets {
             for i in columns.indices {
-                columns[i].width = live.columns[i].width
-                columns[i].isMaximized = live.columns[i].isMaximized
-                columns[i].restoreWidth = live.columns[i].restoreWidth
+                if live.columns[i].width > 0 {
+                    columns[i].width = live.columns[i].width
+                    columns[i].isMaximized = live.columns[i].isMaximized
+                    columns[i].restoreWidth = live.columns[i].restoreWidth
+                }
             }
             return
         }

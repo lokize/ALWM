@@ -8,6 +8,53 @@ enum SettingsPersistencePolicy {
     }
 }
 
+@MainActor
+public final class SettingsPersistCoordinator: ObservableObject {
+    @Published public var hasPendingChanges: Bool = false
+    public var initialConfig: AlwmConfig
+    public var liveConfig: AlwmConfig
+    public var onSave: ((AlwmConfig) -> Void)?
+    public var persistTask: Task<Void, Never>?
+
+    public init(config: AlwmConfig, onSave: ((AlwmConfig) -> Void)? = nil) {
+        self.initialConfig = config
+        self.liveConfig = config
+        self.onSave = onSave
+    }
+
+    public func schedulePersist() {
+        persistTask?.cancel()
+        persistTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(280))
+            guard !Task.isCancelled else { return }
+            self?.persist()
+        }
+    }
+
+    public func flushIfNeeded() {
+        guard SettingsPersistencePolicy.shouldFlushOnDisappear(hasPendingLocalChanges: hasPendingChanges) else { return }
+        persist()
+    }
+
+    public func persist() {
+        persistTask?.cancel()
+        persistTask = nil
+        guard hasPendingChanges else { return }
+        var synced = liveConfig
+        synced.hotkeys = ConfigStore.syncWorkspaceHotkeys(
+            workspaces: synced.workspaces,
+            hotkeys: synced.hotkeys
+        )
+        if synced.hotkeys.count != liveConfig.hotkeys.count {
+            liveConfig = synced
+        }
+        ConfigWriter.writeChanges(from: initialConfig, to: synced)
+        initialConfig = synced
+        onSave?(synced)
+        hasPendingChanges = false
+    }
+}
+
 // MARK: - SettingsRootView — Persist helpers
 
 extension SettingsRootView {
@@ -27,6 +74,7 @@ extension SettingsRootView {
     func persist() {
         persistTask?.cancel()
         persistTask = nil
+        guard SettingsPersistencePolicy.shouldFlushOnDisappear(hasPendingLocalChanges: hasPendingLocalChanges) else { return }
         var synced = config
         synced.hotkeys = ConfigStore.syncWorkspaceHotkeys(
             workspaces: synced.workspaces,
@@ -35,9 +83,12 @@ extension SettingsRootView {
         if synced.hotkeys.count != config.hotkeys.count {
             config = synced
         }
-        ConfigWriter.write(synced)
+        ConfigWriter.writeChanges(from: coordinator.initialConfig, to: synced)
+        coordinator.initialConfig = synced
+        coordinator.liveConfig = synced
         onSave(synced)
         hasPendingLocalChanges = false
+        coordinator.hasPendingChanges = false
     }
 
 

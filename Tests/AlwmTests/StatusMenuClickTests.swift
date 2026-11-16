@@ -43,9 +43,13 @@ struct StatusMenuClickTests {
             backing: .buffered,
             defer: false
         )
+        window.isReleasedWhenClosed = false
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        defer { window.close() }
+        defer {
+            window.orderOut(nil)
+            window.close()
+        }
         var received: CGPoint?
         let bridge = StatusMenuClickOutsideBridge { received = $0 }
         let token = try #require(bridge.installLocal())
@@ -83,4 +87,34 @@ struct StatusMenuClickTests {
         #expect(abs(point.y - expected.y) < 1)
     }
 
+    @Test("toggle debounces rapid repeated clicks within 150ms")
+    @MainActor
+    func toggleDebouncesRapidClicks() async throws {
+        let popover = StatusPopoverController()
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 20, height: 20))
+        let window = NSWindow(
+            contentRect: NSRect(x: 200, y: 200, width: 100, height: 100),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView?.addSubview(view)
+        window.makeKeyAndOrderFront(nil)
+        defer {
+            popover.close()
+            window.orderOut(nil)
+            window.close()
+        }
+
+        popover.toggle(relativeTo: view)
+        // Immediate second call should be debounced and not close the popover
+        popover.toggle(relativeTo: view)
+        // Give runloop a beat
+        try await Task.sleep(for: .milliseconds(20))
+        // Since it was debounced, close was not triggered by the rapid second call
+        popover.close()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(!popover.isShown)
+    }
 }

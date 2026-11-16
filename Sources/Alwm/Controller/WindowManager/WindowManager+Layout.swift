@@ -92,10 +92,18 @@ enum WorkspaceMonitorLeakPolicy {
         let monitorFrames = monitors.map(\.frame)
         guard OffscreenParking.intersectsAnyMonitor(frame, monitors: monitorFrames) else { return false }
 
+        // Find the monitor showing `home` workspace, if any
+        let homeMonitorID = activeWorkspaceByMonitor.first(where: { $0.value == home })?.key
+
+        // If the window is a clamped edge strip from offscreen parking:
+        // Clamping to its own home monitor's edge is expected macOS WindowServer behavior.
+        // It only leaks if it clamps onto a DIFFERENT monitor than the one hosting home.
         if OffscreenParking.isEdgeStrip(frame, monitors: monitorFrames) {
-            for monitor in monitors {
-                guard OffscreenParking.intersectsAnyMonitor(frame, monitors: [monitor.frame]) else { continue }
-                if activeWorkspaceByMonitor[monitor.id] != home { return true }
+            guard let homeMonID = homeMonitorID else { return false }
+            for monitor in monitors where monitor.id != homeMonID {
+                if OffscreenParking.intersectsAnyMonitor(frame, monitors: [monitor.frame]) {
+                    return true
+                }
             }
             return false
         }
@@ -156,6 +164,17 @@ extension WindowManager {
             var needsRelayout = false
 
             for id in pending {
+                if let win = self.windowsByID[id], win.isFloating {
+                    if let f = self.ax.currentFrame(of: id) {
+                        var updated = win
+                        updated.frame = f
+                        self.windowsByID[id] = updated
+                        self.savedFrames[id] = f
+                        self.lastFrames[id] = f
+                        self.syncAppRuleOnWindowResized(id: id)
+                    }
+                    continue
+                }
                 guard let win = self.windowsByID[id], win.isTiled else { continue }
                 guard self.quake.windowID != id else { continue }
                 if Date().timeIntervalSince(self.windowFirstTrackedAt[id] ?? .distantPast) < self.newWindowColumnGrace {
@@ -316,11 +335,29 @@ extension WindowManager {
             missingScanFirstSeenAt[id] = firstMissing
             let missingLongEnough = Date().timeIntervalSince(firstMissing) >= 0.75
             if id == quake.windowID {
+                if !QuakeTerminalController.isWindowAlive(id) {
+                    if let app = NSRunningApplication(processIdentifier: id.pid), !app.isTerminated,
+                       let replacementNum = QuakeTerminalController.pickWindowServerWindowNumber(for: id.pid) {
+                        let replacement = WindowID(pid: id.pid, windowNumber: replacementNum)
+                        NSLog("ALWM Quake: soft-rebinding windowNumber churn %@ -> %@", id.token, replacement.token)
+                        quake.rebind(replacement)
+                        runtimeState.setQuakeWindowToken(replacement.token)
+                        continue
+                    }
+                    NSLog("ALWM Quake: window %@ is no longer alive in WindowServer — closing", id.token)
+                    handleQuakeWindowClosed()
+                    continue
+                }
                 // Soft-delete: ⌘T / tab chrome must not immediately tear Quake down.
-                let count = (missingScanCounts[id] ?? 0) + 1
-                missingScanCounts[id] = count
-                if count >= 6 {
-                    scheduleConfirmQuakeClosed(suspectID: id)
+                if quake.isVisible {
+                    let count = (missingScanCounts[id] ?? 0) + 1
+                    missingScanCounts[id] = count
+                    if count >= 6 {
+                        scheduleConfirmQuakeClosed(suspectID: id)
+                    }
+                } else {
+                    missingScanCounts.removeValue(forKey: id)
+                    missingScanFirstSeenAt.removeValue(forKey: id)
                 }
                 continue
             }
@@ -328,8 +365,6 @@ extension WindowManager {
             let isFloatGhost = windowsByID[id]?.isFloating == true && id != quake.windowID
             let home = windowWorkspace[id] ?? workspaces.workspaceID(containing: id)
             let homeWasActive = home.map { isHomeActiveOnAnyMonitor($0) } ?? false
-            // User clicked the red X on an active workspace — forget quickly (not a park blip).
-            // Never treat sleep/wake AX mass-drop as red-X (that quit Discord/WhatsApp — move.log).
             let closedOnActive = homeWasActive
                 && workspaces.workspaceID(containing: id) != nil
                 && !isApplyingVisibility
@@ -339,6 +374,7 @@ extension WindowManager {
                 : (isFloatGhost ? 2 : (closedOnActive ? 2 : 4))
             let count = (missingScanCounts[id] ?? 0) + 1
             missingScanCounts[id] = count
+
             // Closed windows vanish from AX — drop the column slot once stable (not on first blip).
             if workspaces.workspaceID(containing: id) != nil, !isMoveProtectedTile(id) {
                 if let home = workspaces.workspaceID(containing: id) {
@@ -356,6 +392,7 @@ extension WindowManager {
                     runtimeState.setAssignment(nil, for: id)
                     columnsStripped = true
                     if let home {
+                        lastSnapSignature[home] = nil
                         pruneVacantColumnSlots(wsID: home)
                         strippedLayouts.insert(home)
                     }
@@ -383,6 +420,7 @@ extension WindowManager {
                 }
                 if let home = workspaces.workspaceID(containing: id) {
                     strippedLayouts.insert(home)
+                    lastSnapSignature[home] = nil
                 }
                 if id == quake.windowID {
                     quake.forgetIfFullyGone(windows: [:])
@@ -400,6 +438,9 @@ extension WindowManager {
                 cancelSameBundleSiblingSettle(id)
             }
             // Keep last known ManagedWindow (until forgotten) so we can still park by sticky id.
+        }
+        if !removed.isEmpty, !isBootstrapping, !isResumeRecovering {
+            ax.scheduleScanAll(delay: 0.8)
         }
         for id in next {
             missingScanCounts.removeValue(forKey: id)
@@ -466,9 +507,14 @@ extension WindowManager {
         forceTileExpandUntil = forceTileExpandUntil.filter { Date() < $0.value }
         // Use merged tracking (soft-missing kept) so a parked quake is not forgotten.
         if let qid = quake.windowID, merged[qid] == nil {
-            let count = missingScanCounts[qid] ?? 0
-            if count >= 6 {
-                scheduleConfirmQuakeClosed(suspectID: qid)
+            if quake.isVisible {
+                let count = missingScanCounts[qid] ?? 0
+                if count >= 6 {
+                    scheduleConfirmQuakeClosed(suspectID: qid)
+                }
+            } else {
+                missingScanCounts.removeValue(forKey: qid)
+                missingScanFirstSeenAt.removeValue(forKey: qid)
             }
             // Do not call forgetIfFullyGone on first blips — that clears visible Quake on ⌘T.
         }
@@ -544,19 +590,22 @@ extension WindowManager {
                     ? nil
                     : (windowWorkspace[id] ?? runtimeState.assignment(for: id))
                         .flatMap { existingWorkspaces.contains($0) ? $0 : nil })
-            let openingRule = stickyHome == nil && snapshotHome == nil
-                ? AppRules.preferredWorkspaceForOpening(rules: rules, window: win)
-                : nil
-            if let selectedHome = InitialWorkspaceSelection.resolve(
-                rule: openingRule,
-                sticky: stickyHome,
-                savedLayout: snapshotHome,
-                bundle: nil,
-                existing: existingWorkspaces
-            ) {
-                let rule = selectedHome == openingRule
-                    ? AppRules.matching(rules: rules, window: win)
-                    : nil
+            let isNewlyAdded = added.contains(id)
+            let configuredRuleHome = AppRules.preferredWorkspace(rules: rules, window: win)
+                .flatMap { existingWorkspaces.contains($0) ? $0 : nil }
+            let openingRule: String? = configuredRuleHome
+            let selectedHome: String? = {
+                if let openingRule { return openingRule }
+                return InitialWorkspaceSelection.resolve(
+                    rule: configuredRuleHome,
+                    sticky: stickyHome,
+                    savedLayout: snapshotHome,
+                    bundle: nil,
+                    existing: existingWorkspaces
+                )
+            }()
+            if let selectedHome {
+                let rule = AppRules.matching(rules: rules, window: win)
                 let targetMon = rule.flatMap { monitorForAppRule($0, window: win) }
                     ?? displayMonitor(forHome: selectedHome, fallback: monitor)
                 assignWindow(id, to: selectedHome, on: targetMon)
@@ -594,10 +643,11 @@ extension WindowManager {
                 continue
             }
 
-            if let home = initialWorkspaceForNewWindow(for: win, on: monitor) {
+            let targetMon = monitorUnderMouse() ?? monitor
+            if let home = initialWorkspaceForNewWindow(for: win, on: targetMon) {
                 let rule = AppRules.matching(rules: rules, window: win)
                 let target = rule.flatMap { monitorForAppRule($0, window: win) }
-                    ?? displayMonitor(forHome: home, fallback: monitor)
+                    ?? displayMonitor(forHome: home, fallback: targetMon)
                 assignWindow(id, to: home, on: target)
             }
         }
@@ -792,6 +842,10 @@ extension WindowManager {
             }
             let addedTiles = Set(added).subtracting(addedFloats)
             ingestRelayoutWorkItem?.cancel()
+            let homes = Set(addedTiles.compactMap { workspaces.workspaceID(containing: $0) })
+            for home in homes {
+                lastSnapSignature[home] = nil
+            }
             if !shouldDeferVisibilityRefreshFromIngest() {
                 if !addedTiles.isEmpty {
                     // Snap columns only — a full visibility pass hide/reveals the new tile in a loop.
@@ -822,7 +876,6 @@ extension WindowManager {
                         restoreWorkspaceLayoutsFromDisk()
                         prepareAllActiveWorkspaceLayouts()
                     } else {
-                        let homes = Set(addedTiles.compactMap { workspaces.workspaceID(containing: $0) })
                         for home in homes where isHomeActiveOnAnyMonitor(home) {
                             logMove("tile new-window snap ws=\(home) ids=\(addedTiles.map(\.token).joined(separator: ","))")
                             snapWorkspaceTilesAfterColumnChange(home)
@@ -830,6 +883,18 @@ extension WindowManager {
                     }
                 } else if !addedFloats.isEmpty {
                     revealActiveFloats(ids: addedFloats)
+                }
+            } else if !addedTiles.isEmpty {
+                let delay = max(0.1, max(
+                    suppressWorkspaceFollowUntil.timeIntervalSinceNow,
+                    suppressIngestReassignUntil.timeIntervalSinceNow
+                ) + 0.05)
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                    guard let self else { return }
+                    for home in homes where self.isHomeActiveOnAnyMonitor(home) {
+                        self.lastSnapSignature[home] = nil
+                        self.snapWorkspaceTilesAfterColumnChange(home)
+                    }
                 }
             }
         } else if !shouldDeferVisibilityRefreshFromIngest() {
@@ -1022,8 +1087,6 @@ extension WindowManager {
             if f.maxX > usable.maxX { f.x = max(usable.x, usable.maxX - f.width) }
         }
         if f.height > usable.height { f.height = usable.height }
-        if f.y < usable.y { f.y = usable.y }
-        if f.maxY > usable.maxY { f.y = max(usable.y, usable.maxY - f.height) }
         if f.y < usable.y { f.y = usable.y }
         if f.maxY > usable.maxY { f.height = max(48, usable.maxY - f.y) }
         return f
@@ -1983,9 +2046,15 @@ extension WindowManager {
                 )
                 if ax.isMinimized(id) { continue }
 
+                let homeMon = monitors.monitors.first(where: { workspaces.activeWorkspaceByMonitor[$0.id] == home })
+                    ?? workspaces.preferredMonitor(forWorkspace: home, monitors: monitors.monitors)
+                    ?? primaryMonitor()
+                let windowPreferred = homeMon?.frame ?? preferred
+                let windowPark = OffscreenParking.parkOrigin(monitors: allMonitorFrames, preferred: windowPreferred)
+
                 var parkFrame = savedFrames[id] ?? live
-                parkFrame.x = park.x
-                parkFrame.y = park.y
+                parkFrame.x = windowPark.x
+                parkFrame.y = windowPark.y
                 ax.parkOffscreen(frame: parkFrame, id: id, monitors: allMonitorFrames)
                 if let after = liveFrameForVisibility(id),
                    frameLeaksWrongMonitor(home: home, frame: after),
@@ -2153,6 +2222,15 @@ extension WindowManager {
             }
         }
 
+        // Memory optimization: prune dead window references from tracking dictionaries
+        let trackedIDs = Set(windowsByID.keys)
+        missingScanCounts = missingScanCounts.filter { trackedIDs.contains($0.key) }
+        lastFrames = lastFrames.filter { trackedIDs.contains($0.key) }
+        savedFrames = savedFrames.filter { trackedIDs.contains($0.key) }
+        windowFirstTrackedAt = windowFirstTrackedAt.filter { trackedIDs.contains($0.key) }
+        forcedFloatVisibleUntil = forcedFloatVisibleUntil.filter { trackedIDs.contains($0.key) }
+        forcedTiledUntil = forcedTiledUntil.filter { trackedIDs.contains($0.key) }
+
         if changed, configStore.config.settings.developerMode {
             NSLog("ALWM: healed stale column entries")
         }
@@ -2164,8 +2242,8 @@ extension WindowManager {
         }
     }
 
-    func reinsertOrphanTiles() {
-        if Date() < suppressIngestReassignUntil { return }
+    func reinsertOrphanTiles(force: Bool = false) {
+        if !force, Date() < suppressIngestReassignUntil { return }
         let monitorFrames = monitors.monitors.map(\.frame)
         for (id, win) in windowsByID {
             guard !win.isIgnored, quake.windowID != id, !isQuakeOwned(id) else { continue }
@@ -2275,6 +2353,7 @@ extension WindowManager {
                 }
                 return layoutMonitor
             }()
+            let parkForWS = OffscreenParking.parkOrigin(monitors: allMonitorFrames, preferred: monitorForWS.frame)
             var layoutWS = ws
             if active {
                 prepareWorkspaceLayoutForDisplay(wsID, monitor: monitorForWS)
@@ -2291,8 +2370,8 @@ extension WindowManager {
             if !active {
                 for (index, a) in assignments.enumerated() {
                     var copy = a
-                    copy.frame.x = park.x - Double(index) * 40
-                    copy.frame.y = park.y
+                    copy.frame.x = parkForWS.x - Double(index) * 40
+                    copy.frame.y = parkForWS.y
                     copy.visible = false
                     assignments[index] = copy
                 }
@@ -2300,8 +2379,8 @@ extension WindowManager {
                 for (index, a) in assignments.enumerated() {
                     guard let home = authoritativeHome(for: a.windowID), home != wsID else { continue }
                     var copy = a
-                    copy.frame.x = park.x - Double(index) * 40
-                    copy.frame.y = park.y
+                    copy.frame.x = parkForWS.x - Double(index) * 40
+                    copy.frame.y = parkForWS.y
                     copy.visible = false
                     assignments[index] = copy
                 }
@@ -2317,14 +2396,19 @@ extension WindowManager {
         for (id, win) in windowsByID where win.isTiled {
             let home = authoritativeHome(for: id)
             let onActive = home.map { isHomeActiveOnAnyMonitor($0) } ?? false
+            let homeMon = home.flatMap { h in
+                monitors.monitors.first(where: { workspaces.activeWorkspaceByMonitor[$0.id] == h })
+                    ?? workspaces.preferredMonitor(forWorkspace: h, monitors: monitors.monitors)
+            } ?? layoutMonitor
+            let parkForHome = OffscreenParking.parkOrigin(monitors: allMonitorFrames, preferred: homeMon.frame)
             if !onActive {
                 visibleIDs.remove(id)
                 if target[id] == nil {
-                    target[id] = Rect(x: park.x, y: park.y, width: 800, height: 600)
+                    target[id] = Rect(x: parkForHome.x, y: parkForHome.y, width: 800, height: 600)
                 } else {
                     var f = target[id]!
-                    f.x = park.x
-                    f.y = park.y
+                    f.x = parkForHome.x
+                    f.y = parkForHome.y
                     target[id] = f
                 }
             } else if target[id] == nil {
@@ -2359,7 +2443,7 @@ extension WindowManager {
                         }) ?? layoutMonitor
                         assignWindow(id, to: home, on: mon)
                     }
-                    target[id] = Rect(x: park.x, y: park.y, width: max(win.frame.width, 800), height: max(win.frame.height, 600))
+                    target[id] = Rect(x: parkForHome.x, y: parkForHome.y, width: max(win.frame.width, 800), height: max(win.frame.height, 600))
                     visibleIDs.remove(id)
                 }
             }
@@ -2381,8 +2465,13 @@ extension WindowManager {
             let home = authoritativeHome(for: id)
             let onActive = home.map { isHomeActiveOnAnyMonitor($0) } ?? false
             let live = ax.currentFrame(of: id) ?? win.frame
+            let homeMon = home.flatMap { h in
+                monitors.monitors.first(where: { workspaces.activeWorkspaceByMonitor[$0.id] == h })
+                    ?? workspaces.preferredMonitor(forWorkspace: h, monitors: monitors.monitors)
+            } ?? layoutMonitor
+            let parkForHome = OffscreenParking.parkOrigin(monitors: allMonitorFrames, preferred: homeMon.frame)
             if onActive, let home {
-                let restored = floatFrameForActiveHome(id: id, home: home, live: live, layoutMonitor: layoutMonitor)
+                let restored = floatFrameForActiveHome(id: id, home: home, live: live, layoutMonitor: homeMon)
                 if frameIsOnMonitorShowingHome(home: home, frame: restored) {
                     savedFrames[id] = restored
                 }
@@ -2396,8 +2485,8 @@ extension WindowManager {
                     savedFrames[id] = prev
                 }
                 var parkFrame = savedFrames[id] ?? live
-                parkFrame.x = park.x
-                parkFrame.y = park.y
+                parkFrame.x = parkForHome.x
+                parkFrame.y = parkForHome.y
                 target[id] = parkFrame
                 visibleIDs.remove(id)
             }
@@ -2430,16 +2519,20 @@ extension WindowManager {
                 }
             }
             visibleIDs.remove(id)
+            let homeMonitor = displayMonitor(forHome: home, fallback: layoutMonitor)
+            let parkForHome = OffscreenParking.parkOrigin(monitors: allMonitorFrames, preferred: homeMonitor.frame)
             var f = planned
-            f.x = park.x
-            f.y = park.y
+            f.x = parkForHome.x
+            f.y = parkForHome.y
             target[id] = f
         }
 
         // Quake scratchpad: always docked float on the configured edge (never tiled layout).
         if let qid = quake.windowID {
             let mon = monitorContainingQuakeWindow() ?? layoutMonitor
-            if quake.isVisible {
+            let quakeWS = quake.activeWorkspaceID
+            let quakeWSActive = quakeWS.map { activeIDs.contains($0) } ?? true
+            if quake.isVisible && quakeWSActive {
                 let frame = quake.visibleFrame(settings: configStore.config.settings.quake, monitor: mon)
                 target[qid] = frame
                 visibleIDs.insert(qid)

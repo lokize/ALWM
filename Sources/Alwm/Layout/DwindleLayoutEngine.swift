@@ -24,9 +24,9 @@ public struct DwindleLayoutEngine: Sendable {
         active: Bool
     ) -> [FrameAssignment] {
         let usable = usableArea(monitor: monitor)
-        // Park BELOW the monitor — left-park gets clamped into a visible strip by macOS.
-        let parkX = monitor.midX - 40
-        let parkY = monitor.maxY + max(monitor.height, 2500) + 1200
+        let park = OffscreenParking.parkOrigin(monitors: [monitor], preferred: monitor)
+        let parkX = park.x
+        let parkY = park.y
         let ids = workspace.orderedWindowIDs.filter { windows[$0]?.isTiled == true }
 
         if !active {

@@ -14,9 +14,8 @@ enum InitialWorkspaceSelection {
         active: String? = nil,
         existing: Set<String>
     ) -> String? {
-        // Rules seed placement for windows without a recorded home. A user-moved
-        // window must keep its sticky or layout-snapshot home across wake/recovery.
-        [sticky, savedLayout, rule, active, bundle]
+        // App rules have absolute priority over previous snapshots / stickies.
+        [rule, sticky, savedLayout, active, bundle]
             .compactMap { $0 }
             .first(where: existing.contains)
     }
@@ -32,19 +31,17 @@ extension WindowManager {
             rules: configStore.config.rules,
             window: win
         )
-        // macOS can create a new app window at its own default frame on a different
-        // display from the one the user is currently working on. Place it with the
-        // current workspace in that case; the frame monitor is only a fallback.
-        let currentMonitor = monitors.monitors.first(where: { $0.id == primaryMonitorID }) ?? monitor
+        // This path is for genuinely new windows: rules take absolute precedence.
+        if let openingRule, workspaces.workspaces[openingRule] != nil { return openingRule }
+
+        // Open on the monitor where the cursor currently is by default;
+        // the frame monitor is only a fallback.
+        let currentMonitor = monitorUnderMouse() ?? monitors.monitors.first(where: { $0.id == primaryMonitorID }) ?? monitor
         let monitorIndex = workspaces.monitorIndex(of: currentMonitor.id, in: monitors.monitors) ?? 0
         let allowed = Set(workspaces.definitionsVisible(onMonitorIndex: monitorIndex).map(\.id))
         let active = workspaces.activeWorkspaceByMonitor[currentMonitor.id].flatMap {
             allowed.contains($0) ? $0 : nil
         }
-        // This path is for genuinely new windows only. Fuzzy saved-title matching is
-        // reserved for restore/reconciliation; during recovery it can otherwise send a
-        // newly opened app to a stale workspace and leave it parked behind visible tiles.
-        if let openingRule, workspaces.workspaces[openingRule] != nil { return openingRule }
         return active ?? allowed.first ?? firstWorkspaceID()
     }
 
@@ -260,10 +257,13 @@ extension WindowManager {
         }
         guard let targetCol, let targetRow else { return false }
         let isFresh = Date().timeIntervalSince(windowFirstTrackedAt[id] ?? .distantPast) < 8
-        if isFresh, ws.columns.indices.contains(targetCol),
-           !ws.columns[targetCol].windows.filter({ $0 != id }).isEmpty {
-            // Don't pile a newly opened window onto an occupied snapshot column.
-            return false
+        if isFresh, ws.columns.indices.contains(targetCol) {
+            let currentWindows = ws.columns[targetCol].windows.filter({ $0 != id })
+            let snapExpectedCount = targetCol < snap.columns.count ? snap.columns[targetCol].windows.count : 1
+            if currentWindows.count >= snapExpectedCount {
+                // Don't pile a newly opened window onto an already full snapshot column.
+                return false
+            }
         }
 
         workspaces.removeWindowEverywhere(id)
@@ -317,10 +317,13 @@ extension WindowManager {
         }
         guard let targetCol else { return false }
         let isFresh = Date().timeIntervalSince(windowFirstTrackedAt[id] ?? .distantPast) < 8
-        if isFresh, ws.columns.indices.contains(targetCol),
-           !ws.columns[targetCol].windows.filter({ $0 != id }).isEmpty {
-            // Don't pile a newly opened window onto an occupied saved column.
-            return false
+        if isFresh, ws.columns.indices.contains(targetCol) {
+            let currentWindows = ws.columns[targetCol].windows.filter({ $0 != id })
+            let snapExpectedCount = targetCol < snap.columns.count ? snap.columns[targetCol].windows.count : 1
+            if currentWindows.count >= snapExpectedCount {
+                // Don't pile a newly opened window onto an already full saved column.
+                return false
+            }
         }
 
         workspaces.removeWindowEverywhere(id)

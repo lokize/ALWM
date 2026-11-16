@@ -19,8 +19,13 @@ enum QuakeFrameIntent: Equatable {
 private final class QuakeDismissButtonTarget: NSObject {
     var onDismiss: (() -> Void)?
     var onToggleFullscreen: (() -> Void)?
+    var onChangeMonitorWorkspace: ((NSButton) -> Void)?
     @objc func dismiss(_ sender: Any?) { onDismiss?() }
     @objc func toggleFullscreen(_ sender: Any?) { onToggleFullscreen?() }
+    @objc func changeMonitorWorkspace(_ sender: Any?) {
+        guard let button = sender as? NSButton else { return }
+        onChangeMonitorWorkspace?(button)
+    }
 }
 
 private final class AppleScriptResultBox: @unchecked Sendable {
@@ -46,6 +51,7 @@ public final class QuakeTerminalController {
     public private(set) var windowID: WindowID?
     public private(set) var isVisible = false
     public private(set) var activeMonitorID: CGDirectDisplayID?
+    public private(set) var activeWorkspaceID: String?
     public var onNeedRescan: (() -> Void)?
     /// Called whenever a window is adopted as the Quake scratchpad (float + dock).
     public var onAdopted: ((WindowID) -> Void)?
@@ -53,6 +59,7 @@ public final class QuakeTerminalController {
     public var onVisibilityChanged: ((Bool) -> Void)?
     public var onDismiss: (() -> Void)?
     public var onToggleFullscreen: (() -> Void)?
+    public var onRequestChangeMonitorWorkspace: ((NSButton) -> Void)?
     /// Bundle ID waiting for the next new window to become the quake scratchpad.
     public private(set) var pendingAdoptBundleID: String?
 
@@ -63,6 +70,10 @@ public final class QuakeTerminalController {
     var hasVisibleFullscreenButton: Bool {
         guard let stack = dismissButtonPanel?.contentView as? NSStackView else { return false }
         return stack.views.contains { $0.accessibilityLabel() == L10n.t("overlay.fullscreen.expand") }
+    }
+    var hasVisibleMoveButton: Bool {
+        guard let stack = dismissButtonPanel?.contentView as? NSStackView else { return false }
+        return stack.views.contains { $0.accessibilityLabel() == L10n.t("quake.move") }
     }
     private var fullscreenState = OverlayFullscreenState()
     private var fullscreenDisplayID: CGDirectDisplayID?
@@ -85,6 +96,75 @@ public final class QuakeTerminalController {
     public func rebind(_ id: WindowID) {
         windowID = id
         pendingAdoptBundleID = nil
+    }
+
+    public func setLocation(monitorID: CGDirectDisplayID?, workspaceID: String?) {
+        activeMonitorID = monitorID
+        activeWorkspaceID = workspaceID
+    }
+
+    public static func isWindowAlive(_ id: WindowID) -> Bool {
+        guard id.windowNumber > 0, let targetCGID = CGWindowID(exactly: id.windowNumber) else {
+            return false
+        }
+        if let app = NSRunningApplication(processIdentifier: id.pid), app.isTerminated {
+            return false
+        }
+        guard let list = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] else {
+            return false
+        }
+        return list.contains { dict in
+            guard let num = dict[kCGWindowNumber as String] as? CGWindowID,
+                  num == targetCGID else { return false }
+            if let ownerPID = (dict[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value {
+                return ownerPID == id.pid
+            }
+            return true
+        }
+    }
+
+    public static func pickWindowServerWindowNumber(for pid: pid_t) -> Int? {
+        guard let list = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] else {
+            return nil
+        }
+        var candidates: [(number: Int, area: Double)] = []
+        for dict in list {
+            guard let ownerPID = (dict[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
+                  ownerPID == pid else { continue }
+            guard let layer = (dict[kCGWindowLayer as String] as? NSNumber)?.intValue,
+                  layer == 0 else { continue }
+            guard let num = (dict[kCGWindowNumber as String] as? NSNumber)?.intValue,
+                  num > 0 else { continue }
+            if let bounds = dict[kCGWindowBounds as String] as? [String: Any],
+               let w = (bounds["Width"] as? NSNumber)?.doubleValue,
+               let h = (bounds["Height"] as? NSNumber)?.doubleValue,
+               w >= 80, h >= 80 {
+                candidates.append((number: num, area: w * h))
+            }
+        }
+        return candidates.max(by: { $0.area < $1.area })?.number
+    }
+
+    public static func pickRunningAppWindow(
+        for bundleID: String,
+        in windows: [WindowID: ManagedWindow],
+        ax: AXTracker
+    ) -> WindowID? {
+        if let win = windows.values.first(where: { $0.bundleID == bundleID && $0.isScratchpad }) {
+            return win.id
+        }
+        if let win = windows.values.first(where: { $0.bundleID == bundleID && !$0.isIgnored }) {
+            return win.id
+        }
+        if let win = ax.currentWindows.first(where: { $0.bundleID == bundleID && !$0.isIgnored }) {
+            return win.id
+        }
+        for app in NSRunningApplication.runningApplications(withBundleIdentifier: bundleID) where !app.isTerminated {
+            if let num = pickWindowServerWindowNumber(for: app.processIdentifier) {
+                return WindowID(pid: app.processIdentifier, windowNumber: num)
+            }
+        }
+        return nil
     }
 
     public func clearPendingAdopt() {
@@ -140,28 +220,39 @@ public final class QuakeTerminalController {
             if windows[id] == nil && ax.currentAX[id] == nil {
                 onNeedRescan?()
             }
-            if isVisible || windows[id] != nil || ax.currentAX[id] != nil {
+            var activeID = id
+            var isAlive = windows[id] != nil || ax.currentAX[id] != nil || Self.isWindowAlive(id)
+            if !isAlive {
+                // If the process is still running, check if WindowServer churned the windowNumber
+                if let app = NSRunningApplication(processIdentifier: id.pid), !app.isTerminated,
+                   let replacementNum = Self.pickWindowServerWindowNumber(for: id.pid) {
+                    activeID = WindowID(pid: id.pid, windowNumber: replacementNum)
+                    rebind(activeID)
+                    isAlive = true
+                }
+            }
+
+            if isAlive {
                 if isVisible {
-                    NSLog("ALWM Quake: hide %@", id.token)
-                    hide(id: id, settings: settings, monitor: monitor, applyFrame: applyFrame)
+                    NSLog("ALWM Quake: hide %@", activeID.token)
+                    hide(id: activeID, settings: settings, monitor: monitor, applyFrame: applyFrame)
                     focusTiled()
                 } else {
-                    NSLog("ALWM Quake: show existing %@", id.token)
-                    show(id: id, settings: settings, monitor: monitor, applyFrame: applyFrame, ax: ax)
+                    NSLog("ALWM Quake: show existing %@", activeID.token)
+                    show(id: activeID, settings: settings, monitor: monitor, applyFrame: applyFrame, ax: ax)
                 }
                 return
             }
-            NSLog("ALWM Quake: stale id %@ — clearing", id.token)
+            NSLog("ALWM Quake: dead/stale id %@ — clearing", id.token)
             windowID = nil
             setVisible(false)
+            blurPanel?.orderOut(nil)
         }
 
-        // Prefer an already-adopted scratchpad — never yank a normal tiled/floating shell.
-        if let existing = windows.values.first(where: {
-            $0.bundleID == bundleID && $0.isScratchpad
-        }) {
-            NSLog("ALWM Quake: adopt scratchpad %@", existing.id.token)
-            adopt(existing.id, settings: settings, monitor: monitor, applyFrame: applyFrame, ax: ax)
+        // Never open duplicate terminals: reuse ANY existing window for this bundle
+        if let existingID = Self.pickRunningAppWindow(for: bundleID, in: windows, ax: ax) {
+            NSLog("ALWM Quake: reusing existing shell window %@", existingID.token)
+            adopt(existingID, settings: settings, monitor: monitor, applyFrame: applyFrame, ax: ax)
             return
         }
 
@@ -303,19 +394,26 @@ public final class QuakeTerminalController {
         presentationGeneration &+= 1
         activeMonitorID = monitor.id
         let visible = visibleFrame(settings: settings, monitor: monitor)
+        let bundleID = Self.resolveBundleID(configured: settings.bundleID)
         QuakeShellAppearance.sync(
-            bundleID: Self.resolveBundleID(configured: settings.bundleID),
+            bundleID: bundleID,
             settings: settings
         )
         updateBlur(settings: settings, frame: visible, monitor: monitor, visible: true)
         setVisible(true)
 
+        if let app = NSRunningApplication(processIdentifier: id.pid) {
+            _ = app.unhide()
+            app.activate(options: [.activateIgnoringOtherApps])
+        }
+        ax.revealMinimizedWindows(bundleIDs: [bundleID])
+        ax.setMinimized(false, id: id)
+
         // Snap open (no multi-step lerp). Mid-animation AX + applyWorkspaceVisibility used to
         // fight each other and leave siblings half-height / Quake stuck mid-slide.
         applyFrame(id, visible)
-        ax.setMinimized(false, id: id)
         ax.focus(id)
-        if Self.resolveBundleID(configured: settings.bundleID) == "com.mitchellh.ghostty" {
+        if bundleID == "com.mitchellh.ghostty" {
             if let script = QuakeShellAppearance.floatOnTopActionScript(windowID: id.windowNumber, enabled: true) {
                 runAppleScript(script, completion: {})
             }
@@ -399,6 +497,10 @@ public final class QuakeTerminalController {
             panel.isReleasedWhenClosed = false
             let target = QuakeDismissButtonTarget()
             target.onDismiss = { [weak self] in self?.onDismiss?() }
+            target.onToggleFullscreen = { [weak self] in self?.onToggleFullscreen?() }
+            target.onChangeMonitorWorkspace = { [weak self] button in
+                self?.onRequestChangeMonitorWorkspace?(button)
+            }
             let closeButton = makeControlButton(
                 symbol: "xmark.circle.fill",
                 label: L10n.t("quake.hide"),
@@ -411,19 +513,30 @@ public final class QuakeTerminalController {
                 target: target,
                 action: #selector(QuakeDismissButtonTarget.toggleFullscreen(_:))
             )
-            let stack = NSStackView(views: [fullscreenButton, closeButton])
+            let moveButton = makeControlButton(
+                symbol: "display.2",
+                label: L10n.t("quake.move"),
+                target: target,
+                action: #selector(QuakeDismissButtonTarget.changeMonitorWorkspace(_:))
+            )
+            let stack = NSStackView(views: [moveButton, fullscreenButton, closeButton])
             stack.orientation = .horizontal
             stack.alignment = .centerY
             stack.spacing = 4
-            stack.frame = NSRect(x: 0, y: 0, width: 60, height: 28)
+            stack.frame = NSRect(x: 0, y: 0, width: 92, height: 28)
             panel.contentView = stack
             dismissButtonTarget = target
             dismissButtonPanel = panel
         }
         dismissButtonTarget?.onDismiss = { [weak self] in self?.onDismiss?() }
         dismissButtonTarget?.onToggleFullscreen = { [weak self] in self?.onToggleFullscreen?() }
+        dismissButtonTarget?.onChangeMonitorWorkspace = { [weak self] button in
+            self?.onRequestChangeMonitorWorkspace?(button)
+        }
         if let stack = dismissButtonPanel?.contentView as? NSStackView,
-           let fullscreenButton = stack.views.first as? NSButton {
+           let fullscreenButton = stack.views.first(where: {
+               $0.accessibilityLabel() == L10n.t("overlay.fullscreen.expand") || $0.accessibilityLabel() == L10n.t("overlay.fullscreen.restore")
+           }) as? NSButton {
             let label = L10n.t(fullscreenState.isFullscreen ? "overlay.fullscreen.restore" : "overlay.fullscreen.expand")
             fullscreenButton.setAccessibilityLabel(label)
             fullscreenButton.toolTip = label
@@ -434,13 +547,24 @@ public final class QuakeTerminalController {
                 accessibilityDescription: label
             )
         }
-        let screen = NSScreen.screens.first
-        let mainHeight = screen.map { Double($0.frame.height) } ?? frame.maxY
+        let primaryH = NSScreen.screens.first?.frame.height ?? CGFloat(frame.maxY)
+        let cocoaFrame = NSRect(x: frame.x, y: primaryH - CGFloat(frame.maxY), width: frame.width, height: frame.height)
+        let screen = NSScreen.screens.first { $0.frame.intersects(cocoaFrame) } ?? NSScreen.screens.first
+        let primaryHeight = Double(primaryH)
+        let topInset: Double = {
+            guard let screen else { return 0 }
+            let axScreenTop = Double(primaryH - screen.frame.maxY)
+            if abs(frame.y - axScreenTop) < 10 {
+                return OverlayChromeGeometry.topSafeInset(for: screen)
+            }
+            return 0
+        }()
         let controlFrame = OverlayChromeGeometry.controlPanelFrame(
             overlayFrame: frame,
-            mainScreenHeight: mainHeight,
-            topSafeInset: OverlayChromeGeometry.topSafeInset(for: screen)
+            mainScreenHeight: primaryHeight,
+            topSafeInset: topInset
         )
+        dismissButtonPanel?.level = .statusBar
         dismissButtonPanel?.setFrame(NSRect(
             x: controlFrame.x,
             y: controlFrame.y,
@@ -551,6 +675,13 @@ public final class QuakeTerminalController {
         QuakeShellAppearance.sync(bundleID: bundleID, settings: settings)
         switch bundleID {
         case "com.apple.Terminal":
+            if let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == bundleID }) {
+                app.activate(options: [])
+                if Self.pickWindowServerWindowNumber(for: app.processIdentifier) != nil {
+                    completion()
+                    return
+                }
+            }
             let script = """
             tell application "Terminal"
               activate
@@ -562,6 +693,11 @@ public final class QuakeTerminalController {
             // Avoid AppleScript/System Events — they can hang forever and freeze ALWM.
             if let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == bundleID }) {
                 app.activate(options: [])
+                // If Ghostty already has any window in WindowServer, DO NOT spawn another!
+                if Self.pickWindowServerWindowNumber(for: app.processIdentifier) != nil {
+                    completion()
+                    return
+                }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
                     Self.postCommandN()
                     completion()
@@ -619,7 +755,15 @@ public final class QuakeTerminalController {
     private func pickNewestWindow(bundleID: String, in ax: AXTracker) -> WindowID? {
         let matches = ax.currentWindows.filter { $0.bundleID == bundleID && !$0.isIgnored }
         // Highest windowNumber is usually the newest.
-        return matches.max(by: { $0.id.windowNumber < $1.id.windowNumber })?.id
+        if let maxMatch = matches.max(by: { $0.id.windowNumber < $1.id.windowNumber })?.id {
+            return maxMatch
+        }
+        for app in NSRunningApplication.runningApplications(withBundleIdentifier: bundleID) where !app.isTerminated {
+            if let num = Self.pickWindowServerWindowNumber(for: app.processIdentifier) {
+                return WindowID(pid: app.processIdentifier, windowNumber: num)
+            }
+        }
+        return nil
     }
 
     public func forgetIfGone(windows: [WindowID: ManagedWindow]) {
@@ -628,6 +772,7 @@ public final class QuakeTerminalController {
         // often drops out of a single AX scan; clearing here would launch a new shell.
         if windows[id] != nil { return }
         if !isVisible { return }
+        if Self.isWindowAlive(id) { return }
         windowID = nil
         setVisible(false)
         blurPanel?.orderOut(nil)
@@ -637,6 +782,7 @@ public final class QuakeTerminalController {
     public func forgetIfFullyGone(windows: [WindowID: ManagedWindow]) {
         guard let id = windowID else { return }
         guard windows[id] == nil else { return }
+        if Self.isWindowAlive(id) { return }
         windowID = nil
         setVisible(false)
         blurPanel?.orderOut(nil)
@@ -658,6 +804,7 @@ public final class QuakeTerminalController {
     public func clearAfterUserClose() {
         windowID = nil
         activeMonitorID = nil
+        activeWorkspaceID = nil
         setVisible(false)
         pendingLaunch = false
         pendingLaunchWantsVisible = true

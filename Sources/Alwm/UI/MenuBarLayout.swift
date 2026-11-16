@@ -83,13 +83,19 @@ enum MenuBarLayout {
 
     private static func focusedMenuBar() -> AXUIElement? {
         let system = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(system, 0.05)
         var appObject: AnyObject?
         guard AXUIElementCopyAttributeValue(system, kAXFocusedApplicationAttribute as CFString, &appObject) == .success
         else { return nil }
         guard let app = AXBridge.element(appObject) else { return nil }
+        AXUIElementSetMessagingTimeout(app, 0.05)
         var barObject: AnyObject?
         guard AXUIElementCopyAttributeValue(app, kAXMenuBarAttribute as CFString, &barObject) == .success else { return nil }
-        return AXBridge.element(barObject)
+        let menuBar = AXBridge.element(barObject)
+        if let menuBar {
+            AXUIElementSetMessagingTimeout(menuBar, 0.05)
+        }
+        return menuBar
     }
 
     private static func menuBarApp(_ menuBar: AXUIElement) -> AXUIElement? {

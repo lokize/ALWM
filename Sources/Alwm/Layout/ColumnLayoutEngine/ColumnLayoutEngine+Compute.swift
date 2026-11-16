@@ -16,9 +16,9 @@ extension ColumnLayoutEngine {
     ) -> [FrameAssignment] {
         let usable = usableArea(monitor: monitor)
         var assignments: [FrameAssignment] = []
-        // Park BELOW the monitor — left-park gets clamped into a visible strip by macOS.
-        let parkX = monitor.midX - 40
-        let parkY = monitor.maxY + max(monitor.height, 2500) + 1200
+        let park = OffscreenParking.parkOrigin(monitors: [monitor], preferred: monitor)
+        let parkX = park.x
+        let parkY = park.y
 
         let columnsWithTiles = workspace.columns.filter {
             columnHasLayoutTiles($0, windows: windows, layoutExcluded: layoutExcluded)

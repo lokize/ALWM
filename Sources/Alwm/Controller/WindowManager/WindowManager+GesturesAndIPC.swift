@@ -454,6 +454,7 @@ extension WindowManager {
     }
 
     public func handleAction(_ action: String) {
+        clearLayoutMutationFreezeForUserInteraction()
         if action == "undo.last" {
             undoLastWindowAction()
             return
@@ -465,6 +466,16 @@ extension WindowManager {
         if action == "quake.toggle" {
             guard let monitor = monitorUnderMouse() ?? monitorForAction() ?? primaryMonitor() else { return }
             toggleQuake(monitor: monitor)
+            return
+        }
+        if action == "notepad.toggle" {
+            guard let monitor = notepad.activeMonitor ?? monitorUnderMouse() ?? monitorForAction() ?? primaryMonitor() else { return }
+            toggleNotepad(monitor: monitor)
+            return
+        }
+        if action == "notepad.new" {
+            guard let monitor = monitorUnderMouse() ?? monitorForAction() ?? primaryMonitor() else { return }
+            openNewNotepad(monitor: monitor)
             return
         }
         let historyKind: WindowActionKind? = {
@@ -507,7 +518,7 @@ extension WindowManager {
                let home = workspaces.activeWorkspaceByMonitor[monitor.id] {
                 if let last = lastTileMoveDedupe,
                    last.0 == action, last.1 == home,
-                   Date().timeIntervalSince(last.2) < 0.35 {
+                   Date().timeIntervalSince(last.2) < 0.08 {
                     return
                 }
                 lastTileMoveDedupe = (action, home, Date())
@@ -703,15 +714,19 @@ extension WindowManager {
         // leaves tiles mid-frame (especially after scratchpad adopt).
         let syncLayout = action.hasPrefix("resize.") || action.hasPrefix("move.")
             || action == "column.maximize" || action == "maximize.column"
-        if action.hasPrefix("move.") {
+        let isTileMutationAction = action.hasPrefix("move.") || action.hasPrefix("resize.")
+            || action == "column.maximize" || action == "maximize.column"
+        if isTileMutationAction {
             let home = workspaces.activeWorkspaceByMonitor[monitor.id]
                 ?? actionTargetTileWindow(on: monitor).flatMap { authoritativeHome(for: $0) }
             if let home {
                 persistRuntimeState(forceWorkspaceLayouts: [home])
             }
         }
-        if action.hasPrefix("move."), let home = workspaces.activeWorkspaceByMonitor[monitor.id]
+        if isTileMutationAction, let home = workspaces.activeWorkspaceByMonitor[monitor.id]
             ?? actionTargetTileWindow(on: monitor).flatMap({ authoritativeHome(for: $0) }) {
+            markStructuralLayoutChange(home)
+            lastSnapSignature[home] = nil
             let layoutMon = displayMonitor(forHome: home, fallback: monitor)
             suppressGeometryEnforce(for: 0.5)
             applyWorkspaceTileLayout(
@@ -722,8 +737,6 @@ extension WindowManager {
             )
             applyAllActiveStackColumns()
             scheduleTileFrameEnforcement(stackAnchor: stackResizeTarget)
-        } else if action.hasPrefix("resize.") || action.hasPrefix("move.") {
-            relayoutWithFrameRetry(stackAnchor: stackResizeTarget, on: monitor)
         } else {
             relayout(animated: !syncLayout, on: monitor)
         }
@@ -741,6 +754,11 @@ extension WindowManager {
              "resize.left", "resize.right", "resize.up", "resize.down",
              "column.maximize", "maximize.column",
              "float.toggle", "float.on", "float.off":
+            if action.hasPrefix("resize.") || action == "column.maximize" || action == "maximize.column" {
+                if let target = actionTargetTileWindow(on: monitor) {
+                    syncAppRuleOnWindowResized(id: target)
+                }
+            }
             if action.hasPrefix("move."),
                let home = workspaces.activeWorkspaceByMonitor[monitor.id],
                let ws = workspaces.workspaces[home] {

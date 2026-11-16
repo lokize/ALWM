@@ -45,7 +45,16 @@ public final class ConfigStore: @unchecked Sendable {
             try Self.defaultGesturesTOML.write(to: ConfigPaths.gestures, atomically: true, encoding: .utf8)
         }
         if !fm.fileExists(atPath: ConfigPaths.workspaces.path) {
-            try Self.defaultWorkspacesTOML.write(to: ConfigPaths.workspaces, atomically: true, encoding: .utf8)
+            if let backups = try? fm.contentsOfDirectory(at: ConfigPaths.root, includingPropertiesForKeys: nil)
+                .filter({ $0.lastPathComponent.hasPrefix("workspaces.toml.pre-") })
+                .sorted(by: { $0.lastPathComponent > $1.lastPathComponent }),
+               let newest = backups.first,
+               let text = try? String(contentsOf: newest, encoding: .utf8),
+               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                try text.write(to: ConfigPaths.workspaces, atomically: true, encoding: .utf8)
+            } else {
+                try Self.defaultWorkspacesTOML.write(to: ConfigPaths.workspaces, atomically: true, encoding: .utf8)
+            }
         }
         let sample = ConfigPaths.appRulesDir.appendingPathComponent("float-system.toml.sample")
         if !fm.fileExists(atPath: sample.path) {
@@ -212,7 +221,12 @@ public final class ConfigStore: @unchecked Sendable {
         if let v = table.theme, let theme = AppTheme(rawValue: v) { s.theme = theme }
         if let v = table.language, let lang = AppLanguage(rawValue: v) { s.language = lang }
         if let v = table.showMenuBarStatusLabel { s.showMenuBarStatusLabel = v }
-        if let v = table.preventDisplaySleep { s.preventDisplaySleep = v }
+        if let rawMode = table.sleepPreventionMode,
+           let mode = SleepPreventionMode(rawValue: rawMode) {
+            s.sleepPreventionMode = mode
+        } else if let v = table.preventDisplaySleep {
+            s.sleepPreventionMode = v ? .systemAndDisplay : .off
+        }
         if let v = table.launchAtLogin { s.launchAtLogin = v }
         if let v = table.onboardingCompleted { s.onboardingCompleted = v }
 
@@ -447,6 +461,7 @@ public final class ConfigStore: @unchecked Sendable {
         var theme: String?
         var language: String?
         var showMenuBarStatusLabel: Bool?
+        var sleepPreventionMode: String?
         var preventDisplaySleep: Bool?
         var launchAtLogin: Bool?
         var onboardingCompleted: Bool?
@@ -568,6 +583,7 @@ public final class ConfigStore: @unchecked Sendable {
     theme = "system"
     language = "system"
     showMenuBarStatusLabel = true
+    sleepPreventionMode = "off"
     preventDisplaySleep = false
     launchAtLogin = true
     onboardingCompleted = false
@@ -821,6 +837,18 @@ public final class ConfigStore: @unchecked Sendable {
     [[workspaces]]
     id = "4"
     name = "4"
+    layout = "niri"
+    monitorIndex = 0
+
+    [[workspaces]]
+    id = "5"
+    name = "5"
+    layout = "niri"
+    monitorIndex = 1
+
+    [[workspaces]]
+    id = "6"
+    name = "6"
     layout = "niri"
     monitorIndex = 1
     """

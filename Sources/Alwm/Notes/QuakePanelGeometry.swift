@@ -5,7 +5,7 @@ enum OverlayChromeGeometry {
     static func controlPanelFrame(
         overlayFrame: Rect,
         mainScreenHeight: Double,
-        width: Double = 60,
+        width: Double = 92,
         height: Double = 28,
         topSafeInset: Double,
         gapBelowMenuBar: Double = 4

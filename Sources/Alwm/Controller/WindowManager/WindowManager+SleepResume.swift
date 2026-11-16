@@ -130,7 +130,7 @@ enum ResumeFrameSelection {
         // Scrolled columns and maximized siblings are intentionally parked. Their
         // exact off-screen origin can change when displays reconnect after sleep.
         if !OffscreenParking.intersectsAnyMonitor(expected, monitors: monitorFrames) {
-            return !OffscreenParking.intersectsAnyMonitor(actual, monitors: monitorFrames)
+            return !OffscreenParking.isUsableOnscreenFrame(actual, monitors: monitorFrames)
         }
         // A horizontally scrolled column can be partly visible with its midpoint
         // outside the monitor. Compare its geometry instead of calling it parked.
@@ -177,6 +177,7 @@ extension WindowManager {
     func needsLayoutRecovery(force: Bool) -> Bool {
         if force { return true }
         if layoutRecoveryAttempts >= maxLayoutRecoveryAttempts { return false }
+        guard isResumeRecovering || Date() < resumeRecoveryEligibleUntil else { return false }
         if windowsByID.isEmpty, savedTiledWindowCount() > 0 { return true }
         let saved = savedTiledWindowCount()
         let live = liveTiledWindowCount()
@@ -226,6 +227,12 @@ extension WindowManager {
         _ = ejectWindowsListedOutsideStickyHome()
         retileAccidentalFloats(forceClearOverrides: true)
         enforceQuakeFloat()
+        if notepad.isVisible, let mon = monitorForAction() ?? primaryMonitor() {
+            let settings = configStore.config.settings.notepad
+            let visible = notepad.panelFrame(settings: settings, monitor: mon, visible: true)
+            notepad.refreshLayout(settings: settings, monitor: mon, visible: true, frame: visible)
+            updateOverlayInputMode()
+        }
         isBootstrapping = false
         postLaunchLayoutGraceUntil = Date().addingTimeInterval(6)
         adoptOrphanWindows(blockingReassign: true)
@@ -245,17 +252,13 @@ extension WindowManager {
         if recovered {
             finishResumeRecoverySuccessfully()
         } else if layoutRecoveryAttempts >= maxLayoutRecoveryAttempts {
-            // Stop hammering AX, but keep disk freeze briefly so a partial layout isn't saved.
             cancelPendingResumeRecovery()
             layoutRecoveryAttempts = maxLayoutRecoveryAttempts
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-                guard let self, self.isResumeRecovering else { return }
-                self.isResumeRecovering = false
-                self.resumeRecoveryEligibleUntil = Date.distantPast
-                self.softPersistProtectMissingTokens = false
-                self.layoutMutationFrozenUntil = Date.distantPast
-                NSLog("ALWM: layout recovery gave up — disk snapshot preserved")
-            }
+            isResumeRecovering = false
+            resumeRecoveryEligibleUntil = Date.distantPast
+            softPersistProtectMissingTokens = false
+            layoutMutationFrozenUntil = Date.distantPast
+            NSLog("ALWM: layout recovery gave up — disk snapshot preserved")
         }
         NSLog(
             "ALWM: layout recovery #%d — windows=%d savedTiles=%d liveTiles=%d recovered=%@",
@@ -353,8 +356,8 @@ extension WindowManager {
         // wipes softPersist on the next isLayoutMutationFrozen check (eligible was distantPast),
         // ingest treats the AX mass-drop as red-X closes, and quit-last-window kills Discord /
         // WhatsApp / Safari (move.log 2026-09-18T15:53:33Z).
-        resumeRecoveryEligibleUntil = Date().addingTimeInterval(24 * 60 * 60)
-        layoutMutationFrozenUntil = Date().addingTimeInterval(24 * 60 * 60)
+        resumeRecoveryEligibleUntil = Date().addingTimeInterval(30)
+        layoutMutationFrozenUntil = Date().addingTimeInterval(30)
         // Capture fingerprint while memory still looks good (before any soft write).
         if liveTiledWindowCount() > 0 {
             preSleepLayoutFingerprint = layoutContentFingerprint()
@@ -368,15 +371,20 @@ extension WindowManager {
         // Idle assertions can be dropped across sleep — put them back immediately.
         SleepAssertion.reassertIfNeeded()
         cancelPendingRebalances()
-        resumeRecoveryEligibleUntil = Date().addingTimeInterval(300)
+        resumeRecoveryEligibleUntil = Date().addingTimeInterval(15)
         layoutRecoveryAttempts = 0
         isResumeRecovering = true
         // Keep softPersistProtectMissingTokens until finishResumeRecoverySuccessfully.
         softPersistProtectMissingTokens = true
-        layoutMutationFrozenUntil = Date().addingTimeInterval(300)
+        layoutMutationFrozenUntil = Date().addingTimeInterval(15)
         lastVisibilitySignature = nil
         lastSnapSignature.removeAll()
         forceTileExpandUntil.removeAll()
+
+        // Re-establish system input hooks dropped or desynced by macOS sleep
+        setupFocusFollowsMouse()
+        hotkeys.register(bindings: configStore.config.hotkeys)
+        updateOverlayInputMode()
     }
 
     /// Accessibility can drop several windows without delivering a macOS wake event.
@@ -443,6 +451,19 @@ extension WindowManager {
         preSleepLayoutFingerprint = nil
     }
 
+    public func clearLayoutMutationFreezeForUserInteraction() {
+        if isResumeRecovering || Date() < layoutMutationFrozenUntil || softPersistProtectMissingTokens {
+            cancelPendingResumeRecovery()
+            layoutRecoveryAttempts = maxLayoutRecoveryAttempts
+            isResumeRecovering = false
+            resumeRecoveryEligibleUntil = Date.distantPast
+            softPersistProtectMissingTokens = false
+            layoutMutationFrozenUntil = Date.distantPast
+            allowDestructiveLayoutFlush = true
+            NSLog("ALWM: cleared layout mutation freeze for user interaction")
+        }
+    }
+
     func scheduleStaggeredResumeRecovery() {
         cancelPendingResumeRecovery()
         // Longer tail: Electron/Safari rematerialize window numbers slowly after wake.
@@ -490,6 +511,7 @@ extension WindowManager {
         // Displays can rearrange after lid open / Clamshell — refresh geometry first.
         monitors.refresh()
         syncWorkspacesToMonitors()
+        setupFocusFollowsMouse()
 
         // Prefer disk snapshot over whatever drifted in memory during sleep.
         runtimeState.load()
@@ -519,8 +541,15 @@ extension WindowManager {
         restoreWorkspaceLayoutsFromDisk()
         // Soft heal only — full heal ejects soft-missing AX windows and wrecks restore.
         _ = ejectWindowsListedOutsideStickyHome()
-        retileAccidentalFloats(forceClearOverrides: false)
+        retileAccidentalFloats(forceClearOverrides: true)
+        reinsertOrphanTiles(force: true)
         enforceQuakeFloat()
+        if notepad.isVisible, let mon = monitorForAction() ?? primaryMonitor() {
+            let settings = configStore.config.settings.notepad
+            let visible = notepad.panelFrame(settings: settings, monitor: mon, visible: true)
+            notepad.refreshLayout(settings: settings, monitor: mon, visible: true, frame: visible)
+            updateOverlayInputMode()
+        }
         isBootstrapping = false
         postLaunchLayoutGraceUntil = Date().addingTimeInterval(6)
         adoptOrphanWindows(blockingReassign: true)
@@ -540,9 +569,10 @@ extension WindowManager {
             && layoutContentMatchesDiskSnapshot()
         if recovered {
             finishResumeRecoverySuccessfully()
+        } else if layoutRecoveryAttempts < maxLayoutRecoveryAttempts {
+            runLayoutRecoveryIfNeeded(force: false, delay: 2.5)
         } else {
-            // Keep disk snapshot intact until AX catches up — never persist partial columns.
-            runLayoutRecoveryIfNeeded(force: true, delay: 2.5)
+            finishResumeRecoverySuccessfully()
         }
         NSLog(
             "ALWM: resume recovery — windows=%d savedTiles=%d liveTiles=%d recovered=%@ fpOK=%@",

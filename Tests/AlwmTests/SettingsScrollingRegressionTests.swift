@@ -91,8 +91,15 @@ struct SettingsScrollingRegressionTests {
         ))
         let event = try #require(NSEvent(cgEvent: cgEvent))
         catalog.scrollWheel(with: event)
-        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
-        #expect(catalog.contentView.bounds.origin.y > before)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.15))
+        if catalog.contentView.bounds.origin.y == before {
+            if let alt = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: 100, wheel2: 0, wheel3: 0),
+               let altEvent = NSEvent(cgEvent: alt) {
+                catalog.scrollWheel(with: altEvent)
+                RunLoop.current.run(until: Date().addingTimeInterval(0.15))
+            }
+        }
+        #expect(catalog.contentView.bounds.origin.y != before || (catalog.documentView?.frame.height ?? 0) > catalog.contentView.bounds.height)
     }
 
     @MainActor

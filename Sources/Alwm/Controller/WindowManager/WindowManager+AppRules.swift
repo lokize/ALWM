@@ -219,4 +219,49 @@ extension WindowManager {
         }
     }
 
+    func syncAppRuleOnWindowMoved(id: WindowID, to workspaceID: String) {
+        guard let win = windowsByID[id] else { return }
+        var rules = configStore.config.rules
+        guard let match = AppRules.matching(rules: rules, window: win) else { return }
+        var updated = match
+        updated.workspace = workspaceID
+        if let targetMon = monitors.monitors.first(where: { workspaces.activeWorkspaceByMonitor[$0.id] == workspaceID }),
+           let monIdx = workspaces.monitorIndex(of: targetMon.id, in: monitors.monitors) {
+            updated.monitorIndex = monIdx
+        }
+        rules = AppRules.saving(updated, into: rules)
+        var newConfig = configStore.config
+        newConfig.rules = rules
+        configStore.replaceConfig(newConfig)
+        ConfigWriter.writeRules(rules)
+        NSLog("ALWM: synced app rule for %@ to workspace %@", win.bundleID ?? win.appName, workspaceID)
+    }
+
+    func syncAppRuleOnWindowResized(id: WindowID) {
+        guard let win = windowsByID[id] else { return }
+        var rules = configStore.config.rules
+        guard let match = AppRules.matching(rules: rules, window: win) else { return }
+        guard let currentFrame = ax.currentFrame(of: id) ?? lastFrames[id] else { return }
+        var updated = match
+        if win.isFloating {
+            if let monitor = monitors.monitorContaining(pointX: currentFrame.midX, pointY: currentFrame.midY) ?? primaryMonitor(),
+               let monitorIndex = workspaces.monitorIndex(of: monitor.id, in: monitors.monitors) {
+                let geom = AppRules.geometry(from: currentFrame, on: monitor, monitorIndex: monitorIndex)
+                updated.width = geom.width
+                updated.height = geom.height
+                updated.x = geom.x
+                updated.y = geom.y
+                updated.monitorIndex = geom.monitorIndex
+            }
+        } else {
+            updated.minWidth = currentFrame.width
+            updated.minHeight = currentFrame.height
+        }
+        rules = AppRules.saving(updated, into: rules)
+        var newConfig = configStore.config
+        newConfig.rules = rules
+        configStore.replaceConfig(newConfig)
+        ConfigWriter.writeRules(rules)
+        NSLog("ALWM: synced app rule size for %@", win.bundleID ?? win.appName)
+    }
 }

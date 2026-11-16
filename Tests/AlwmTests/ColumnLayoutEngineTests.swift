@@ -701,6 +701,15 @@ struct OffscreenParkingTests {
         let real = Rect(x: 80, y: 80, width: 900, height: 700)
         #expect(OffscreenParking.isUsableOnscreenFrame(real, monitors: [m1]))
     }
+
+    @Test("park origin for upper monitor in vertical setup avoids lower monitor")
+    func verticalMonitorAvoidsLowerNeighbor() {
+        let upper = Rect(x: 0, y: 0, width: 3440, height: 1440)
+        let lower = Rect(x: 774, y: 1440, width: 1920, height: 1080)
+        let park = OffscreenParking.parkOrigin(monitors: [upper, lower], preferred: upper)
+        #expect(park.x >= upper.maxX)
+        #expect(park.y < lower.y)
+    }
 }
 
 @Suite("WorkspaceMonitorVisibility")

@@ -23,6 +23,7 @@ struct SettingsRootView: View {
     @ObservedObject var updates = AppUpdateService.shared
     @ObservedObject var credits = CreditsService.shared
     @ObservedObject var loc = LocalizationController.shared
+    @ObservedObject var coordinator: SettingsPersistCoordinator
     let monitors: [MonitorInfo]
     let monitorIndexByID: [CGDirectDisplayID: Int]
     let runningAppsProvider: () -> [AppRuleRunningApp]
@@ -64,13 +65,16 @@ struct SettingsRootView: View {
         windowActionHistory: [WindowActionHistoryEntry] = [],
         onUndoWindowAction: @escaping () -> Void = {},
         pluginsPreviewItems: [SettingsPluginItem]? = nil,
-        onRerunOnboarding: @escaping () -> Void
+        onRerunOnboarding: @escaping () -> Void,
+        coordinator: SettingsPersistCoordinator? = nil,
+        onRegisterFlush: (((@escaping () -> Void) -> Void))? = nil
     ) {
         _config = State(initialValue: config)
         _pane = State(initialValue: initialPane)
         _pluginOrderRows = State(initialValue: PluginOrderInline.loadRows())
         _windowActionHistoryEntries = State(initialValue: windowActionHistory)
         _environmentProfiles = State(initialValue: environmentProfiles)
+        self.coordinator = coordinator ?? SettingsPersistCoordinator(config: config, onSave: onSave)
         self.monitors = monitors
         self.monitorIndexByID = monitorIndexByID
         self.runningAppsProvider = runningAppsProvider
@@ -172,9 +176,16 @@ struct SettingsRootView: View {
             if newPane != .hotkeys {
                 hotkeySearch = ""
             }
+            if newPane == .wallpapers {
+                WallpaperController.shared.startCountdown()
+            } else {
+                WallpaperController.shared.stopCountdown()
+            }
         }
         .onChange(of: config) { oldConfig, newConfig in
             hasPendingLocalChanges = true
+            coordinator.hasPendingChanges = true
+            coordinator.liveConfig = newConfig
             ConfigWriter.writeChanges(from: oldConfig, to: newConfig)
             schedulePersist()
         }
@@ -182,8 +193,14 @@ struct SettingsRootView: View {
             LocalizationController.shared.apply(language)
             PluginManager.shared.requestBarRefresh()
         }
+        .onAppear {
+            if pane == .wallpapers {
+                WallpaperController.shared.startCountdown()
+            }
+        }
         .onDisappear {
-            let shouldFlush = hasPendingLocalChanges
+            WallpaperController.shared.stopCountdown()
+            let shouldFlush = hasPendingLocalChanges || coordinator.hasPendingChanges
             persistTask?.cancel()
             persistTask = nil
             // Do not write the view's original snapshot when only another ALWM

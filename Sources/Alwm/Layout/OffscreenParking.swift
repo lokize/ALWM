@@ -10,10 +10,47 @@ public enum OffscreenParking {
             let maxY = max(acc.maxY, m.maxY)
             return Rect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
         }
-        // Park BELOW the arrangement (not to the left). macOS often clamps
-        // left-parked windows into a visible strip on the leading edge.
+
+        if let targetMon = preferred, monitors.contains(where: { $0 == targetMon }) {
+            let otherMonitors = monitors.filter { $0 != targetMon }
+
+            let hasNeighborBelow = otherMonitors.contains { m in
+                m.y >= targetMon.maxY - 1 && m.x < targetMon.maxX && m.maxX > targetMon.x
+            }
+            let hasNeighborRight = otherMonitors.contains { m in
+                m.x >= targetMon.maxX - 1 && m.y < targetMon.maxY && m.maxY > targetMon.y
+            }
+            let hasNeighborLeft = otherMonitors.contains { m in
+                m.maxX <= targetMon.x + 1 && m.y < targetMon.maxY && m.maxY > targetMon.y
+            }
+
+            // In horizontal arrangements, parking below the monitor is ideal (macOS doesn't clamp left-edge strips).
+            if !hasNeighborBelow {
+                return (
+                    targetMon.midX - 40,
+                    targetMon.maxY + max(targetMon.height, 2500) + 1200
+                )
+            }
+            // In vertical arrangements (monitor above another), parking to the right ensures
+            // any clamped strip stays on targetMon and NEVER bleeds onto the monitor below!
+            if !hasNeighborRight {
+                return (
+                    targetMon.maxX + max(targetMon.width, 2500) + 1200,
+                    targetMon.midY - 40
+                )
+            }
+            // If right has a neighbor, try left
+            if !hasNeighborLeft {
+                return (
+                    targetMon.x - max(targetMon.width, 2500) - 1200,
+                    targetMon.midY - 40
+                )
+            }
+        }
+
+        // Fallback: park beyond the global union's bottom-right corner
         return (
-            union.midX - 40,
+            union.maxX + max(union.width, 2500) + 1200,
             union.maxY + max(union.height, 2500) + 1200
         )
     }

@@ -24,7 +24,7 @@ public final class StatusPopoverController {
     public var onToggleFocusFollowsMouse: (() -> Void)?
     public var onToggleBorders: (() -> Void)?
     public var onToggleWorkspaceBar: (() -> Void)?
-    public var onTogglePreventSleep: (() -> Void)?
+    public var onSetPreventSleepMode: (@MainActor @Sendable (SleepPreventionMode) -> Void)?
     public var onOpenSettings: (() -> Void)?
     public var onOpenPlugins: (() -> Void)?
     public var onWhatsNew: (() -> Void)?
@@ -74,6 +74,7 @@ public final class StatusPopoverController {
         popover.behavior = .semitransient
         popover.animates = true
         let bridge = PopoverCloseBridge { [weak self] in
+            WallpaperController.shared.stopCountdown()
             self?.removeClickOutsideMonitor()
             self?.anchorWindow.orderOut(nil)
             self?.lastAnchorScreenFrame = nil
@@ -124,7 +125,7 @@ public final class StatusPopoverController {
         focusFollowsMouse: Bool,
         borders: Bool,
         workspaceBar: Bool,
-        preventSleep: Bool,
+        preventSleepMode: SleepPreventionMode,
         developerMode: Bool,
         version: String,
         isRecording: Bool = false,
@@ -136,7 +137,7 @@ public final class StatusPopoverController {
             model.focusFollowsMouse != focusFollowsMouse
             || model.bordersEnabled != borders
             || model.workspaceBarEnabled != workspaceBar
-            || model.preventSleep != preventSleep
+            || model.preventSleepMode != preventSleepMode
             || model.developerMode != developerMode
             || model.version != version
             || model.isRecording != isRecording
@@ -146,7 +147,7 @@ public final class StatusPopoverController {
         model.focusFollowsMouse = focusFollowsMouse
         model.bordersEnabled = borders
         model.workspaceBarEnabled = workspaceBar
-        model.preventSleep = preventSleep
+        model.preventSleepMode = preventSleepMode
         model.developerMode = developerMode
         model.version = version
         model.isRecording = isRecording
@@ -166,7 +167,7 @@ public final class StatusPopoverController {
     public func toggle(relativeTo view: NSView) {
         let now = DispatchTime.now().uptimeNanoseconds
         // Debounce hardware switch chatter or rapid event bounces (<150ms).
-        if now > lastToggleUptime, (now - lastToggleUptime) < 150_000_000 {
+        if now > lastToggleUptime && (now - lastToggleUptime) < 150_000_000 {
             return
         }
         lastToggleUptime = now
@@ -177,6 +178,7 @@ public final class StatusPopoverController {
             close()
             return
         }
+        WallpaperController.shared.startCountdown()
         AppUpdateService.shared.checkForUpdates()
         resizeToFit()
 
@@ -218,12 +220,27 @@ public final class StatusPopoverController {
     }
 
     public func close() {
+        WallpaperController.shared.stopCountdown()
         pendingShowWorkItem?.cancel()
         pendingShowWorkItem = nil
         removeClickOutsideMonitor()
-        popover.performClose(nil)
+        let wasAnimated = popover.animates
+        popover.animates = false
+        popover.close()
+        popover.animates = wasAnimated
         anchorWindow.orderOut(nil)
         lastAnchorScreenFrame = nil
+    }
+
+    deinit {
+        MainActor.assumeIsolated {
+            WallpaperController.shared.stopCountdown()
+            pendingShowWorkItem?.cancel()
+            removeClickOutsideMonitor()
+            popover.animates = false
+            popover.close()
+            anchorWindow.orderOut(nil)
+        }
     }
 
     private var clickOutsideGlobal: Any?
@@ -289,7 +306,7 @@ public final class StatusPopoverController {
             onToggleFocus: { [weak self] in self?.onToggleFocusFollowsMouse?() },
             onToggleBorders: { [weak self] in self?.onToggleBorders?() },
             onToggleBar: { [weak self] in self?.onToggleWorkspaceBar?() },
-            onTogglePreventSleep: { [weak self] in self?.onTogglePreventSleep?() },
+            onSetPreventSleepMode: { @MainActor [weak self] mode in self?.onSetPreventSleepMode?(mode) },
             onSettings: { [weak self] in self?.close(); self?.onOpenSettings?() },
             onPlugins: { [weak self] in self?.close(); self?.onOpenPlugins?() },
             onWhatsNew: { [weak self] in self?.close(); self?.onWhatsNew?() },
@@ -441,7 +458,7 @@ final class StatusMenuModel: ObservableObject {
     @Published var focusFollowsMouse = false
     @Published var bordersEnabled = true
     @Published var workspaceBarEnabled = true
-    @Published var preventSleep = false
+    @Published var preventSleepMode: SleepPreventionMode = .off
     @Published var developerMode = false
     @Published var version = AlwmVersion.string
     @Published var isRecording = false
@@ -471,7 +488,7 @@ struct StatusMenuView: View {
     var onToggleFocus: () -> Void
     var onToggleBorders: () -> Void
     var onToggleBar: () -> Void
-    var onTogglePreventSleep: () -> Void
+    var onSetPreventSleepMode: @MainActor @Sendable (SleepPreventionMode) -> Void
     var onSettings: () -> Void
     var onPlugins: () -> Void
     var onWhatsNew: () -> Void
@@ -1045,13 +1062,7 @@ struct StatusMenuView: View {
                     isOn: model.workspaceBarEnabled,
                     action: onToggleBar
                 )
-                toggleCard(
-                    title: L10n.t("menu.prevent_sleep"),
-                    subtitle: L10n.t("menu.prevent_sleep.sub"),
-                    systemImage: "cup.and.saucer.fill",
-                    isOn: model.preventSleep,
-                    action: onTogglePreventSleep
-                )
+                preventSleepCard
             }
         }
     }
@@ -1128,6 +1139,61 @@ struct StatusMenuView: View {
             )
         }
         .buttonStyle(.plain)
+    }
+
+    private var preventSleepCard: some View {
+        let isOn = model.preventSleepMode != .off
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .top) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(isOn ? StatusMenuTheme.accent.opacity(0.2) : Color.primary.opacity(0.06))
+                        .frame(width: 26, height: 26)
+                    Image(systemName: "cup.and.saucer.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(isOn ? StatusMenuTheme.accent : Color.secondary)
+                }
+                Spacer(minLength: 4)
+                Picker(L10n.t("menu.prevent_sleep"), selection: Binding(
+                    get: { model.preventSleepMode },
+                    set: onSetPreventSleepMode
+                )) {
+                    ForEach(SleepPreventionMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .frame(maxWidth: 226, alignment: .trailing)
+                .accessibilityLabel(L10n.t("menu.prevent_sleep"))
+                .accessibilityValue(model.preventSleepMode.title)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L10n.t("menu.prevent_sleep"))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text(model.preventSleepMode.detail)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(7)
+        .frame(maxWidth: .infinity, minHeight: 62, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: StatusMenuTheme.rowRadius, style: .continuous)
+                .fill(Color.primary.opacity(isOn ? 0.08 : 0.045))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: StatusMenuTheme.rowRadius, style: .continuous)
+                .strokeBorder(
+                    isOn ? StatusMenuTheme.accent.opacity(0.35) : Color.primary.opacity(0.06),
+                    lineWidth: 1
+                )
+        )
     }
 
     private func navRow(title: String, systemImage: String, action: @escaping () -> Void) -> some View {

@@ -79,7 +79,14 @@ enum AlwmChromeFocus {
             kCGNullWindowID
         ) as? [[String: Any]] else { return false }
 
+        let myPID = getpid()
         for info in infos {
+            if let pid = (info[kCGWindowOwnerPID as String] as? NSNumber)?.intValue ?? (info[kCGWindowOwnerPID as String] as? Int) {
+                if pid_t(pid) == myPID { continue }
+            }
+            if let owner = info[kCGWindowOwnerName as String] as? String, owner == "ALWM" {
+                continue
+            }
             let layer = (info[kCGWindowLayer as String] as? NSNumber)?.intValue
                 ?? (info[kCGWindowLayer as String] as? Int)
                 ?? 0
@@ -98,6 +105,7 @@ enum AlwmChromeFocus {
     private static func axFrontmostMenuBarHasOpenMenu() -> Bool {
         guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier else { return false }
         let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, 0.05)
         var barObj: CFTypeRef?
         guard AXUIElementCopyAttributeValue(app, kAXMenuBarAttribute as CFString, &barObj) == .success,
               let bar = barObj
@@ -183,9 +191,34 @@ enum AlwmChromeFocus {
         ["AXMenu", "AXMenuItem", "AXPopover", "AXSheet", "AXDialog"].contains(role)
     }
 
+    private static var popupCache: [pid_t: (hasPopup: Bool, expiresAt: TimeInterval)] = [:]
+    private static let popupLock = NSLock()
+
     /// Some Electron popups are drawn inside the document's CGWindow. Inspect
     /// focus ancestry and direct window children, not the entire (potentially huge) UI tree.
     static func axProcessHasTransientPopup(pid: pid_t) -> Bool {
+        let now = ProcessInfo.processInfo.systemUptime
+        popupLock.lock()
+        if let entry = popupCache[pid], now < entry.expiresAt {
+            let cached = entry.hasPopup
+            popupLock.unlock()
+            return cached
+        }
+        popupLock.unlock()
+
+        let result = evaluateAxProcessHasTransientPopup(pid: pid)
+
+        popupLock.lock()
+        // Cache negative checks for 160ms and positive checks for 80ms to prevent hammering target apps.
+        popupCache[pid] = (result, now + (result ? 0.08 : 0.16))
+        if popupCache.count > 32 {
+            popupCache = popupCache.filter { now < $0.value.expiresAt }
+        }
+        popupLock.unlock()
+        return result
+    }
+
+    private static func evaluateAxProcessHasTransientPopup(pid: pid_t) -> Bool {
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 0.015)
         let deadline = ProcessInfo.processInfo.systemUptime + 0.04
