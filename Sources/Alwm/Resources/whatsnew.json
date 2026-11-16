@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "2.4.6",
+      "items": [
+        "Remove the default and minimum column width controls",
+        "Use stable intrinsic column sizing so layouts stop resizing windows unexpectedly"
+      ]
+    },
+    {
       "version": "2.4.5",
       "items": [
         "Stop windows from moving or resizing while focus follows the mouse",

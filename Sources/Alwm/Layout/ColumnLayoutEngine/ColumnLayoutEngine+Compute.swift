@@ -211,7 +211,7 @@ extension ColumnLayoutEngine {
         }
         if occupied <= 1, n == 1 {
             let budget = fillWidthBudget(columnCount: 1, usable: usable)
-            workspace.columns[0].width = max(settings.minColumnWidth, budget)
+            workspace.columns[0].width = max(Self.fixedMinColumnWidth, budget)
             workspace.viewOffset = 0
             return
         }
@@ -264,7 +264,7 @@ extension ColumnLayoutEngine {
         let n = workspace.columns.count
         guard n >= 1 else { return }
         let budget = fillWidthBudget(columnCount: n, usable: usable)
-        let minW = settings.minColumnWidth
+        let minW = Self.fixedMinColumnWidth
         let defaultW = budget / Double(n)
         var widths = workspace.columns.map { $0.width > 0 ? $0.width : defaultW }
         var sum = widths.reduce(0, +)

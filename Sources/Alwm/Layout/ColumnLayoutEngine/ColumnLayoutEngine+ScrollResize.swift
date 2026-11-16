@@ -157,7 +157,7 @@ extension ColumnLayoutEngine {
         guard !workspace.columns.isEmpty else { return }
         ensureColumnWidths(workspace: &workspace, usable: usable)
         let col = min(max(0, workspace.focusedColumn), workspace.columns.count - 1)
-        let minW = settings.minColumnWidth
+        let minW = Self.fixedMinColumnWidth
         let n = workspace.columns.count
         let fill = columnsShouldFillUsable(count: n)
             || contentWidth(workspace: workspace, usable: usable) <= usable.width + 1.0

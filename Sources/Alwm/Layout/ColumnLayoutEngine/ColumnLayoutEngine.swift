@@ -5,6 +5,11 @@ import Foundation
 // MARK: - Column layout engine — settings and geometry
 
 public struct ColumnLayoutEngine: Sendable {
+    /// Column sizing is intrinsic: the old user-facing ratio/min-width knobs made
+    /// layouts overflow and windows jump between sizes. Keep a small safety floor.
+    public static let fixedMinColumnWidth: Double = 160
+    public static let fixedDefaultColumnRatio: Double = 0.5
+
     public var settings: LayoutSettings
 
     public init(settings: LayoutSettings = .default) {
@@ -28,25 +33,25 @@ public struct ColumnLayoutEngine: Sendable {
     /// Gaps are reserved inside usable so tiles never eat outer/inner margins.
     public func defaultColumnWidth(usable: Rect, columnCount: Int) -> Double {
         let n = max(1, columnCount)
-        let ratio = settings.defaultColumnWidthRatio
+        let ratio = Self.fixedDefaultColumnRatio
         if columnsShouldFillUsable(count: n) {
             let budget = fillWidthBudget(columnCount: n, usable: usable)
-            return max(settings.minColumnWidth, budget * ratio)
+            return max(Self.fixedMinColumnWidth, budget * ratio)
         }
-        return max(settings.minColumnWidth, usable.width * ratio)
+        return max(Self.fixedMinColumnWidth, usable.width * ratio)
     }
 
     /// Total width available for column boxes (usable minus inner gaps between them).
     public func fillWidthBudget(columnCount: Int, usable: Rect) -> Double {
         let n = max(1, columnCount)
         let gaps = settings.gap * Double(max(0, n - 1))
-        return max(Double(n) * settings.minColumnWidth, usable.width - gaps)
+        return max(Double(n) * Self.fixedMinColumnWidth, usable.width - gaps)
     }
 
     /// When N × default ratio fits in one screen, columns share usable (gap-aware).
     public func columnsShouldFillUsable(count: Int) -> Bool {
         let n = max(1, count)
-        return Double(n) * settings.defaultColumnWidthRatio <= 1.0 + 1e-6
+        return Double(n) * Self.fixedDefaultColumnRatio <= 1.0 + 1e-6
     }
 
     /// Column membership is authoritative — AX float subroles must not drop layout math.

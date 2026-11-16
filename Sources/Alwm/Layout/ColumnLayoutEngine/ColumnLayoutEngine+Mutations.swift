@@ -68,7 +68,7 @@ extension ColumnLayoutEngine {
         let n = workspace.columns.count
         guard n >= 1 else { return }
         let budget = fillWidthBudget(columnCount: n, usable: usable)
-        let minW = settings.minColumnWidth
+        let minW = Self.fixedMinColumnWidth
         let equal = max(minW, budget / Double(n))
         for i in workspace.columns.indices {
             workspace.columns[i].isMaximized = false

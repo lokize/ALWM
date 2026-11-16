@@ -32,8 +32,6 @@ extension SettingsRootView {
             Section("Columns") {
                 labeledSlider("Inner gap", value: $config.settings.gap, range: 0...40)
                 labeledSlider("Outer gap", value: $config.settings.outerGap, range: 0...40)
-                labeledSlider("Default column width", value: $config.settings.defaultColumnWidthRatio, range: 0.25...1)
-                labeledNumber("Minimum column width", value: $config.settings.minColumnWidth)
             }
             Section("Motion") {
                 labeledSlider("Animation duration (s)", value: $config.settings.animationDuration, range: 0...0.6)

@@ -72,8 +72,6 @@ enum ConfigWriter {
         return """
         gap = \(settings.gap)
         outerGap = \(settings.outerGap)
-        defaultColumnWidthRatio = \(settings.defaultColumnWidthRatio)
-        minColumnWidth = \(settings.minColumnWidth)
         animationDuration = \(settings.animationDuration)
         focusFollowsMouse = \(settings.focusFollowsMouse)
         moveMouseToFocusedWindow = \(settings.moveMouseToFocusedWindow)
