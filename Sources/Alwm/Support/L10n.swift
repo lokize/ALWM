@@ -90,10 +90,15 @@ public final class LocalizationController: ObservableObject {
     private init() {}
 
     public func apply(_ language: AppLanguage) {
+        // `applyConfig` calls this on every settings save. Bumping revision
+        // unconditionally rebuilds every `.alwmLocalized()` view (via `.id`) and
+        // resets the Settings scroll position even when the language did not change.
+        let previousCode = L10n.resolvedCode
         self.language = language
         L10n.setLanguage(language)
         let code = language.resolvedCode
         PluginLocaleBridge.currentCode = code
+        guard previousCode != code else { return }
         NotificationCenter.default.post(
             name: .alwmLanguageDidChange,
             object: nil,

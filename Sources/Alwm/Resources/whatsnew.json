@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "2.4.9",
+      "items": [
+        "Keep the Settings scroll position when changing options",
+        "Do not rebuild localized views unless the language actually changes"
+      ]
+    },
+    {
       "version": "2.4.8",
       "items": [
         "Stop Settings from crashing when switching panes",
