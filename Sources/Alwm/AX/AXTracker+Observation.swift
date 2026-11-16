@@ -153,6 +153,10 @@ extension AXTracker {
                 self.scheduleScanAll(delay: retryDelay)
                 return
             }
+            if self.shouldDeferScans?() == true {
+                self.scheduleScanAll(delay: 0.3)
+                return
+            }
             self.scanWorkItem = nil
             self.scanAll()
         }
@@ -270,6 +274,9 @@ extension AXTracker {
             var usedCGWindowNumbers = Set<Int>()
             for winEl in windows {
                 rawWindows += 1
+                // Child elements do not necessarily inherit the app's 0.1s timeout.
+                // Without this, one busy app can block the main thread for seconds.
+                AXUIElementSetMessagingTimeout(winEl, 0.05)
                 let axProbe = AXWindow(
                     id: WindowID(pid: pid, windowNumber: -1),
                     element: winEl,
@@ -323,49 +330,6 @@ extension AXTracker {
                 )
                 observeTitle(on: winEl, pid: pid, token: id.token)
             }
-
-            // Some Electron builds (Docker Desktop) expose only a nested AXApplication in
-            // `AXWindows`, so every element is filtered as non-standard. Resolve the real
-            // AXWindow at the WindowServer window center and adopt it when possible.
-            let pidHasStandardWindow = nextManaged.keys.contains { $0.pid == pid }
-            if !pidHasStandardWindow, !cgWindows.isEmpty {
-                let systemWide = AXUIElementCreateSystemWide()
-                for cg in cgWindows where !usedCGWindowNumbers.contains(cg.windowNumber) {
-                    guard cg.frame.width >= 120, cg.frame.height >= 80 else { continue }
-                    guard let winEl = Self.hitTestAXWindow(
-                        at: CGPoint(x: cg.frame.midX, y: cg.frame.midY),
-                        systemWide: systemWide
-                    ) else { continue }
-                    var elementPid: pid_t = 0
-                    AXUIElementGetPid(winEl, &elementPid)
-                    guard elementPid == pid else { continue }
-                    let id = WindowID(pid: pid, windowNumber: cg.windowNumber)
-                    let ax = AXWindow(id: id, element: winEl, pid: pid)
-                    guard ax.isStandardWindow,
-                          abs(ax.frame.midX - cg.frame.midX) < 60,
-                          abs(ax.frame.midY - cg.frame.midY) < 60
-                    else { continue }
-                    nextAX[id] = ax
-                    nextManaged[id] = ManagedWindow(
-                        id: id,
-                        title: ax.resolvedTitle(),
-                        bundleID: app.bundleIdentifier,
-                        appName: app.localizedName ?? "App",
-                        frame: ax.frame,
-                        isFloating: ax.prefersFloating,
-                        isMinimized: ax.isMinimized
-                    )
-                    usedCGWindowNumbers.insert(cg.windowNumber)
-                    NSLog(
-                        "ALWM AX: resolved hit-test window pid=%@ cg=%d frame=%@",
-                        app.bundleIdentifier ?? "?",
-                        cg.windowNumber,
-                        "\(ax.frame)"
-                    )
-                    observeTitle(on: winEl, pid: pid, token: id.token)
-                }
-            }
-
         }
 
         // An AX application query can fail briefly while macOS wakes from sleep or
@@ -406,32 +370,6 @@ extension AXTracker {
         let liveTokens = Set(nextAX.keys.map(\.token))
         titleObservedTokens = titleObservedTokens.intersection(liveTokens)
         publishIfNeeded(previousManaged: previousManaged)
-    }
-
-    /// Walks up from the hit-tested element until an AXWindow is found.
-    private static func hitTestAXWindow(
-        at point: CGPoint,
-        systemWide: AXUIElement
-    ) -> AXUIElement? {
-        var element: AXUIElement?
-        guard AXUIElementCopyElementAtPosition(
-            systemWide,
-            Float(point.x),
-            Float(point.y),
-            &element
-        ) == .success, var current = element else { return nil }
-        for _ in 0..<12 {
-            var roleObj: CFTypeRef?
-            if AXUIElementCopyAttributeValue(current, kAXRoleAttribute as CFString, &roleObj) == .success,
-               let role = roleObj as? String, role == kAXWindowRole as String {
-                return current
-            }
-            var parentObj: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(current, kAXParentAttribute as CFString, &parentObj) == .success,
-                  let parent = parentObj else { return nil }
-            current = unsafeBitCast(parent, to: AXUIElement.self)
-        }
-        return nil
     }
 
     /// Reveal saved app windows that AX did not include in the last scan.

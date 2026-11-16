@@ -337,6 +337,7 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
         resumeRecoveryEligibleUntil = Date().addingTimeInterval(StartupSessionRecoveryPolicy.eligibilityDuration)
 
         ax.delegate = self
+        ax.shouldDeferScans = { [weak self] in self?.overlaysCaptureFocus ?? false }
         ax.scanAll()
         // Do not restoreAllOnscreen here — that fights workspace parking.
         // Bootstrap ingest must NOT persist — that used to wipe workspaceLayouts on disk

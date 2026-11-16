@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "2.4.2",
+      "items": [
+        "Keep overlay shortcuts responsive by deferring AX scans while Quake or Notepad is open",
+        "Bound AX messaging timeouts per window to avoid multi-second main-thread stalls"
+      ]
+    },
+    {
       "version": "2.4.1",
       "items": [
         "Open Quake and Notepad reliably on the first shortcut press",

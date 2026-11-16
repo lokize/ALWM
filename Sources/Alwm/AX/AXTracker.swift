@@ -7,6 +7,9 @@ import Foundation
 
 public final class AXTracker: @unchecked Sendable {
     public weak var delegate: AXTrackerDelegate?
+    /// While an overlay owns focus, full AX scans are unnecessary and can block the
+    /// main thread (AX calls to a busy app) right when the user presses the toggle.
+    public var shouldDeferScans: (() -> Bool)?
     var observers: [pid_t: AXObserver] = [:]
     var axWindows: [WindowID: AXWindow] = [:]
     var managed: [WindowID: ManagedWindow] = [:]
