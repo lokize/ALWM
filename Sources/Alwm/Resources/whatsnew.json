@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "version": "2.3.6",
+      "items": [
+        "Quake terminal opens or closes exactly once per hotkey press",
+        "Ignore key repeat and delayed duplicate hotkey deliveries",
+        "Preserve window sizes when switching back to a workspace"
+      ]
+    },
+    {
       "version": "2.3.5",
       "items": [
         "Integrate sleep prevention mode selector",

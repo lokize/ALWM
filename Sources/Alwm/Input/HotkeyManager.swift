@@ -38,9 +38,23 @@ public final class HotkeyManager: @unchecked Sendable {
     private var handlerRef: EventHandlerRef?
     private var nextID: UInt32 = 1
     private var lastActionAt: [String: CFAbsoluteTime] = [:]
+    /// Last non-Carbon emission, used to suppress the delayed Carbon fallback duplicate.
+    private var lastNonCarbonEmitAt: CFAbsoluteTime = 0
+    /// Last (action, CGEvent timestamp) pair so the same physical key press is not
+    /// emitted twice when it reaches us through the event tap and the NSEvent monitor.
+    private var lastEmittedEvent: (action: String, timestamp: UInt64)?
     private var registeredBindings: [HotkeyBinding] = []
     /// When true the HID tap is disabled so overlay typing is not delayed or dropped.
     private var overlayKeyboardCaptureActive = false
+
+    /// Actions that must fire once per physical key press, never on key repeat.
+    private static let nonRepeatingActions: Set<String> = [
+        "quake.toggle", "notepad.toggle", "notepad.new", "overview.toggle", "palette.toggle",
+        "settings.open", "settings.open.plugins", "float.toggle", "column.maximize",
+        "capture.region", "capture.display", "capture.record.toggle", "undo.last", "relayout"
+    ]
+
+    private enum EmitSource { case tap, nsEvent, carbon }
 
     public init() {}
 
@@ -57,7 +71,14 @@ public final class HotkeyManager: @unchecked Sendable {
             Permissions.requestInputMonitoring()
         }
         installNSMonitorIfNeeded()
-        registerCarbon(bindings: keyboardCaptureBindings)
+        // Carbon is only a last resort. Keeping it active alongside the tap/monitors makes
+        // a single press toggle twice: the Carbon event is queued behind the heavy toggle
+        // work and arrives after the debounce window.
+        if eventTap == nil, nsMonitor == nil {
+            registerCarbon(bindings: keyboardCaptureBindings)
+        } else {
+            unregisterAllCarbonHotkeys()
+        }
         NSLog(
             "ALWM hotkeys: tap=%@ nsMonitor=%@ carbon=%d bindings=%d graveCodes=50,10",
             eventTap != nil ? "yes" : "no",
@@ -120,7 +141,11 @@ public final class HotkeyManager: @unchecked Sendable {
             }
         }
         installNSMonitorIfNeeded()
-        registerCarbon(bindings: keyboardCaptureBindings)
+        if eventTap == nil, nsMonitor == nil {
+            registerCarbon(bindings: keyboardCaptureBindings)
+        } else {
+            unregisterAllCarbonHotkeys()
+        }
     }
 
     private func unregisterAllCarbonHotkeys() {
@@ -149,6 +174,9 @@ public final class HotkeyManager: @unchecked Sendable {
             self.nsLocalMonitor = nil
         }
         tapBindings.removeAll()
+        lastActionAt.removeAll()
+        lastEmittedEvent = nil
+        lastNonCarbonEmitAt = 0
     }
 
     deinit {
@@ -158,13 +186,39 @@ public final class HotkeyManager: @unchecked Sendable {
         }
     }
 
-    private func emit(_ action: String) {
+    private func emit(
+        _ action: String,
+        eventTimestamp: UInt64? = nil,
+        source: EmitSource = .tap,
+        isRepeat: Bool = false
+    ) {
+        if isRepeat, Self.nonRepeatingActions.contains(action) {
+            return
+        }
         let now = CFAbsoluteTimeGetCurrent()
+        // The Carbon fallback event can be delivered ~0.5s after the tap/AppKit path
+        // because the main thread is busy running the toggle itself. Never let that
+        // late duplicate act as a second physical press.
+        if source == .carbon, now - lastNonCarbonEmitAt < 0.6 {
+            return
+        }
+        // Same physical key press arriving through a second input path: its event
+        // timestamp is unchanged even if the callback runs later.
+        if let eventTimestamp, let last = lastEmittedEvent, last.action == action,
+           abs(Int64(eventTimestamp) - Int64(last.timestamp)) < 100_000_000 {
+            return
+        }
         if let last = lastActionAt[action], now - last < 0.15 {
             return
         }
         if shouldDeferHotkeys?() == true, !isAllowedWhileOverlayActive(action) {
             return
+        }
+        if let eventTimestamp {
+            lastEmittedEvent = (action, eventTimestamp)
+        }
+        if source != .carbon {
+            lastNonCarbonEmitAt = now
         }
         lastActionAt[action] = now
         NSLog("ALWM hotkey: %@", action)
@@ -266,7 +320,12 @@ public final class HotkeyManager: @unchecked Sendable {
                 if deferOverlay, !isAllowedWhileOverlayActive(binding.action) {
                     return false
                 }
-                emit(binding.action)
+                emit(
+                    binding.action,
+                    eventTimestamp: Self.eventTimestamp(event),
+                    source: .nsEvent,
+                    isRepeat: event.isARepeat
+                )
                 return true
             }
         }
@@ -286,10 +345,19 @@ public final class HotkeyManager: @unchecked Sendable {
                 characters: event.characters,
                 ignoring: event.charactersIgnoringModifiers
             ) else { continue }
-            emit(binding.action)
+            emit(
+                binding.action,
+                eventTimestamp: Self.eventTimestamp(event),
+                source: .nsEvent,
+                isRepeat: event.isARepeat
+            )
             return true
         }
         return false
+    }
+
+    private static func eventTimestamp(_ event: NSEvent) -> UInt64 {
+        UInt64(max(0, event.timestamp) * 1_000_000_000)
     }
 
     private static func cgFlags(from flags: NSEvent.ModifierFlags) -> CGEventFlags {
@@ -336,7 +404,12 @@ public final class HotkeyManager: @unchecked Sendable {
                     if Self.isEditingTextField() {
                         return Unmanaged.passUnretained(event)
                     }
-                    emit(binding.action)
+                    emit(
+                        binding.action,
+                        eventTimestamp: event.timestamp,
+                        source: .tap,
+                        isRepeat: Self.isRepeat(event)
+                    )
                     return Unmanaged.passUnretained(event)
                 }
             }
@@ -365,7 +438,12 @@ public final class HotkeyManager: @unchecked Sendable {
                 if Self.isEditingTextField() {
                     return Unmanaged.passUnretained(event)
                 }
-                emit(binding.action)
+                emit(
+                    binding.action,
+                    eventTimestamp: event.timestamp,
+                    source: .tap,
+                    isRepeat: Self.isRepeat(event)
+                )
                 return Unmanaged.passUnretained(event)
             }
         }
@@ -391,13 +469,27 @@ public final class HotkeyManager: @unchecked Sendable {
                     characters: chars,
                     ignoring: ignoring
                 ) {
-                    emit(binding.action)
+                    emit(
+                        binding.action,
+                        eventTimestamp: event.timestamp,
+                        source: .tap,
+                        isRepeat: Self.isRepeat(event)
+                    )
                 }
             } else if binding.keyCode == keyCode {
-                emit(binding.action)
+                emit(
+                    binding.action,
+                    eventTimestamp: event.timestamp,
+                    source: .tap,
+                    isRepeat: Self.isRepeat(event)
+                )
             }
         }
         return Unmanaged.passUnretained(event)
+    }
+
+    private static func isRepeat(_ event: CGEvent) -> Bool {
+        event.getIntegerValueField(.keyboardEventAutorepeat) != 0
     }
 
     /// True while a text field / field editor is first responder in the key window.
@@ -554,7 +646,7 @@ public final class HotkeyManager: @unchecked Sendable {
                     &hotKeyID
                 )
                 if let action = manager.actionByID[hotKeyID.id] {
-                    manager.emit(action)
+                    manager.emit(action, source: .carbon)
                 }
                 return noErr
             },

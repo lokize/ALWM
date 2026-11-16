@@ -82,6 +82,66 @@ struct OverlayToggleHotkeyTests {
         #expect(hotkeys.keyboardCaptureBindings == bindings)
     }
 
+    @Test("the same physical key press delivered by two input paths toggles only once")
+    @MainActor
+    func duplicateInputPathDeliveryIsDeduped() async throws {
+        let hotkeys = HotkeyManager()
+        hotkeys.configureBindings([HotkeyBinding(action: "quake.toggle", key: "t", modifiers: ["option"])])
+        defer { hotkeys.unregisterAll() }
+        let stream = AsyncStream<String>.makeStream()
+        hotkeys.onAction = { stream.continuation.yield($0) }
+
+        let keyCode = UInt16(try #require(HotkeyManager.keyCode(for: "t")))
+        let event = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: .option,
+            timestamp: 1234.5, windowNumber: 0, context: nil,
+            characters: "t", charactersIgnoringModifiers: "t",
+            isARepeat: false, keyCode: keyCode
+        ))
+
+        #expect(hotkeys.handleNSEvent(event))
+        // The second input path delivers the SAME press later, after the wall-clock debounce.
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(hotkeys.handleNSEvent(event))
+        stream.continuation.finish()
+
+        var received: [String] = []
+        for await action in stream.stream {
+            received.append(action)
+        }
+        #expect(received == ["quake.toggle"])
+    }
+
+    @Test("holding an overlay toggle hotkey does not repeat it")
+    @MainActor
+    func overlayToggleIgnoresKeyRepeat() async throws {
+        let hotkeys = HotkeyManager()
+        hotkeys.configureBindings([HotkeyBinding(action: "quake.toggle", key: "t", modifiers: ["option"])])
+        defer { hotkeys.unregisterAll() }
+        let stream = AsyncStream<String>.makeStream()
+        hotkeys.onAction = { stream.continuation.yield($0) }
+
+        let keyCode = UInt16(try #require(HotkeyManager.keyCode(for: "t")))
+        for timestamp in [10.0, 10.5, 10.55] {
+            let repeatEvent = timestamp > 10.0
+            let event = try #require(NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: .option,
+                timestamp: timestamp, windowNumber: 0, context: nil,
+                characters: "t", charactersIgnoringModifiers: "t",
+                isARepeat: repeatEvent, keyCode: keyCode
+            ))
+            _ = hotkeys.handleNSEvent(event)
+        }
+        try await Task.sleep(for: .milliseconds(200))
+        stream.continuation.finish()
+
+        var received: [String] = []
+        for await action in stream.stream {
+            received.append(action)
+        }
+        #expect(received == ["quake.toggle"])
+    }
+
     @Test("Option O opens the interactive overview while an overlay owns the keyboard")
     @MainActor
     func overviewHotkeyRemainsActiveDuringCapture() async throws {
