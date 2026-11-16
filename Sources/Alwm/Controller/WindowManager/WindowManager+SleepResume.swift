@@ -340,6 +340,36 @@ extension WindowManager {
             }
         }
         systemObservers.append(active)
+
+        // Screen lock disables AX attribute reads for every app. Recover when the
+        // session is unlocked instead of waiting for an unrelated AX notification.
+        let sessionActive = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.sessionDidBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.ax.scanAll()
+                let windows = self.ax.currentWindows
+                if !windows.isEmpty {
+                    self.ingest(windows: windows)
+                }
+                self.scheduleAccessibilityRecoveryScans()
+                self.refreshChrome()
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(nanoseconds: 1_200_000_000)
+                    guard let self else { return }
+                    self.ax.scanAll()
+                    let late = self.ax.currentWindows
+                    if !late.isEmpty {
+                        self.ingest(windows: late)
+                    }
+                    self.runLayoutRecoveryIfNeeded(force: false, delay: 0.8)
+                }
+            }
+        }
+        systemObservers.append(sessionActive)
     }
 
     func prepareForSystemSleep() {

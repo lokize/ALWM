@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "2.3.8",
+      "items": [
+        "Recover window tracking right after the screen is unlocked",
+        "Persist new windows immediately for sleep and restart recovery"
+      ]
+    },
+    {
       "version": "2.3.7",
       "items": [
         "Manage Docker Desktop and other stubborn windows as normal tiles",
