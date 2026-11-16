@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "2.4.0",
+      "items": [
+        "Keep Quake open when the open shortcut is delivered twice",
+        "Persist floating window sizes immediately so they do not snap back"
+      ]
+    },
+    {
       "version": "2.3.9",
       "items": [
         "Reduce display-link churn on high-refresh monitors",

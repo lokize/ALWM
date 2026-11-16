@@ -684,6 +684,12 @@ extension WindowManager {
     }
 
     func toggleQuake(monitor: MonitorInfo) {
+        // A second delivery of the same open press (tap/monitor/IPC) used to hide the
+        // terminal immediately. Ignore hides that land right after a show.
+        if quake.isVisible, Date().timeIntervalSince(quakeShownAt) < 0.5 {
+            NSLog("ALWM Quake: ignoring immediate duplicate hide")
+            return
+        }
         let isFirstOpening = !quakeHasBeenOpenedInSession || (quake.activeMonitorID == nil && quake.activeWorkspaceID == nil)
         let wasFirstOpening = isFirstOpening
         let targetMon: MonitorInfo
@@ -810,6 +816,9 @@ extension WindowManager {
             }
         } else {
             suppressQuakeDismissUntil = Date().addingTimeInterval(2.0)
+        }
+        if quake.isVisible {
+            quakeShownAt = Date()
         }
         updateOverlayInputMode()
         refreshChrome()

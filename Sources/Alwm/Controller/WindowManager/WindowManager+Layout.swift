@@ -172,6 +172,13 @@ extension WindowManager {
                         self.savedFrames[id] = f
                         self.lastFrames[id] = f
                         self.syncAppRuleOnWindowResized(id: id)
+                        // Persist the new float frame immediately, otherwise the next
+                        // visibility/settle pass restores the older runtime snapshot.
+                        if let home = self.authoritativeHome(for: id) {
+                            self.persistRuntimeState(forceWorkspaceLayouts: [home])
+                        } else {
+                            self.persistRuntimeState()
+                        }
                     }
                     continue
                 }
