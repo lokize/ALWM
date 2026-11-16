@@ -387,14 +387,22 @@ extension WindowManager {
                 let home = authoritativeHome(for: id)
                 let onActive = home.map { isHomeActiveOnAnyMonitor($0) } ?? false
                 if onActive, let home {
-                    if isFloatRevealProtected(id) {
-                        if let layoutMonitor = primaryMonitor() {
-                            let live = liveFrameForVisibility(id) ?? win.frame
-                            let frame = floatFrameForActiveHome(
-                                id: id, home: home, live: live, layoutMonitor: layoutMonitor
-                            )
-                            ax.reveal(frame: frame, id: id)
-                            lastFrames[id] = frame
+                    let isFloat = win.isFloating || win.isScratchpad || floatingOverrides.contains(id)
+                    if isFloat {
+                        let live = liveFrameForVisibility(id) ?? win.frame
+                        let hidden = ax.isMinimized(id)
+                        let offscreen = !OffscreenParking.isUsableOnscreenFrame(live, monitors: monitors)
+                        // Floats on the active workspace must be reachable. Previously only
+                        // "protected" floats were revealed, so a parked app (Docker) stayed
+                        // at x≈8080 forever and could not be focused or moved.
+                        if !hidden, offscreen || isFloatRevealProtected(id) {
+                            if let layoutMonitor = primaryMonitor() {
+                                let frame = floatFrameForActiveHome(
+                                    id: id, home: home, live: live, layoutMonitor: layoutMonitor
+                                )
+                                ax.reveal(frame: frame, id: id)
+                                lastFrames[id] = frame
+                            }
                         }
                         continue
                     }

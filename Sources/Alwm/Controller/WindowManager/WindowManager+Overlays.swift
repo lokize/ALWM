@@ -85,7 +85,24 @@ enum OverlayClickCapturePolicy {
 extension WindowManager {
     func isQuakeOwned(_ id: WindowID) -> Bool {
         if id == quake.windowID { return true }
-        return runtimeState.snapshot.quakeWindowToken == id.token
+        guard runtimeState.snapshot.quakeWindowToken == id.token else { return false }
+        // A persisted "pid:windowNumber" token can be reused by a different app after
+        // a restart (Docker took Ghostty's old pid here). Never treat another app's
+        // window as the Quake scratchpad.
+        return quakeTokenMatchesShellApp(id.token)
+    }
+
+    /// True when the persisted/rebound token still belongs to the configured terminal.
+    func quakeTokenMatchesShellApp(_ token: String) -> Bool {
+        let parts = token.split(separator: ":")
+        guard parts.count == 2, let pid = pid_t(parts[0]) else { return false }
+        let expected = QuakeTerminalController.resolveBundleID(
+            configured: configStore.config.settings.quake.bundleID
+        )
+        guard let app = NSRunningApplication(processIdentifier: pid), !app.isTerminated else {
+            return false
+        }
+        return app.bundleIdentifier == expected
     }
 
     func quakeSessionPID() -> pid_t? {
@@ -146,13 +163,29 @@ extension WindowManager {
     }
 
     func enforceQuakeFloat() {
+        // PIDs are reused across restarts. Drop a persisted Quake token whose app is no
+        // longer the configured terminal BEFORE any window is classified as scratchpad.
+        if let token = runtimeState.snapshot.quakeWindowToken, !quakeTokenMatchesShellApp(token) {
+            NSLog("ALWM Quake: clearing stale token %@ (pid no longer the shell app)", token)
+            runtimeState.setQuakeWindowToken(nil)
+            runtimeState.setQuakeLocation(monitorID: nil, workspaceID: nil)
+            quake.setLocation(monitorID: nil, workspaceID: nil)
+        }
+
         // Rebind from persisted token after relaunch.
         if quake.windowID == nil, let token = runtimeState.snapshot.quakeWindowToken {
-            if let id = windowsByID.keys.first(where: { $0.token == token }) {
+            let shellBundle = QuakeTerminalController.resolveBundleID(
+                configured: configStore.config.settings.quake.bundleID
+            )
+            if let id = windowsByID.keys.first(where: {
+                $0.token == token && windowsByID[$0]?.bundleID == shellBundle
+            }) {
                 quake.rebind(id)
                 NSLog("ALWM Quake: rebound from token %@", token)
             } else if let pid = quakeSessionPID(),
-                      let id = windowsByID.keys.first(where: { $0.pid == pid }) {
+                      let id = windowsByID.keys.first(where: {
+                          $0.pid == pid && windowsByID[$0]?.bundleID == shellBundle
+                      }) {
                 quake.rebind(id)
                 runtimeState.setQuakeWindowToken(id.token)
                 NSLog("ALWM Quake: rebound from session pid %d → %@", pid, id.token)
@@ -162,10 +195,15 @@ extension WindowManager {
                    let pid = pid_t(parts[0]),
                    let winNum = Int(parts[1]) {
                     let probeID = WindowID(pid: pid, windowNumber: winNum)
-                    if QuakeTerminalController.isWindowAlive(probeID) {
+                    if let app = NSRunningApplication(processIdentifier: pid),
+                       !app.isTerminated,
+                       app.bundleIdentifier == shellBundle,
+                       QuakeTerminalController.isWindowAlive(probeID) {
                         quake.rebind(probeID)
                         NSLog("ALWM Quake: rebound from live WindowServer token %@", token)
-                    } else if let app = NSRunningApplication(processIdentifier: pid), !app.isTerminated,
+                    } else if let app = NSRunningApplication(processIdentifier: pid),
+                              !app.isTerminated,
+                              app.bundleIdentifier == shellBundle,
                               let newNum = QuakeTerminalController.pickWindowServerWindowNumber(for: pid) {
                         let replacement = WindowID(pid: pid, windowNumber: newNum)
                         quake.rebind(replacement)
@@ -647,6 +685,7 @@ extension WindowManager {
 
     func toggleQuake(monitor: MonitorInfo) {
         let isFirstOpening = !quakeHasBeenOpenedInSession || (quake.activeMonitorID == nil && quake.activeWorkspaceID == nil)
+        let wasFirstOpening = isFirstOpening
         let targetMon: MonitorInfo
         let targetWS: String
 
@@ -663,6 +702,24 @@ extension WindowManager {
             let savedMon = quake.activeMonitorID.flatMap { id in monitors.monitors.first(where: { $0.id == id }) }
             targetMon = savedMon ?? primaryMonitor() ?? monitor
             targetWS = quake.activeWorkspaceID ?? workspaces.activeWorkspaceByMonitor[targetMon.id] ?? "1"
+        }
+
+        // Reconcile the visible flag with the real window. A stale flag used to make
+        // the hotkey a no-op (visible=true but parked off-screen → hide instead of show).
+        if let qid = quake.windowID {
+            let live = ax.currentFrame(of: qid) ?? lastFrames[qid] ?? windowsByID[qid]?.frame
+            let usable = live.map {
+                OffscreenParking.isUsableOnscreenFrame($0, monitors: monitors.monitors.map(\.frame))
+            } ?? false
+            let minimized = ax.isMinimized(qid)
+            if quake.isVisible, !usable || minimized {
+                NSLog("ALWM Quake: visible flag was stale (off-screen/minimized) — revealing")
+                quake.setVisibleForRecovery(false)
+                quake.hideBlur()
+            } else if !quake.isVisible, usable, !minimized, !wasFirstOpening {
+                NSLog("ALWM Quake: hidden flag was stale (window on screen) — hiding")
+                quake.setVisibleForRecovery(true)
+            }
         }
 
         if !quake.isVisible {

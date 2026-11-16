@@ -1,6 +1,17 @@
 {
   "releases": [
     {
+      "version": "2.3.7",
+      "items": [
+        "Manage Docker Desktop and other stubborn windows as normal tiles",
+        "Clear stale Quake tokens after restart so the hotkey opens the terminal again",
+        "Reveal floating windows left parked off-screen after switching workspaces",
+        "Ignore key repeat and duplicate hotkey events",
+        "Persist new windows immediately for sleep and restart recovery",
+        "Stop trackpad gesture assertion spam in the logs"
+      ]
+    },
+    {
       "version": "2.3.6",
       "items": [
         "Quake terminal opens or closes exactly once per hotkey press",

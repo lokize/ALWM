@@ -84,6 +84,8 @@ struct ReliabilityRegressionTests {
         )
         manager.isBootstrapping = false
         manager.primaryMonitorID = right.id
+        // Keep the test independent of the physical cursor position.
+        manager.testMouseAXPoint = CGPoint(x: 2_000, y: 450)
         manager.workspaces.configure(definitions: [
             .init(id: "1", name: "1", monitorIndex: 0),
             .init(id: "5", name: "5", monitorIndex: 1),

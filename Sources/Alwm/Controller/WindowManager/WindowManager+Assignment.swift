@@ -209,6 +209,8 @@ extension WindowManager {
         }
         windowWorkspace[id] = workspaceID
         runtimeState.setAssignment(workspaceID, for: id)
+        // Persist the new tile immediately so a crash/sleep/restart restores it.
+        persistRuntimeState(forceWorkspaceLayouts: [workspaceID])
     }
 
     func placeWindowFromSnapshot(_ id: WindowID, into workspaceID: String, usable: Rect) -> Bool {

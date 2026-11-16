@@ -125,7 +125,18 @@ extension WindowManager {
     }
 
     private func captureAppRuleGeometry(for win: ManagedWindow) -> AppRuleCapturedGeometry? {
-        let frame = ax.currentFrame(of: win.id) ?? win.frame
+        let monitorFrames = monitors.monitors.map(\.frame)
+        var frame = ax.currentFrame(of: win.id) ?? win.frame
+        // Never persist an off-screen park/clamp frame as the rule geometry: macOS
+        // parks hidden windows several thousand points away, which would make the
+        // next launch place the app outside the display.
+        if !OffscreenParking.isUsableOnscreenFrame(frame, monitors: monitorFrames) {
+            if let saved = savedFrames[win.id], OffscreenParking.isUsableOnscreenFrame(saved, monitors: monitorFrames) {
+                frame = saved
+            } else if let last = lastFrames[win.id], OffscreenParking.isUsableOnscreenFrame(last, monitors: monitorFrames) {
+                frame = last
+            }
+        }
         let monitor = monitors.monitorContaining(pointX: frame.midX, pointY: frame.midY)
             ?? authoritativeHome(for: win.id).flatMap { workspaces.preferredMonitor(forWorkspace: $0, monitors: monitors.monitors) }
             ?? primaryMonitor()
@@ -238,24 +249,26 @@ extension WindowManager {
     }
 
     func syncAppRuleOnWindowResized(id: WindowID) {
-        guard let win = windowsByID[id] else { return }
+        guard let win = windowsByID[id], win.isFloating else { return }
         var rules = configStore.config.rules
         guard let match = AppRules.matching(rules: rules, window: win) else { return }
         guard let currentFrame = ax.currentFrame(of: id) ?? lastFrames[id] else { return }
+        let monitorFrames = monitors.monitors.map(\.frame)
+        // A hidden/parked float reports frames like (8080, 680) — saving that makes
+        // the rule place the app off-screen forever.
+        guard OffscreenParking.isUsableOnscreenFrame(currentFrame, monitors: monitorFrames) else {
+            NSLog("ALWM: skipped app rule size sync for off-screen %@", win.bundleID ?? win.appName)
+            return
+        }
         var updated = match
-        if win.isFloating {
-            if let monitor = monitors.monitorContaining(pointX: currentFrame.midX, pointY: currentFrame.midY) ?? primaryMonitor(),
-               let monitorIndex = workspaces.monitorIndex(of: monitor.id, in: monitors.monitors) {
-                let geom = AppRules.geometry(from: currentFrame, on: monitor, monitorIndex: monitorIndex)
-                updated.width = geom.width
-                updated.height = geom.height
-                updated.x = geom.x
-                updated.y = geom.y
-                updated.monitorIndex = geom.monitorIndex
-            }
-        } else {
-            updated.minWidth = currentFrame.width
-            updated.minHeight = currentFrame.height
+        if let monitor = monitors.monitorContaining(pointX: currentFrame.midX, pointY: currentFrame.midY) ?? primaryMonitor(),
+           let monitorIndex = workspaces.monitorIndex(of: monitor.id, in: monitors.monitors) {
+            let geom = AppRules.geometry(from: currentFrame, on: monitor, monitorIndex: monitorIndex)
+            updated.width = geom.width
+            updated.height = geom.height
+            updated.x = geom.x
+            updated.y = geom.y
+            updated.monitorIndex = geom.monitorIndex
         }
         rules = AppRules.saving(updated, into: rules)
         var newConfig = configStore.config

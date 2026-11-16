@@ -67,6 +67,9 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
 
     var primaryMonitorID: CGDirectDisplayID = 0
 
+    /// Deterministic pointer override for tests; production leaves this nil.
+    var testMouseAXPoint: CGPoint?
+
     var mouseMonitor: Any?
 
     var mouseMoveEventBridge: AppKitEventMonitorBridge?

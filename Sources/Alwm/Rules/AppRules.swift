@@ -34,12 +34,17 @@ public enum AppRules {
                 w.isFloating = false
                 w.isIgnored = false
             }
-            if let mw = rule.minWidth ?? rule.width, let mh = rule.minHeight ?? rule.height {
-                w.minSize = Size(width: mw, height: mh)
-            } else if let mw = rule.minWidth ?? rule.width {
-                w.minSize = Size(width: mw, height: w.minSize.height)
-            } else if let mh = rule.minHeight ?? rule.height {
-                w.minSize = Size(width: w.minSize.width, height: mh)
+            // Minimum/fixed sizes are a float concept. Applying a saved tile frame as
+            // the tile's minimum used to freeze windows at their previous size and
+            // break per-workspace/monitor layouts.
+            if rule.mode == .float {
+                if let mw = rule.minWidth ?? rule.width, let mh = rule.minHeight ?? rule.height {
+                    w.minSize = Size(width: mw, height: mh)
+                } else if let mw = rule.minWidth ?? rule.width {
+                    w.minSize = Size(width: mw, height: w.minSize.height)
+                } else if let mh = rule.minHeight ?? rule.height {
+                    w.minSize = Size(width: w.minSize.width, height: mh)
+                }
             }
         }
         return w
@@ -91,7 +96,19 @@ public enum AppRules {
             x = fallback.x
             y = fallback.y
         }
-        return Rect(x: x, y: y, width: w, height: h).clamped(to: bounds)
+        let candidate = Rect(x: x, y: y, width: w, height: h)
+        // Saved offsets can come from an off-screen parked frame (e.g. x = 8080).
+        // If the resulting center is off the monitor, center the window instead of
+        // gluing it to the nearest edge.
+        if !bounds.contains(pointX: candidate.midX, pointY: candidate.midY) {
+            return Rect(
+                x: bounds.midX - w / 2,
+                y: bounds.midY - h / 2,
+                width: w,
+                height: h
+            ).clamped(to: bounds)
+        }
+        return candidate.clamped(to: bounds)
     }
 
     /// Convert absolute AX frame to rule offsets on a monitor.

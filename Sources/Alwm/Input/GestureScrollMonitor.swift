@@ -240,6 +240,10 @@ public final class GestureScrollMonitor: @unchecked Sendable {
     }
 
     private static func touchCount(from event: NSEvent) -> Int? {
+        // `touches(matching:in:)` is only valid for gesture events. Calling it for a
+        // scroll/synthetic event raises NSInternalInconsistencyException (AppKit asserts
+        // in NSEvent.m) and spams the log from the HID tap thread.
+        guard event.type == .gesture else { return nil }
         let touches = event.touches(matching: [.touching, .began, .moved, .stationary], in: nil)
         let n = touches.count
         guard (2...5).contains(n) else { return nil }

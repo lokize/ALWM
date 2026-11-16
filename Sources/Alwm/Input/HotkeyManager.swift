@@ -25,6 +25,8 @@ public final class HotkeyManager: @unchecked Sendable {
         let flags: CGEventFlags
         let action: String
         let isGrave: Bool
+        /// Lowercased key name used as a layout-independent character fallback.
+        let key: String
     }
 
     private var tapBindings: [TapBinding] = []
@@ -103,7 +105,8 @@ public final class HotkeyManager: @unchecked Sendable {
                     keyCode: Int64(code),
                     flags: Self.cgModifiers(binding.modifiers),
                     action: binding.action,
-                    isGrave: grave
+                    isGrave: grave,
+                    key: binding.key.lowercased()
                 )
             }
         }
@@ -115,7 +118,13 @@ public final class HotkeyManager: @unchecked Sendable {
             for code: Int64 in [50, 10] {
                 let key = "\(binding.action)|\(code)|\(binding.modifiers.sorted().joined(separator: "+"))"
                 if seen.insert(key).inserted {
-                    tapBindings.append(TapBinding(keyCode: code, flags: flags, action: binding.action, isGrave: true))
+                    tapBindings.append(TapBinding(
+                        keyCode: code,
+                        flags: flags,
+                        action: binding.action,
+                        isGrave: true,
+                        key: binding.key.lowercased()
+                    ))
                 }
             }
         }
@@ -391,12 +400,10 @@ public final class HotkeyManager: @unchecked Sendable {
             return handleOverlayAllowedTap(event: event, flags: flags)
         }
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-        var needsChars = false
         var anyFlagMatch = false
         for binding in tapBindings {
             if Self.flagsMatch(binding.flags, event: flags, isGrave: binding.isGrave) {
                 anyFlagMatch = true
-                if binding.isGrave { needsChars = true }
                 if binding.keyCode == keyCode, !binding.isGrave {
                     if shouldDeferHotkeys?() == true, !isAllowedWhileOverlayActive(binding.action) {
                         return Unmanaged.passUnretained(event)
@@ -420,9 +427,32 @@ public final class HotkeyManager: @unchecked Sendable {
 
         var chars: String?
         var ignoring: String?
-        if needsChars, let ns = NSEvent(cgEvent: event) {
+        if let ns = NSEvent(cgEvent: event) {
             chars = ns.characters
             ignoring = ns.charactersIgnoringModifiers
+        }
+        // No hardware key-code match: try the typed character (layout fallback).
+        for binding in tapBindings where !binding.isGrave {
+            guard Self.flagsMatch(binding.flags, event: flags, isGrave: false) else { continue }
+            guard Self.keyMatches(
+                binding: binding,
+                eventKeyCode: keyCode,
+                characters: chars,
+                ignoring: ignoring
+            ) else { continue }
+            if shouldDeferHotkeys?() == true, !isAllowedWhileOverlayActive(binding.action) {
+                return Unmanaged.passUnretained(event)
+            }
+            if Self.isEditingTextField() {
+                return Unmanaged.passUnretained(event)
+            }
+            emit(
+                binding.action,
+                eventTimestamp: event.timestamp,
+                source: .tap,
+                isRepeat: Self.isRepeat(event)
+            )
+            return Unmanaged.passUnretained(event)
         }
         for binding in tapBindings where binding.isGrave {
             guard Self.flagsMatch(binding.flags, event: flags, isGrave: true) else { continue }
@@ -455,35 +485,24 @@ public final class HotkeyManager: @unchecked Sendable {
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
         var chars: String?
         var ignoring: String?
-        let needsChars = tapBindings.contains { isAllowedWhileOverlayActive($0.action) && $0.isGrave }
-        if needsChars, let ns = NSEvent(cgEvent: event) {
+        if let ns = NSEvent(cgEvent: event) {
             chars = ns.characters
             ignoring = ns.charactersIgnoringModifiers
         }
         for binding in tapBindings where isAllowedWhileOverlayActive(binding.action) {
             guard Self.flagsMatch(binding.flags, event: flags, isGrave: binding.isGrave) else { continue }
-            if binding.isGrave {
-                if Self.keyMatches(
-                    binding: binding,
-                    eventKeyCode: keyCode,
-                    characters: chars,
-                    ignoring: ignoring
-                ) {
-                    emit(
-                        binding.action,
-                        eventTimestamp: event.timestamp,
-                        source: .tap,
-                        isRepeat: Self.isRepeat(event)
-                    )
-                }
-            } else if binding.keyCode == keyCode {
-                emit(
-                    binding.action,
-                    eventTimestamp: event.timestamp,
-                    source: .tap,
-                    isRepeat: Self.isRepeat(event)
-                )
-            }
+            guard Self.keyMatches(
+                binding: binding,
+                eventKeyCode: keyCode,
+                characters: chars,
+                ignoring: ignoring
+            ) else { continue }
+            emit(
+                binding.action,
+                eventTimestamp: event.timestamp,
+                source: .tap,
+                isRepeat: Self.isRepeat(event)
+            )
         }
         return Unmanaged.passUnretained(event)
     }
@@ -557,9 +576,16 @@ public final class HotkeyManager: @unchecked Sendable {
         ignoring: String?
     ) -> Bool {
         if binding.keyCode == eventKeyCode { return true }
+        let chars = (ignoring ?? "") + (characters ?? "")
+        // Layout/keyboard fallback: some layouts report a different hardware key code
+        // for the same letter (ABNT2, remapped keys). Match the typed character too,
+        // but only for single-character bindings and only when modifiers matched.
+        if !binding.isGrave, binding.key.count == 1,
+           chars.lowercased().contains(binding.key) {
+            return true
+        }
         guard binding.isGrave else { return false }
         if Self.graveKeyCodes.contains(eventKeyCode) { return true }
-        let chars = (ignoring ?? "") + (characters ?? "")
         // US `~`, BR quotes on the Esc-adjacent key, dead tilde/acute.
         let needles: [Character] = ["`", "~", "˜", "´", "'", "\"", "§", "±"]
         if chars.contains(where: { needles.contains($0) }) {

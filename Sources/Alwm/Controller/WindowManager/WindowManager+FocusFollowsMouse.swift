@@ -129,6 +129,7 @@ enum FocusBorderPolicy {
 
 extension WindowManager {
     func mouseLocationInAXCoordinates() -> CGPoint {
+        if let testMouseAXPoint { return testMouseAXPoint }
         let cocoaPoint = NSEvent.mouseLocation
         let mainHeight = NSScreen.screens.first?.frame.height ?? cocoaPoint.y
         return FocusFollowsMousePolicy.mouseAXPoint(
