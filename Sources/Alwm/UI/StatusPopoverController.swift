@@ -154,7 +154,9 @@ public final class StatusPopoverController {
         model.recentNotes = recentNotes
         model.environmentProfiles = profiles
         if !profiles.contains(where: { $0.id == model.selectedEnvironmentProfileID }) {
-            model.selectedEnvironmentProfileID = profiles.first?.id ?? ""
+            // Do not pre-select a profile: "Carregar" would be one accidental click away
+            // from replacing the user's settings/rules/layout.
+            model.selectedEnvironmentProfileID = ""
         }
         resizeToFit()
     }

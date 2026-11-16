@@ -82,11 +82,7 @@ extension SettingsRootView {
             }
         }
         .formStyle(.grouped)
-        .onAppear {
-            if selectedEnvironmentProfileID.isEmpty {
-                selectedEnvironmentProfileID = environmentProfiles.first?.id ?? ""
-            }
-        }
+
     }
 
 

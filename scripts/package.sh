@@ -32,6 +32,19 @@ step() {
   echo "→ $*  (+${elapsed}s)"
 }
 
+# Snapshot the user's ALWM config before installing a new build. The package does
+# not touch ~/.config, but this gives a one-command recovery if a migration or a
+# profile activation ever resets settings, wallpapers, rules or layouts.
+CFG="$HOME/.config/alwm"
+if [[ -d "$CFG" ]]; then
+  BK="$CFG/backups/package-$(cat "$ROOT/VERSION" 2>/dev/null || echo unknown)-$(date +%Y%m%d-%H%M%S)"
+  mkdir -p "$BK"
+  for item in settings.toml hotkeys.toml gestures.toml workspaces.toml plugins.toml runtime-state.json apprules.d environment-profiles; do
+    [[ -e "$CFG/$item" ]] && cp -R "$CFG/$item" "$BK/" 2>/dev/null || true
+  done
+  step "Config backup: ${BK#"$HOME"/}"
+fi
+
 # Ensure version/What's New hook is installed for this clone.
 bash "$ROOT/scripts/install-git-hooks.sh" >/dev/null 2>&1 || true
 

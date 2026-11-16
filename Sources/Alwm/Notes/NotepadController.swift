@@ -12,6 +12,7 @@ public final class NotepadController {
 
     private var panel: NSPanel?
     private var blurPanel: NSWindow?
+    private var hideWatchdog: DispatchWorkItem?
     private weak var blurTintView: NSView?
     private var hosting: NSHostingController<NotepadRootView>?
     private var presentationGeneration: UInt64 = 0
@@ -228,6 +229,8 @@ public final class NotepadController {
     private func animate(toVisible: Bool, settings: NotepadSettings, monitor: MonitorInfo) {
         presentationGeneration &+= 1
         let gen = presentationGeneration
+        hideWatchdog?.cancel()
+        hideWatchdog = nil
         ensurePanel(settings: settings, monitor: monitor)
         guard let panel else { return }
 
@@ -256,10 +259,26 @@ public final class NotepadController {
                 self?.finishVisibility(toVisible, gen: gen)
             }
         }
+        if !toVisible {
+            // If the animation completion is dropped while the app is inactive, the
+            // panel would keep overlay capture (and FFM disabled) forever.
+            let watchdog = DispatchWorkItem { [weak self] in
+                guard let self,
+                      self.presentationGeneration == gen,
+                      !self.targetVisibility,
+                      self.isVisible else { return }
+                NSLog("ALWM Notepad: hide watchdog forcing visibility off")
+                self.finishVisibility(false, gen: gen)
+            }
+            hideWatchdog = watchdog
+            DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.6, execute: watchdog)
+        }
     }
 
     private func finishVisibility(_ visible: Bool, gen: UInt64) {
         guard gen == presentationGeneration else { return }
+        hideWatchdog?.cancel()
+        hideWatchdog = nil
         isVisible = visible
         if visible {
             (panel as? NotepadKeyPanel)?.installImagePasteMonitor()

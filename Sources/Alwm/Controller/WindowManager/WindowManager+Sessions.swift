@@ -38,6 +38,16 @@ enum SavedSessionRestorePolicy {
 extension WindowManager {
     @discardableResult
     func activateEnvironmentProfile(id: String) -> Bool {
+        // Restoring a profile replaces settings, wallpapers, layout, app rules and
+        // sessions. Require an explicit confirmation so a stray click/keypress on
+        // the status menu cannot wipe the current environment.
+        let alert = NSAlert()
+        alert.messageText = "Aplicar perfil de ambiente?"
+        alert.informativeText = "Isso substitui configurações, papel de parede, layout, regras de apps e sessões salvas pelo snapshot. Apps fora do perfil continuam abertos."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Aplicar perfil")
+        alert.addButton(withTitle: "Cancelar")
+        guard alert.runModal() == .alertFirstButtonReturn else { return false }
         do {
             try environmentProfiles.activate(id: id) {
                 try configStore.load()

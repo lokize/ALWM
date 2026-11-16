@@ -401,7 +401,6 @@ extension WindowManager {
             }
         }
         DispatchQueue.main.async { [weak self] in
-            self?.applyWorkspaceVisibility(animated: false)
             self?.refreshChrome()
         }
     }
@@ -524,7 +523,6 @@ extension WindowManager {
         preferredOverlayFocus = nil
         updateOverlayInputMode()
         DispatchQueue.main.async { [weak self] in
-            self?.applyWorkspaceVisibility(animated: false)
             self?.refreshChrome()
         }
     }
@@ -795,6 +793,7 @@ extension WindowManager {
             return
         }
         if let id = quake.windowID {
+            let quakeWasInColumn = workspaces.workspaceID(containing: id) != nil
             workspaces.removeWindowEverywhere(id)
             floatingOverrides.insert(id)
             quake.markScratchpad(in: &windowsByID)
@@ -821,9 +820,11 @@ extension WindowManager {
                 let hidden = quake.hiddenFrame(settings: settings, monitor: presentationMonitor)
                 ax.parkAndHide(frame: hidden, id: id, monitors: monitorsFrames)
                 lastFrames[id] = hidden
-                // Let the panel leave the screen before the (heavier) tile relayout.
-                DispatchQueue.main.async { [weak self] in
-                    self?.applyFluidLayout(animated: false, onlyMonitor: presentationMonitor)
+                if quakeWasInColumn {
+                    // Let the panel leave the screen before the (heavier) tile relayout.
+                    DispatchQueue.main.async { [weak self] in
+                        self?.applyFluidLayout(animated: false, onlyMonitor: presentationMonitor)
+                    }
                 }
             }
         } else {

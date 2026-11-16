@@ -68,16 +68,27 @@ public final class ConfigStore: @unchecked Sendable {
 
     public func load() throws {
         try ensureDefaultsOnDisk()
-        var next = AlwmConfig.default
+        // Start from the last known-good in-memory config. A transient parse error
+        // (e.g. a new build rewriting a file mid-update) must never wipe the user's
+        // settings, wallpapers, workspaces or rules back to defaults.
+        var next = self.config
         if let settingsText = try? String(contentsOf: ConfigPaths.settings, encoding: .utf8) {
-            next.settings = try Self.parseSettings(settingsText)
+            do {
+                next.settings = try Self.parseSettings(settingsText)
+            } catch {
+                NSLog("ALWM: settings.toml parse failed; keeping previous settings: %@", String(describing: error))
+            }
         }
         if let hotkeysText = try? String(contentsOf: ConfigPaths.hotkeys, encoding: .utf8) {
-            let parsed = try Self.parseHotkeys(hotkeysText)
-            let merged = Self.mergeHotkeys(parsed)
-            next.hotkeys = merged
-            if merged.count != parsed.count {
-                ConfigWriter.writeHotkeys(merged)
+            do {
+                let parsed = try Self.parseHotkeys(hotkeysText)
+                let merged = Self.mergeHotkeys(parsed)
+                next.hotkeys = merged
+                if merged.count != parsed.count {
+                    ConfigWriter.writeHotkeys(merged)
+                }
+            } catch {
+                NSLog("ALWM: hotkeys.toml parse failed; keeping previous hotkeys: %@", String(describing: error))
             }
         }
         if let gesturesText = try? String(contentsOf: ConfigPaths.gestures, encoding: .utf8) {
@@ -103,9 +114,17 @@ public final class ConfigStore: @unchecked Sendable {
             try? ConfigStore.defaultGesturesTOML.write(to: ConfigPaths.gestures, atomically: true, encoding: .utf8)
         }
         if let wsText = try? String(contentsOf: ConfigPaths.workspaces, encoding: .utf8) {
-            next.workspaces = try Self.parseWorkspaces(wsText)
+            do {
+                next.workspaces = try Self.parseWorkspaces(wsText)
+            } catch {
+                NSLog("ALWM: workspaces.toml parse failed; keeping previous workspaces: %@", String(describing: error))
+            }
         }
-        next.rules = try Self.loadRules(from: ConfigPaths.appRulesDir)
+        do {
+            next.rules = try Self.loadRules(from: ConfigPaths.appRulesDir)
+        } catch {
+            NSLog("ALWM: apprules parse failed; keeping previous rules: %@", String(describing: error))
+        }
         let syncedHotkeys = Self.syncWorkspaceHotkeys(workspaces: next.workspaces, hotkeys: next.hotkeys)
         if syncedHotkeys.count != next.hotkeys.count {
             next.hotkeys = syncedHotkeys

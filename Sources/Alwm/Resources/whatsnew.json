@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "2.4.3",
+      "items": [
+        "Preserve settings, rules and layouts across updates",
+        "Never fall back to defaults when a config file fails to parse",
+        "Require confirmation before applying an environment profile",
+        "Keep focus-follows-mouse recovering after overlays close",
+        "Avoid unnecessary tile relayouts when opening Quake or Notepad"
+      ]
+    },
+    {
       "version": "2.4.2",
       "items": [
         "Keep overlay shortcuts responsive by deferring AX scans while Quake or Notepad is open",

@@ -104,10 +104,16 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
     var overlaysCaptureFocus: Bool {
         if notepad.isVisible { return true }
         if quake.isVisible {
-            if let qid = quake.windowID {
-                if let app = NSRunningApplication(processIdentifier: qid.pid), app.isTerminated {
-                    return false
-                }
+            guard let qid = quake.windowID else { return true }
+            if let app = NSRunningApplication(processIdentifier: qid.pid), app.isTerminated {
+                return false
+            }
+            // A stale visible flag while the panel is parked off-screen must not keep
+            // FFM/gestures disabled forever. Only capture focus when it is actually usable.
+            let monitorsFrames = monitors.monitors.map(\.frame)
+            if let live = ax.currentFrame(of: qid) ?? lastFrames[qid],
+               !OffscreenParking.isUsableOnscreenFrame(live, monitors: monitorsFrames) {
+                return false
             }
             return true
         }
