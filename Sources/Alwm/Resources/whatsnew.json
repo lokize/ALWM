@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "version": "2.4.1",
+      "items": [
+        "Open Quake and Notepad reliably on the first shortcut press",
+        "Dismiss Quake and Notepad without waiting for disk or layout work",
+        "Keep quick overlay shortcuts active while a text field is focused"
+      ]
+    },
+    {
       "version": "2.4.0",
       "items": [
         "Keep Quake open when the open shortcut is delivered twice",

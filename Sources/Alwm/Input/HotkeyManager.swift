@@ -50,6 +50,12 @@ public final class HotkeyManager: @unchecked Sendable {
     private var overlayKeyboardCaptureActive = false
 
     /// Actions that must fire once per physical key press, never on key repeat.
+    /// Quick overlay toggles must also work while a text field owns the keyboard
+    /// (Settings search, Notepad editor, hotkey recorder, etc.).
+    private static let quickOverlayActions: Set<String> = [
+        "quake.toggle", "notepad.toggle", "notepad.new"
+    ]
+
     private static let nonRepeatingActions: Set<String> = [
         "quake.toggle", "notepad.toggle", "notepad.new", "overview.toggle", "palette.toggle",
         "settings.open", "settings.open.plugins", "float.toggle", "column.maximize",
@@ -314,7 +320,7 @@ public final class HotkeyManager: @unchecked Sendable {
         if overlayKeyboardCaptureActive || shouldDeferHotkeys?() == true {
             return handleOverlayAllowedNSEvent(event)
         }
-        if Self.isEditingTextField() { return false }
+        let editingTextField = Self.isEditingTextField()
         let deferOverlay = shouldDeferHotkeys?() == true
         let keyCode = Int64(event.keyCode)
         let flags = Self.cgFlags(from: event.modifierFlags)
@@ -328,6 +334,9 @@ public final class HotkeyManager: @unchecked Sendable {
                ) {
                 if deferOverlay, !isAllowedWhileOverlayActive(binding.action) {
                     return false
+                }
+                if editingTextField, !Self.quickOverlayActions.contains(binding.action) {
+                    continue
                 }
                 emit(
                     binding.action,
@@ -408,7 +417,8 @@ public final class HotkeyManager: @unchecked Sendable {
                     if shouldDeferHotkeys?() == true, !isAllowedWhileOverlayActive(binding.action) {
                         return Unmanaged.passUnretained(event)
                     }
-                    if Self.isEditingTextField() {
+                    if Self.isEditingTextField(),
+                       !Self.quickOverlayActions.contains(binding.action) {
                         return Unmanaged.passUnretained(event)
                     }
                     emit(
@@ -443,7 +453,8 @@ public final class HotkeyManager: @unchecked Sendable {
             if shouldDeferHotkeys?() == true, !isAllowedWhileOverlayActive(binding.action) {
                 return Unmanaged.passUnretained(event)
             }
-            if Self.isEditingTextField() {
+            if Self.isEditingTextField(),
+               !Self.quickOverlayActions.contains(binding.action) {
                 return Unmanaged.passUnretained(event)
             }
             emit(
@@ -465,7 +476,8 @@ public final class HotkeyManager: @unchecked Sendable {
                 if shouldDeferHotkeys?() == true, !isAllowedWhileOverlayActive(binding.action) {
                     return Unmanaged.passUnretained(event)
                 }
-                if Self.isEditingTextField() {
+                if Self.isEditingTextField(),
+                   !Self.quickOverlayActions.contains(binding.action) {
                     return Unmanaged.passUnretained(event)
                 }
                 emit(

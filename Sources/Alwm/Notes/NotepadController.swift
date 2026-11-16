@@ -64,8 +64,15 @@ public final class NotepadController {
 
     public func hide(settings: NotepadSettings, monitor: MonitorInfo) {
         guard targetVisibility else { return }
-        store.flushPendingSaves()
         animate(toVisible: false, settings: settings, monitor: monitor)
+        // Start the dismiss animation first; flush pending notes after it has left the
+        // screen so a slow disk write cannot keep the panel visible.
+        let store = self.store
+        let delay = max(0.05, settings.animationDuration + 0.05)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            store.flushPendingSaves()
+        }
     }
 
     public func panelFrame(settings: NotepadSettings, monitor: MonitorInfo, visible: Bool) -> NSRect {

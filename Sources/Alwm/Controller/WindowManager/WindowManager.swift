@@ -93,8 +93,9 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
 
     var quakeCloseConfirmWorkItem: DispatchWorkItem?
     var quakeHasBeenOpenedInSession = false
-    /// Guard against duplicate toggle deliveries right after showing Quake.
+    /// Guard against duplicate toggle deliveries right after showing overlays.
     var quakeShownAt = Date.distantPast
+    var notepadShownAt = Date.distantPast
     var suppressNotepadDismissUntil = Date.distantPast
     enum OverlayFocusTarget { case quake, notepad }
 

@@ -407,6 +407,12 @@ extension WindowManager {
     }
 
     func toggleNotepad(monitor: MonitorInfo) {
+        // Same duplicate-delivery guard as Quake: the second toggle of the opening
+        // press must not immediately dismiss the panel.
+        if notepad.isTargetVisible, Date().timeIntervalSince(notepadShownAt) < 0.5 {
+            NSLog("ALWM Notepad: ignoring immediate duplicate hide")
+            return
+        }
         let settings = configStore.config.settings.notepad
         if notepad.isTargetVisible {
             dismissNotepad(on: monitor)
@@ -414,6 +420,7 @@ extension WindowManager {
         }
         notepad.toggle(settings: settings, monitor: monitor)
         if notepad.isTargetVisible {
+            notepadShownAt = Date()
             preferredOverlayFocus = .notepad
             suppressNotepadDismissUntil = Date().addingTimeInterval(0.5)
         }
@@ -424,6 +431,7 @@ extension WindowManager {
         guard let monitor = monitorForAction() ?? primaryMonitor() else { return }
         let settings = configStore.config.settings.notepad
         notepad.open(pageID: pageID, settings: settings, monitor: monitor)
+        if notepad.isTargetVisible { notepadShownAt = Date() }
         preferredOverlayFocus = .notepad
         suppressNotepadDismissUntil = Date().addingTimeInterval(0.5)
         updateOverlayInputMode()
@@ -432,6 +440,7 @@ extension WindowManager {
     func openNewNotepad(monitor: MonitorInfo) {
         let settings = configStore.config.settings.notepad
         notepad.openNew(settings: settings, monitor: monitor)
+        if notepad.isTargetVisible { notepadShownAt = Date() }
         preferredOverlayFocus = .notepad
         suppressNotepadDismissUntil = Date().addingTimeInterval(0.5)
         updateOverlayInputMode()
@@ -812,7 +821,10 @@ extension WindowManager {
                 let hidden = quake.hiddenFrame(settings: settings, monitor: presentationMonitor)
                 ax.parkAndHide(frame: hidden, id: id, monitors: monitorsFrames)
                 lastFrames[id] = hidden
-                applyFluidLayout(animated: false, onlyMonitor: presentationMonitor)
+                // Let the panel leave the screen before the (heavier) tile relayout.
+                DispatchQueue.main.async { [weak self] in
+                    self?.applyFluidLayout(animated: false, onlyMonitor: presentationMonitor)
+                }
             }
         } else {
             suppressQuakeDismissUntil = Date().addingTimeInterval(2.0)
