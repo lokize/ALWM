@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "version": "2.4.4",
+      "items": [
+        "Make focus-follows-mouse react within one frame",
+        "Let FFM work while Settings or plugin panels are open elsewhere",
+        "Only let an app popup block FFM for the app under the pointer"
+      ]
+    },
+    {
       "version": "2.4.3",
       "items": [
         "Preserve settings, rules and layouts across updates",

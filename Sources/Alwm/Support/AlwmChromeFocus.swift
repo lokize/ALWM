@@ -15,9 +15,29 @@ enum AlwmChromeFocus {
         statusPopoverVisible: Bool = false,
         appTransientPopupVisible: Bool = false
     ) -> Bool {
+        if blocksForOwnChrome(
+            overlaysCaptureFocus: overlaysCaptureFocus,
+            paletteVisible: paletteVisible,
+            overviewVisible: overviewVisible,
+            settingsVisible: settingsVisible,
+            statusPopoverVisible: statusPopoverVisible
+        ) {
+            return true
+        }
         // App-owned transient UI (for example WhatsApp's sticker picker) must
         // retain interaction even when it shares the owner's normal CG window.
-        if appTransientPopupVisible { return true }
+        return appTransientPopupVisible
+    }
+
+    /// Cheap check for ALWM chrome only. The app-owned popup probe is an AX query
+    /// and is intentionally excluded so the FFM fast path stays instant.
+    static func blocksForOwnChrome(
+        overlaysCaptureFocus: Bool,
+        paletteVisible: Bool,
+        overviewVisible: Bool,
+        settingsVisible: Bool,
+        statusPopoverVisible: Bool = false
+    ) -> Bool {
         if overlaysCaptureFocus { return true }
         if paletteVisible || overviewVisible || settingsVisible { return true }
         if statusPopoverVisible { return true }

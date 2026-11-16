@@ -839,13 +839,22 @@ final class AppKitEventMonitorBridge: @unchecked Sendable {
     }
 
     private func deliverOnMainActor() {
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                handler()
+                guard deliveryGate.release() else { return }
+                // Events received while the check was running collapse into this one
+                // trailing delivery, which samples the pointer's latest position.
+                DispatchQueue.main.async { [weak self] in
+                    self?.deliverOnMainActor()
+                }
+            }
+            return
+        }
         Task { @MainActor [weak self] in
             guard let self else { return }
             self.handler()
             guard self.deliveryGate.release() else { return }
-            // Give the main run loop a chance to process UI work between checks.
-            // Events received while the check was running collapse into this one
-            // trailing delivery, which samples the pointer's latest position.
             DispatchQueue.main.async { [weak self] in
                 self?.deliverOnMainActor()
             }

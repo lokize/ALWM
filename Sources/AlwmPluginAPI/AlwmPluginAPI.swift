@@ -228,6 +228,14 @@ public enum PluginPanelOutsideClick {
         return window.isVisible && !window.isMiniaturized
     }
 
+    /// Frame of the watched panel, used to block FFM only when the pointer is
+    /// actually over it (an open Settings/plugin panel elsewhere must not freeze
+    /// focus-follows-mouse).
+    public static var watchedWindowFrame: NSRect? {
+        guard let window = watched, window.isVisible, !window.isMiniaturized else { return nil }
+        return window.frame
+    }
+
     /// Start watching `window`. Closes any previously watched window.
     /// Install is deferred one turn so the opening click does not dismiss immediately.
     /// - Parameter onDismiss: Custom close (e.g. Settings controller). Default: `orderOut`.

@@ -169,6 +169,45 @@ extension WindowManager {
         )
     }
 
+    /// Fast path: no AX probe for app popups.
+    func ownChromeBlocksFocusFollowsMouse() -> Bool {
+        AlwmChromeFocus.blocksForOwnChrome(
+            overlaysCaptureFocus: overlaysCaptureFocus,
+            paletteVisible: palette.isVisible,
+            overviewVisible: overview.isVisible,
+            settingsVisible: settingsUI.isVisible,
+            statusPopoverVisible: statusPopover.isShown
+        )
+    }
+
+    func appPopupBlocksFocusFollowsMouse(for target: WindowID) -> Bool {
+        // Only the app that owns the window under the pointer can block it. A popup
+        // in WhatsApp must not freeze FFM while the user is hovering Orca.
+        guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier,
+              pid == target.pid else { return false }
+        return transientPopupDetector(pid)
+    }
+
+    /// Point-aware own-chrome gate. Settings/plugin panels block FFM only while the
+    /// pointer is over them; overlays/menus keep their modal behavior.
+    func ffmOwnChromeBlocksFocusFollowsMouse(at point: CGPoint) -> Bool {
+        if overlaysCaptureFocus || palette.isVisible || overview.isVisible || statusPopover.isShown {
+            return true
+        }
+        if AlwmChromeFocus.menuBarMenuIsOpen() { return true }
+        let mainHeight = NSScreen.screens.first?.frame.height ?? 900
+        let cocoa = NSPoint(x: point.x, y: mainHeight - point.y)
+        if let frame = PluginPanelOutsideClick.watchedWindowFrame, frame.contains(cocoa) {
+            return true
+        }
+        return NSApp.windows.contains { win in
+            win.isVisible
+                && !win.isMiniaturized
+                && AlwmChromeFocus.isInteractiveChrome(win)
+                && win.frame.contains(cocoa)
+        }
+    }
+
     func scheduleFocusWindowUnderMouse() {
         // Quake terminal / notepad / plugins / menus — never chase tiles under the cursor.
         if overlaysCaptureFocus {
@@ -179,7 +218,7 @@ extension WindowManager {
         let now = Date()
         // Keep cross-display/workspace focus responsive while coalescing high-rate
         // mouse events. 22ms (~45Hz) is completely imperceptible to human eye while cutting CPU by ~30%.
-        let minInterval: TimeInterval = 0.022
+        let minInterval: TimeInterval = 0.008
         if now.timeIntervalSince(ffmLastRun) >= minInterval {
             ffmWorkItem?.cancel()
             ffmWorkItem = nil
@@ -241,11 +280,11 @@ extension WindowManager {
     }
 
     func focusWindowUnderMouse() {
-        if chromeBlocksFocusFollowsMouse() { return }
+        let pointer = mouseLocationInAXCoordinates()
+        if ffmOwnChromeBlocksFocusFollowsMouse(at: pointer) { return }
         // Column pan moves tiles under the cursor — FFM + snapView would yank offset back.
         if isColumnPanActive { return }
 
-        let pointer = mouseLocationInAXCoordinates()
         let axX = Double(pointer.x)
         let axY = Double(pointer.y)
 
@@ -423,6 +462,8 @@ extension WindowManager {
     }
 
     func focusMouseTarget(_ id: WindowID, cursorMonitorID: CGDirectDisplayID?) {
+        // Expensive AX popup probe only runs when we are about to change focus.
+        if appPopupBlocksFocusFollowsMouse(for: id) { return }
         let activeWorkspaceOnCursor = cursorMonitorID.flatMap { workspaces.activeWorkspaceByMonitor[$0] }
         if let home = authoritativeHome(for: id),
            FocusFollowsMousePolicy.shouldActivateHomeWorkspace(

@@ -1479,7 +1479,9 @@ extension WindowManager {
     }
 
     func focusWindow(_ id: WindowID, raise: Bool = true) {
-        if chromeBlocksFocusFollowsMouse() { return }
+        // Mouse focus already passed the point-aware chrome gate; a Settings/plugin
+        // panel elsewhere on screen must not veto it.
+        if !focusSourceIsMouse, chromeBlocksFocusFollowsMouse() { return }
         // Dismissed Quake must stay parked — raising it undoes hide and looks like a reopen.
         if (id == quake.windowID || isQuakeOwned(id)), !quake.isVisible {
             return
