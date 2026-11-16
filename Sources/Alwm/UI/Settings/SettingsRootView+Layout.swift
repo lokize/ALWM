@@ -8,45 +8,12 @@ extension SettingsRootView {
 
     var layoutPane: some View {
         Form {
-            Section("Layout por Workspace") {
-                if config.workspaces.isEmpty {
-                    Text("Nenhum workspace configurado.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(config.workspaces) { ws in
-                        // Bind by workspace ID instead of a positional $binding: the
-                        // config watcher can replace the array while Settings is open,
-                        // and stale bindings crashed SwiftUI when entering this pane.
-                        let layoutBinding = Binding(
-                            get: {
-                                config.workspaces.first(where: { $0.id == ws.id })?.layout ?? ws.layout
-                            },
-                            set: { newValue in
-                                guard let idx = config.workspaces.firstIndex(where: { $0.id == ws.id }) else { return }
-                                config.workspaces[idx].layout = newValue
-                            }
-                        )
-                        HStack {
-                            Text("Workspace \(ws.id)\(ws.name.isEmpty || ws.name == ws.id ? "" : " (\(ws.name))")")
-                                .frame(minWidth: 120, alignment: .leading)
-                            Spacer()
-                            Picker("", selection: layoutBinding) {
-                                ForEach(WorkspaceLayoutStyle.allCases) { style in
-                                    Text(style.label).tag(style)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                            .frame(maxWidth: 260)
-                        }
-                    }
-                }
-            }
             Section("Columns") {
-                labeledSlider("Inner gap", value: $config.settings.gap, range: 0...40)
-                labeledSlider("Outer gap", value: $config.settings.outerGap, range: 0...40)
+                labeledNumber("Inner gap", value: $config.settings.gap)
+                labeledNumber("Outer gap", value: $config.settings.outerGap)
             }
             Section("Motion") {
-                labeledSlider("Animation duration (s)", value: $config.settings.animationDuration, range: 0...0.6)
+                labeledNumber("Animation duration (s)", value: $config.settings.animationDuration)
                 Text("Layout motion stays part of the scrolling model.")
                     .font(.caption)
                     .foregroundStyle(.secondary)

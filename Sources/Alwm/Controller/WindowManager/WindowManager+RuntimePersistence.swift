@@ -838,14 +838,10 @@ extension WindowManager {
         guard workspace.layout == .niri, !workspace.columns.isEmpty else { return }
         guard let mon = monitorForWorkspaceLayout(workspaceID) else { return }
         let usable = engine.usableArea(monitor: mon.layoutFrame)
-        let n = workspace.columns.count
         fillZeroColumnWidths(workspace: &workspace, workspaceID: workspaceID)
         let contentW = engine.niri.contentWidth(workspace: workspace, usable: usable)
-        if engine.niri.columnsShouldFillUsable(count: n), contentW < usable.width - 1.0 {
-            engine.niri.normalizeWidthsToFill(workspace: &workspace, usable: usable)
-            workspace.viewOffset = 0
-            return
-        }
+        // Never expand columns just because they are narrower than the display.
+        // That pass was making windows grow on their own after a persist/switch.
         // Oversized columns are a valid scrolling layout. Preserve the user's
         // widths and viewport; structural edits explicitly fit when intended.
         if contentW <= usable.width + 1.0 {

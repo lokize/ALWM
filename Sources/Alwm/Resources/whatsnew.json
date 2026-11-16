@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "version": "2.4.8",
+      "items": [
+        "Stop Settings from crashing when switching panes",
+        "Replace fragile settings sliders with numeric fields",
+        "Keep column widths stable across persistence and workspace switches"
+      ]
+    },
+    {
       "version": "2.4.7",
       "items": [
         "Prevent the Layout settings pane from crashing on config reload",

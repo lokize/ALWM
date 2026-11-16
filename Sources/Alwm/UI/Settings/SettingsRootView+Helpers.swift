@@ -98,40 +98,45 @@ extension SettingsRootView {
         range: ClosedRange<Double>,
         id: String? = nil
     ) -> some View {
-        return LabeledContent {
-            HStack(spacing: 12) {
-                Slider(
-                    value: Binding(
-                        get: {
-                            min(range.upperBound, max(range.lowerBound, value.wrappedValue))
-                        },
-                        set: { newValue in
-                            let clamped = min(range.upperBound, max(range.lowerBound, newValue))
-                            value.wrappedValue = (clamped * 1000).rounded() / 1000
-                        }
-                    ),
-                    in: range
-                )
-                .controlSize(.small)
-                Text(value.wrappedValue, format: .number.precision(.fractionLength(2)))
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                    .frame(width: 44, alignment: .trailing)
-                    .contentTransition(.numericText())
+        // SwiftUI Slider + AccessibilityBoundedNumber was crashing (SIGSEGV in
+        // initializeWithCopy) on macOS 27 when a settings pane rebuilt. A numeric
+        // TextField keeps the same setting without that code path.
+        let clamped = Binding(
+            get: {
+                min(range.upperBound, max(range.lowerBound, value.wrappedValue))
+            },
+            set: { newValue in
+                let v = min(range.upperBound, max(range.lowerBound, newValue))
+                value.wrappedValue = (v * 1000).rounded() / 1000
             }
-            .frame(minWidth: 220)
-        } label: {
-            Text(title)
+        )
+        return LabeledContent(title) {
+            TextField("", text: Binding(
+                get: { String(format: "%.2f", clamped.wrappedValue) },
+                set: { text in
+                    let normalized = text.replacingOccurrences(of: ",", with: ".")
+                    if let v = Double(normalized) { clamped.wrappedValue = v }
+                }
+            ))
+            .frame(width: 90)
+            .multilineTextAlignment(.trailing)
+            .textFieldStyle(.roundedBorder)
         }
     }
 
 
     func labeledNumber(_ title: String, value: Binding<Double>) -> some View {
         LabeledContent(title) {
-            TextField("", value: value, format: .number)
-                .frame(width: 90)
-                .multilineTextAlignment(.trailing)
-                .textFieldStyle(.roundedBorder)
+            TextField("", text: Binding(
+                get: { String(format: "%g", value.wrappedValue) },
+                set: { text in
+                    let normalized = text.replacingOccurrences(of: ",", with: ".")
+                    if let v = Double(normalized) { value.wrappedValue = v }
+                }
+            ))
+            .frame(width: 90)
+            .multilineTextAlignment(.trailing)
+            .textFieldStyle(.roundedBorder)
         }
     }
 

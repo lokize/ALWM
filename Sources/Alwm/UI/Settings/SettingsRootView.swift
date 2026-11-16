@@ -260,7 +260,6 @@ struct SettingsRootView: View {
             paneForm
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .focusEffectDisabled()
-                .id(pane)
         } else if pane == .workspaceBar {
             // Form for settings (same look as other panes) + separate plugin-order
             // inset so arrow reorder does not jump Form scroll to top.
@@ -278,13 +277,11 @@ struct SettingsRootView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .onAppear { pluginOrderRows = PluginOrderInline.loadRows() }
-                .id(pane)
         } else {
             paneForm
                 .scrollIndicators(.visible)
                 .background(ForceLegacyVerticalScroller())
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .id(pane)
         }
     }
 
