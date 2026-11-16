@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "2.4.5",
+      "items": [
+        "Stop windows from moving or resizing while focus follows the mouse",
+        "Do not scroll the Niri strip or reveal floats on hover focus"
+      ]
+    },
+    {
       "version": "2.4.4",
       "items": [
         "Make focus-follows-mouse react within one frame",

@@ -1502,9 +1502,9 @@ extension WindowManager {
                     ws.focusedWindowInColumn[loc.col] = loc.row
                     if colChanged || rowChanged {
                         needsLayout = true
-                        // Never snap the strip while the user is panning columns — that
-                        // fights continuous trackpad scroll and feels stuck on the prior tile.
-                        if ws.layout == .niri, !isColumnPanActive {
+                        // Mouse hover must never scroll the Niri strip: doing that moves
+                        // windows under the cursor and creates a focus-feedback shake.
+                        if ws.layout == .niri, !isColumnPanActive, !focusSourceIsMouse {
                             let usable = engine.usableArea(monitor: mon.layoutFrame)
                             engine.snapViewToFocusedColumn(&ws, usable: usable)
                         }
@@ -1519,7 +1519,10 @@ extension WindowManager {
             if let win = windowsByID[id], win.isFloating || win.isScratchpad || floatingOverrides.contains(id) {
                 markFloatRevealProtected(id)
             }
-            revealBeforeFocus(id)
+            // Hover focus must not move a window the cursor is already over.
+            if !focusSourceIsMouse {
+                revealBeforeFocus(id)
+            }
             ax.focus(id)
             maybeWarpCursor(to: id)
         }
@@ -1528,7 +1531,7 @@ extension WindowManager {
         // Do NOT re-force stack frames on every focus: WhatsApp/Discord (Electron)
         // emit AX Resized when raised, which re-entered geometry enforce and made
         // sibling heights pump forever.
-        if needsLayout {
+        if needsLayout, !focusSourceIsMouse {
             suppressGeometryEnforce(for: 0.55)
             relayout(animated: false)
             healUnusableFocusedFrame(id)
