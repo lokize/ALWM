@@ -422,6 +422,7 @@ extension WindowManager {
     /// otherwise leaves the stripped in-memory columns unrecoverable until relaunch.
     func noteAXMassDropForRecovery() {
         guard !isBootstrapping, !isResumeRecovering else { return }
+        guard !SessionActivity.isLockedOrDisplaysAsleep else { return }
         noteSystemWakeForResumeRecovery()
         scheduleStaggeredResumeRecovery()
         logMove("resume recovery armed after AX mass-drop")
@@ -517,6 +518,8 @@ extension WindowManager {
 
     func recoverAfterSystemResume() {
         guard AXTracker.isTrusted else { return }
+        // Do not churn layouts/visibility while the screen is locked or asleep.
+        guard !SessionActivity.isLockedOrDisplaysAsleep else { return }
         // Staggered retries must not re-enter after a successful pass this wake.
         guard isResumeRecovering || Date() < resumeRecoveryEligibleUntil else { return }
         // If live already matches disk, finish instead of rematching again (spam wrecked widths).

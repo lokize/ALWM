@@ -302,8 +302,12 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
                         logicalIndexByMonitor: self.workspaces.logicalMonitorIndices(for: self.lastTopologyMonitors)
                     )
                 }
+                let geometryChanged = self.lastTopologyMonitors != self.monitors.monitors
                 let topologyChanged = DisplayTopologyProfileStore.signature(for: self.lastTopologyMonitors)
                     != DisplayTopologyProfileStore.signature(for: self.monitors.monitors)
+                // Spurious `didChangeScreenParameters` notifications (DP link hiccups,
+                // refresh/color changes) must not trigger a full relayout storm.
+                guard geometryChanged || topologyChanged else { return }
                 let restored = topologyChanged
                     && self.displayTopologyProfiles.restore(self.monitors.monitors, into: self.runtimeState)
                 self.syncWorkspacesToMonitors()

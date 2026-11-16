@@ -70,8 +70,11 @@ public final class MonitorStore: @unchecked Sendable {
             return "display:\(vendor):\(model):\(serial)"
         }
         // Without a serial number, keep a recognizable hardware key and distinguish
-        // duplicate displays by their current geometry. Topology matching uses the full set.
-        return "display:\(vendor):\(model):\(name.lowercased()):\(Int(frame.width))x\(Int(frame.height))"
+        // duplicate displays by their DisplayPort/HDMI unit. Do NOT use the current
+        // resolution: a transient DisplayPort mode glitch would look like a different
+        // monitor and trigger a full workspace restore/relayout storm.
+        let unit = CGDisplayUnitNumber(id)
+        return "display:\(vendor):\(model):\(name.lowercased()):unit\(unit)"
     }
 
     public func monitorContaining(pointX: Double, pointY: Double) -> MonitorInfo? {

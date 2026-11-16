@@ -214,6 +214,12 @@ extension AXTracker {
 
 
     public func scanAll() {
+        // A locked session or sleeping display reports an empty AX tree (even Safari
+        // has no windows). Treating that as a mass close arms recovery loops and moves
+        // windows around while the user cannot see them.
+        if SessionActivity.isLockedOrDisplaysAsleep {
+            return
+        }
         let previousManaged = managed
         let apps = NSWorkspace.shared.runningApplications.filter {
             $0.activationPolicy == .regular && !$0.isTerminated

@@ -1,6 +1,15 @@
 {
   "releases": [
     {
+      "version": "2.3.9",
+      "items": [
+        "Reduce display-link churn on high-refresh monitors",
+        "Cap layout animations at 60 Hz so the WindowServer is not flooded",
+        "Skip AX and layout recovery while the screen is locked or asleep",
+        "Keep display identity stable across transient resolution changes"
+      ]
+    },
+    {
       "version": "2.3.8",
       "items": [
         "Recover window tracking right after the screen is unlocked",
