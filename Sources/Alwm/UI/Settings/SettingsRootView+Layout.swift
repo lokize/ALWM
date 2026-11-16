@@ -13,12 +13,24 @@ extension SettingsRootView {
                     Text("Nenhum workspace configurado.")
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach($config.workspaces) { $ws in
+                    ForEach(config.workspaces) { ws in
+                        // Bind by workspace ID instead of a positional $binding: the
+                        // config watcher can replace the array while Settings is open,
+                        // and stale bindings crashed SwiftUI when entering this pane.
+                        let layoutBinding = Binding(
+                            get: {
+                                config.workspaces.first(where: { $0.id == ws.id })?.layout ?? ws.layout
+                            },
+                            set: { newValue in
+                                guard let idx = config.workspaces.firstIndex(where: { $0.id == ws.id }) else { return }
+                                config.workspaces[idx].layout = newValue
+                            }
+                        )
                         HStack {
                             Text("Workspace \(ws.id)\(ws.name.isEmpty || ws.name == ws.id ? "" : " (\(ws.name))")")
                                 .frame(minWidth: 120, alignment: .leading)
                             Spacer()
-                            Picker("", selection: $ws.layout) {
+                            Picker("", selection: layoutBinding) {
                                 ForEach(WorkspaceLayoutStyle.allCases) { style in
                                     Text(style.label).tag(style)
                                 }

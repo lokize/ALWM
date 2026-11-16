@@ -98,12 +98,13 @@ extension SettingsRootView {
         range: ClosedRange<Double>,
         id: String? = nil
     ) -> some View {
-        let sliderID = id ?? "slider.\(title).\(range.lowerBound).\(range.upperBound)"
         return LabeledContent {
             HStack(spacing: 12) {
                 Slider(
                     value: Binding(
-                        get: { value.wrappedValue },
+                        get: {
+                            min(range.upperBound, max(range.lowerBound, value.wrappedValue))
+                        },
                         set: { newValue in
                             let clamped = min(range.upperBound, max(range.lowerBound, newValue))
                             value.wrappedValue = (clamped * 1000).rounded() / 1000
@@ -111,7 +112,6 @@ extension SettingsRootView {
                     ),
                     in: range
                 )
-                .id(sliderID)
                 .controlSize(.small)
                 Text(value.wrappedValue, format: .number.precision(.fractionLength(2)))
                     .foregroundStyle(.secondary)
@@ -123,7 +123,6 @@ extension SettingsRootView {
         } label: {
             Text(title)
         }
-        .id(sliderID + ".row")
     }
 
 

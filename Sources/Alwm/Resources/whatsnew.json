@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "version": "2.4.7",
+      "items": [
+        "Prevent the Layout settings pane from crashing on config reload",
+        "Keep single-column widths stable instead of expanding on workspace switch",
+        "Harden settings sliders against invalid ranges"
+      ]
+    },
+    {
       "version": "2.4.6",
       "items": [
         "Remove the default and minimum column width controls",

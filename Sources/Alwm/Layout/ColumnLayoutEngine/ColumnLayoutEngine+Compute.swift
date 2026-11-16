@@ -205,13 +205,16 @@ extension ColumnLayoutEngine {
         let n = workspace.columns.count
         let occupied = occupiedColumnCount(workspace)
         let layoutN = max(n, max(1, occupied))
-        let defaultW = defaultColumnWidth(usable: usable, columnCount: layoutN)
+        let defaultW = n == 1
+            ? fillWidthBudget(columnCount: 1, usable: usable)
+            : defaultColumnWidth(usable: usable, columnCount: layoutN)
         for i in workspace.columns.indices where workspace.columns[i].width <= 0 {
             workspace.columns[i].width = defaultW
         }
         if occupied <= 1, n == 1 {
-            let budget = fillWidthBudget(columnCount: 1, usable: usable)
-            workspace.columns[0].width = max(Self.fixedMinColumnWidth, budget)
+            // A single column created by insertWindow already gets the full usable
+            // width. Preserve a user-resized/saved width on switch-back instead of
+            // snapping it back to full screen (felt like windows growing on their own).
             workspace.viewOffset = 0
             return
         }

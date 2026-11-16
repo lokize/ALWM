@@ -12,7 +12,9 @@ extension ColumnLayoutEngine {
             workspace.focusedWindowInColumn[existing.col] = existing.row
             return
         }
-        let width = defaultColumnWidth(usable: usable, columnCount: max(1, workspace.columns.count))
+        let width = workspace.columns.isEmpty
+            ? fillWidthBudget(columnCount: 1, usable: usable)
+            : defaultColumnWidth(usable: usable, columnCount: max(1, workspace.columns.count))
         if workspace.columns.isEmpty {
             workspace.columns = [Column(windows: [id], width: width)]
             workspace.focusedColumn = 0
