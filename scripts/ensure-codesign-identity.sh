@@ -67,6 +67,15 @@ ensure_codesign_trust() {
     return 0
   fi
 
+  # `security add-trusted-cert` opens a GUI/Keychain auth prompt. In non-interactive
+  # runs (CI, agents, pipes) it can wait forever and leave a modal SecurityAgent
+  # dialog that blocks Accessibility. Skip it and keep the existing identity.
+  if [[ ! -t 0 ]]; then
+    echo "Skipping automatic trust (non-interactive). Trust '$CERT_NAME' manually if needed:" >&2
+    echo "  Keychain Access → '$CERT_NAME' → Trust → Code Signing = Always Trust" >&2
+    return 1
+  fi
+
   local tmp
   tmp="$(mktemp -d)"
 
