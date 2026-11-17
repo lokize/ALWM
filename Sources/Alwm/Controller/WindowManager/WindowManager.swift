@@ -166,6 +166,20 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
 
     var savedFrames: [WindowID: Rect] = [:]
 
+    struct PendingClosedSlot {
+        let id: UUID
+        let workspaceID: String
+        let ref: RuntimeStateStore.WindowRef
+        let columnIndex: Int
+        let rowIndex: Int
+        let columnTokens: Set<String>
+        let expiresAt: Date
+    }
+    /// Confirmed closes keep their saved layout slot briefly so reopening the same
+    /// app/window restores the exact column/stack instead of creating a new column.
+    var pendingClosedSlots: [PendingClosedSlot] = []
+    var pendingClosedCleanup: [UUID: DispatchWorkItem] = [:]
+
     /// Saved float geometry is authoritative until its first visible layout pass.
     var pendingSavedFloatFrames: Set<WindowID> = []
 

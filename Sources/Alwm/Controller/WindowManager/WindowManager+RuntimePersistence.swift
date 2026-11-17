@@ -300,7 +300,7 @@ extension WindowManager {
                 )
             }
             .sorted { $0.token < $1.token }
-        let columns = ws.columns.map { col in
+        var columns = ws.columns.map { col in
             RuntimeStateStore.ColumnSnapshot(
                 windows: col.windows.compactMap { id -> RuntimeStateStore.WindowRef? in
                     guard !isQuakeOwned(id) else { return nil }
@@ -313,6 +313,7 @@ extension WindowManager {
                 restoreWidth: col.restoreWidth
             )
         }
+        mergeRecentlyClosedSlots(into: &columns, workspaceID: wsID)
         let existing = runtimeState.workspaceLayout(for: wsID)
         let newTileCount = columns.reduce(0) { $0 + $1.windows.count }
         let existingTileCount = existing?.columns.reduce(0) { $0 + $1.windows.count } ?? 0

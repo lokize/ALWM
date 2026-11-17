@@ -56,6 +56,53 @@ struct WorkspaceLayoutRefreshTests {
         #expect(manager.workspaces.workspaces["1"]?.viewOffset == 420)
     }
 
+    @Test("a confirmed close keeps its saved column slot briefly for quick reopen")
+    @MainActor
+    func closeRetainsSavedStackSlot() {
+        let manager = WindowManager()
+        let wsID = "1"
+        let discord = WindowID(pid: 40, windowNumber: 1)
+        let whatsapp = WindowID(pid: 41, windowNumber: 2)
+        let discordWindow = ManagedWindow(
+            id: discord, title: "Discord", bundleID: "com.hnc.Discord",
+            appName: "Discord", frame: Rect(x: 0, y: 0, width: 1200, height: 800)
+        )
+        let whatsappWindow = ManagedWindow(
+            id: whatsapp, title: "WhatsApp", bundleID: "net.whatsapp.WhatsApp",
+            appName: "WhatsApp", frame: Rect(x: 0, y: 400, width: 1200, height: 400)
+        )
+        manager.windowsByID = [discord: discordWindow, whatsapp: whatsappWindow]
+        manager.windowWorkspace = [discord: wsID, whatsapp: wsID]
+        manager.workspaces.configure(
+            definitions: [WorkspaceDefinition(id: wsID, name: wsID, layout: .niri)],
+            monitors: []
+        )
+        manager.workspaces.setWorkspace(WorkspaceState(
+            id: wsID, name: wsID,
+            columns: [Column(windows: [discord], width: 1200), Column(windows: [whatsapp], width: 900)]
+        ))
+        manager.runtimeState.setWorkspaceLayout(.init(columns: [
+            .init(windows: [.init(window: discordWindow)], width: 1200),
+            .init(windows: [.init(window: whatsappWindow)], width: 900),
+        ]), for: wsID)
+
+        manager.rememberRecentlyClosedSlot(
+            id: whatsapp,
+            ref: .init(window: whatsappWindow),
+            workspaceID: wsID
+        )
+        // The live layout lost WhatsApp; persistence must merge its saved slot back.
+        manager.windowsByID.removeValue(forKey: whatsapp)
+        manager.windowWorkspace.removeValue(forKey: whatsapp)
+        var columns: [RuntimeStateStore.ColumnSnapshot] = [
+            .init(windows: [.init(window: discordWindow)], width: 1200)
+        ]
+        manager.mergeRecentlyClosedSlots(into: &columns, workspaceID: wsID)
+        let all = columns.flatMap(\.windows)
+        #expect(all.contains { $0.bundleID == "net.whatsapp.WhatsApp" })
+        #expect(all.first { $0.bundleID == "net.whatsapp.WhatsApp" }?.title == "WhatsApp")
+    }
+
     @Test("refresh keeps the live window order, widths, and scroll position")
     @MainActor
     func keepsLiveLayoutWhenSnapshotIsStale() {

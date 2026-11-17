@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "2.5.0",
+      "items": [
+        "Restore a reopened window to its previous column and stack position",
+        "Keep saved layout slots briefly after a confirmed close"
+      ]
+    },
+    {
       "version": "2.4.9",
       "items": [
         "Keep the Settings scroll position when changing options",

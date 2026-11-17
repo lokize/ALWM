@@ -1006,6 +1006,89 @@ extension WindowManager {
         }
     }
 
+    func rememberRecentlyClosedSlot(id: WindowID, ref: RuntimeStateStore.WindowRef, workspaceID: String) {
+        var savedRef = ref
+        var columnIndex = 0
+        var rowIndex = 0
+        var columnTokens = Set<String>()
+        if let ws = workspaces.workspaces[workspaceID], let loc = engine.locate(id, in: ws) {
+            columnIndex = loc.col
+            rowIndex = loc.row
+            columnTokens = Set(ws.columns[loc.col].windows.map(\.token))
+        }
+        if let layout = runtimeState.workspaceLayout(for: workspaceID) {
+            for (ci, col) in layout.columns.enumerated() {
+                if let ri = col.windows.firstIndex(where: { saved in
+                    if saved.token == ref.token { return true }
+                    guard let bid = ref.bundleID, !bid.isEmpty else { return false }
+                    return saved.bundleID == bid && saved.title == ref.title
+                }) {
+                    savedRef = col.windows[ri]
+                    columnIndex = ci
+                    rowIndex = ri
+                    columnTokens = Set(col.windows.map(\.token))
+                    break
+                }
+            }
+        }
+        let slot = PendingClosedSlot(
+            id: UUID(),
+            workspaceID: workspaceID,
+            ref: savedRef,
+            columnIndex: columnIndex,
+            rowIndex: rowIndex,
+            columnTokens: columnTokens,
+            expiresAt: Date().addingTimeInterval(90)
+        )
+        pendingClosedSlots.removeAll { $0.workspaceID == workspaceID && $0.ref.token == savedRef.token }
+        pendingClosedSlots.append(slot)
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingClosedCleanup.removeValue(forKey: slot.id)
+            guard self.pendingClosedSlots.contains(where: { $0.id == slot.id }) else { return }
+            self.pendingClosedSlots.removeAll { $0.id == slot.id }
+            self.removePersistedWindowRefs(slot.ref, fromWorkspace: slot.workspaceID)
+            self.persistRuntimeState(forceWorkspaceLayouts: [slot.workspaceID])
+        }
+        pendingClosedCleanup[slot.id] = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 90, execute: work)
+    }
+
+    func mergeRecentlyClosedSlots(into columns: inout [RuntimeStateStore.ColumnSnapshot], workspaceID: String) {
+        // A reopened window makes the tombstone unnecessary; cancel its cleanup.
+        let live = windowsByID.values
+        pendingClosedSlots.removeAll { slot in
+            guard slot.workspaceID == workspaceID, slot.expiresAt > Date() else { return false }
+            let reopened = live.contains { win in
+                guard let bid = slot.ref.bundleID, !bid.isEmpty, bid == win.bundleID else { return false }
+                return slot.ref.title.isEmpty || win.title.isEmpty || slot.ref.title == win.title
+            }
+            if reopened, let work = pendingClosedCleanup.removeValue(forKey: slot.id) {
+                work.cancel()
+            }
+            return reopened
+        }
+        for slot in pendingClosedSlots where slot.workspaceID == workspaceID && slot.expiresAt > Date() {
+            guard !columns.contains(where: { col in
+                col.windows.contains { $0.token == slot.ref.token }
+            }) else { continue }
+            var target = columns.firstIndex { col in
+                col.windows.contains { slot.columnTokens.contains($0.token) }
+            }
+            if target == nil, columns.indices.contains(slot.columnIndex) {
+                target = slot.columnIndex
+            }
+            if let target, columns.indices.contains(target) {
+                var col = columns[target]
+                let row = min(max(0, slot.rowIndex), col.windows.count)
+                col.windows.insert(slot.ref, at: row)
+                columns[target] = col
+            } else {
+                columns.append(.init(windows: [slot.ref], width: 0))
+            }
+        }
+    }
+
     func moveWindow(requestedID: WindowID, to workspaceID: String, follow: Bool = false) {
         let before = runtimeState.snapshot
         let from = windowWorkspace[requestedID] ?? runtimeState.assignment(for: requestedID)
@@ -1734,10 +1817,11 @@ extension WindowManager {
 
         logMove("close ax-destroy win=\(id.token) bundle=\(bundleID ?? "?") home=\(home ?? "-")")
 
-        // This is a confirmed close, unlike a transient AX disappearance. Remove
-        // the saved slot before the shrink guard can preserve it as a recovery target.
+        // Keep the saved slot for a short grace period. Closing WhatsApp and
+        // reopening it moments later used to create a brand-new column because the
+        // close path deleted its saved stack slot.
         if let home, let closedRef {
-            removePersistedWindowRefs(closedRef, fromWorkspace: home)
+            rememberRecentlyClosedSlot(id: id, ref: closedRef, workspaceID: home)
         }
 
         cancelSameBundleSiblingSettle(id)
