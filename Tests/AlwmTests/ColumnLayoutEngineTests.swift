@@ -787,6 +787,57 @@ struct AppRulesTests {
         #expect(capture?.rule.mode == AppRuleMode.tile)
     }
 
+    @Test("app rule workspace does not drag other windows of the same multi-window app")
+    @MainActor
+    func ruleWorkspaceDoesNotMoveSiblings() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-rule-siblings-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let monitor = MonitorInfo(
+            id: 1,
+            frame: .init(x: 0, y: 0, width: 1_440, height: 900),
+            visibleFrame: .init(x: 0, y: 24, width: 1_440, height: 876),
+            name: "Primary"
+        )
+        let manager = WindowManager(
+            runtimeState: RuntimeStateStore(url: root.appendingPathComponent("runtime.json")),
+            notesStore: NotesStore(root: root.appendingPathComponent("notes")),
+            monitors: MonitorStore(monitors: [monitor])
+        )
+        manager.workspaces.configure(
+            definitions: [
+                WorkspaceDefinition(id: "1", name: "1", layout: .niri),
+                WorkspaceDefinition(id: "5", name: "5", layout: .niri),
+            ],
+            monitors: [monitor]
+        )
+        manager.workspaces.switchWorkspace(id: "1", on: monitor.id, monitors: [monitor])
+        let first = WindowID(pid: 77, windowNumber: 1)
+        let second = WindowID(pid: 77, windowNumber: 2)
+        manager.windowsByID[first] = ManagedWindow(
+            id: first, title: "Safari A", bundleID: "com.apple.Safari",
+            appName: "Safari", frame: .init(x: 0, y: 30, width: 700, height: 800)
+        )
+        manager.windowsByID[second] = ManagedWindow(
+            id: second, title: "Safari B", bundleID: "com.apple.Safari",
+            appName: "Safari", frame: .init(x: 700, y: 30, width: 700, height: 800)
+        )
+        manager.windowWorkspace = [first: "1", second: "1"]
+        manager.workspaces.setWorkspace(WorkspaceState(
+            id: "1", name: "1",
+            columns: [Column(windows: [first], width: 700), Column(windows: [second], width: 700)]
+        ))
+        var config = manager.configStore.config
+        config.rules = [AppRule(bundleID: "com.apple.Safari", mode: .tile, workspace: "5")]
+        manager.configStore.replaceConfig(config)
+
+        manager.reapplyAppRulesToAllWindows()
+
+        #expect(manager.windowWorkspace[first] == "1")
+        #expect(manager.windowWorkspace[second] == "1")
+        #expect(manager.workspaces.workspaceID(containing: first) == "1")
+        #expect(manager.workspaces.workspaceID(containing: second) == "1")
+    }
+
     @Test("preferred workspace is applied on window open, not on later reconciliation")
     func preferredWorkspaceOnlyOnOpen() {
         let rules = [AppRule(bundleID: "com.example.float", mode: .float, workspace: "2")]

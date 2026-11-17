@@ -205,18 +205,6 @@ extension WindowManager {
         guard let rule = AppRules.matching(rules: rules, window: win) else { return }
         guard let monitor = monitorForAppRule(rule, window: win) else { return }
 
-        if let preferred = AppRules.preferredWorkspace(rules: rules, window: win),
-           workspaces.workspaces[preferred] != nil {
-            if win.isTiled {
-                if windowWorkspace[id] != preferred || workspaces.workspaceID(containing: id) != preferred {
-                    assignWindow(id, to: preferred, on: monitor)
-                }
-            } else {
-                windowWorkspace[id] = preferred
-                runtimeState.setAssignment(preferred, for: id)
-            }
-        }
-
         let shouldApplyFrame = forceAppRuleFrameApply || !appRuleFramesApplied.contains(id)
         if shouldApplyFrame,
            win.isFloating || rule.mode == .float,
@@ -232,6 +220,13 @@ extension WindowManager {
 
     func syncAppRuleOnWindowMoved(id: WindowID, to workspaceID: String) {
         guard let win = windowsByID[id] else { return }
+        // A bundle-wide rule cannot represent per-window homes. Moving one Safari
+        // window must not rewrite the rule and drag every other Safari window along.
+        guard let bundleID = win.bundleID, !bundleID.isEmpty,
+              isSingleBundleInstance(bundleID) else {
+            NSLog("ALWM: skip app rule workspace sync for multi-window %@", win.bundleID ?? win.appName)
+            return
+        }
         var rules = configStore.config.rules
         guard let match = AppRules.matching(rules: rules, window: win) else { return }
         var updated = match
@@ -243,13 +238,18 @@ extension WindowManager {
         rules = AppRules.saving(updated, into: rules)
         var newConfig = configStore.config
         newConfig.rules = rules
-        configStore.replaceConfig(newConfig)
+        // Write first, then refresh the watcher baseline so writing the rule does not
+        // trigger a config reload that reapplies the rule to every window.
         ConfigWriter.writeRules(rules)
+        configStore.replaceConfig(newConfig)
         NSLog("ALWM: synced app rule for %@ to workspace %@", win.bundleID ?? win.appName, workspaceID)
     }
 
     func syncAppRuleOnWindowResized(id: WindowID) {
         guard let win = windowsByID[id], win.isFloating else { return }
+        if let bundleID = win.bundleID, !bundleID.isEmpty, !isSingleBundleInstance(bundleID) {
+            return
+        }
         var rules = configStore.config.rules
         guard let match = AppRules.matching(rules: rules, window: win) else { return }
         guard let currentFrame = ax.currentFrame(of: id) ?? lastFrames[id] else { return }

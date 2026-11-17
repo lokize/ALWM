@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "2.5.1",
+      "items": [
+        "Move only the focused window when an app has multiple windows",
+        "Stop app-rule workspace sync from relocating sibling windows"
+      ]
+    },
+    {
       "version": "2.5.0",
       "items": [
         "Restore a reopened window to its previous column and stack position",
