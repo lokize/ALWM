@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "2.5.4",
+      "items": [
+        "Publish the latest workspace, layout and Settings fixes to main",
+        "Keep only the active workspace focused for move and resize shortcuts"
+      ]
+    },
+    {
       "version": "2.5.3",
       "items": [
         "Make move and resize shortcuts deterministic on the active workspace",
