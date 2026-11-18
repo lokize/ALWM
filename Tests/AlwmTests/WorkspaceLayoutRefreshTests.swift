@@ -214,6 +214,46 @@ struct WorkspaceLayoutRefreshTests {
         #expect(refreshed.columns.map(\.width) == [760, 440])
     }
 
+    @Test("move actions target the focused window of the active workspace")
+    @MainActor
+    func tileActionUsesActiveWorkspaceFocus() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-move-target-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let monitor = MonitorInfo(
+            id: 1,
+            frame: Rect(x: 0, y: 0, width: 1_440, height: 900),
+            visibleFrame: Rect(x: 0, y: 24, width: 1_440, height: 876),
+            name: "Primary"
+        )
+        let manager = WindowManager(
+            runtimeState: RuntimeStateStore(url: root.appendingPathComponent("runtime.json")),
+            notesStore: NotesStore(root: root.appendingPathComponent("notes")),
+            monitors: MonitorStore(monitors: [monitor])
+        )
+        manager.workspaces.configure(definitions: [
+            WorkspaceDefinition(id: "1", name: "1", layout: .niri),
+            WorkspaceDefinition(id: "5", name: "5", layout: .niri),
+        ], monitors: [monitor])
+        manager.workspaces.switchWorkspace(id: "1", on: monitor.id, monitors: [monitor])
+        let discord = WindowID(pid: 60, windowNumber: 1)
+        let whatsapp = WindowID(pid: 61, windowNumber: 2)
+        let offscreen = WindowID(pid: 62, windowNumber: 3)
+        manager.windowsByID = [
+            discord: ManagedWindow(id: discord, title: "Discord", bundleID: "com.hnc.Discord", appName: "Discord", frame: Rect(x: 0, y: 30, width: 700, height: 800)),
+            whatsapp: ManagedWindow(id: whatsapp, title: "WhatsApp", bundleID: "net.whatsapp.WhatsApp", appName: "WhatsApp", frame: Rect(x: 0, y: 430, width: 700, height: 400)),
+            offscreen: ManagedWindow(id: offscreen, title: "Other", bundleID: "com.example.other", appName: "Other", frame: Rect(x: 0, y: 0, width: 400, height: 300)),
+        ]
+        manager.windowWorkspace = [discord: "1", whatsapp: "1", offscreen: "5"]
+        manager.workspaces.setWorkspace(WorkspaceState(
+            id: "1", name: "1",
+            columns: [Column(windows: [discord, whatsapp], width: 700)],
+            focusedColumn: 0,
+            focusedWindowInColumn: [0: 1]
+        ))
+
+        #expect(manager.actionTargetTileWindow(on: monitor) == whatsapp)
+    }
+
     @Test("an empty in-memory workspace regains its saved scroll position")
     @MainActor
     func restoresSavedScrollPositionWhenWorkspaceWasEmptied() {

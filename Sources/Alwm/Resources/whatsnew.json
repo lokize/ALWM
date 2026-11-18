@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "2.5.5",
+      "items": [
+        "Verify and keep stack reordering bound to the active workspace",
+        "Move Discord/WhatsApp stack order with Option+Shift+Up/Down"
+      ]
+    },
+    {
       "version": "2.5.4",
       "items": [
         "Publish the latest workspace, layout and Settings fixes to main",
