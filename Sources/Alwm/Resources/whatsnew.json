@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "version": "2.5.3",
+      "items": [
+        "Make move and resize shortcuts deterministic on the active workspace",
+        "Never mutate a window on another workspace from a layout shortcut",
+        "Restore quick-reopen stack slots without persisting ghost windows"
+      ]
+    },
+    {
       "version": "2.5.2",
       "items": [
         "Target move and resize actions at the active workspace under the pointer",

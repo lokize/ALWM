@@ -1378,7 +1378,7 @@ extension WindowManager {
             return false
         }
 
-        if let axID = ax.frontmostFocusedWindowID() ?? axFocusedWindowID, isActionable(axID) {
+        if let axID = axFocusedWindowID ?? ax.frontmostFocusedWindowID(), isActionable(axID) {
             if prefersActiveWorkspace(axID) { return axID }
             if let win = windowsByID[axID], let bid = win.bundleID, !bid.isEmpty {
                 let candidates = windowsByID.values.filter { candidate in
@@ -1400,33 +1400,16 @@ extension WindowManager {
 
     func monitorForTileAction() -> MonitorInfo? {
         // Geometry/focus actions must target the workspace the user is looking at.
-        // Following the AX-focused window across workspaces made move up/down act on
-        // a window on WS5 while the user was organizing WS1.
+        // Never follow AX focus to another workspace/display.
         let underMouse = monitorUnderMouse() ?? primaryMonitor() ?? monitors.monitors.first
-        if let underMouse,
-           let activeWS = workspaces.activeWorkspaceByMonitor[underMouse.id],
-           workspaces.workspaces[activeWS] != nil,
-           actionTargetTileWindow(on: underMouse) != nil {
-            primaryMonitorID = underMouse.id
-            return underMouse
+        guard let underMouse,
+              let activeWS = workspaces.activeWorkspaceByMonitor[underMouse.id],
+              workspaces.workspaces[activeWS] != nil,
+              actionTargetTileWindow(on: underMouse) != nil else {
+            return nil
         }
-        if let axID = ax.frontmostFocusedWindowID() ?? axFocusedWindowID,
-           let home = authoritativeHome(for: axID) ?? workspaces.workspaceID(containing: axID),
-           let fallbackMon = underMouse ?? monitors.monitors.first {
-            let mon = displayMonitor(forHome: home, fallback: fallbackMon)
-            if workspaces.activeWorkspaceByMonitor[mon.id] == home,
-               actionTargetTileWindow(on: mon) != nil {
-                primaryMonitorID = mon.id
-                return mon
-            }
-        }
-        for mon in monitors.monitors {
-            if actionTargetTileWindow(on: mon) != nil {
-                primaryMonitorID = mon.id
-                return mon
-            }
-        }
-        return nil
+        primaryMonitorID = underMouse.id
+        return underMouse
     }
 
     func actionTargetTileWindow(on monitor: MonitorInfo) -> WindowID? {
@@ -1436,18 +1419,18 @@ extension WindowManager {
         }
         let columnIDs = Set(ws.columns.flatMap(\.windows))
 
-        // Cached FFM/AX focus first — `frontmostFocusedWindowID()` can point at a
-        // window on another workspace and made move.up/down target the wrong tile.
+        // The workspace's own focused window is authoritative for geometry actions.
+        // AX frontmost/cached focus can point at another workspace.
+        if let fid = ws.focusedWindowID, columnIDs.contains(fid),
+           windowsByID[fid]?.isTiled == true {
+            return fid
+        }
         let candidates = [axFocusedWindowID, mouseFocusedWindowID, ax.frontmostFocusedWindowID()]
             .compactMap { $0 }
         for candidate in candidates {
             if columnIDs.contains(candidate), windowsByID[candidate]?.isTiled == true {
                 return candidate
             }
-        }
-        if let fid = ws.focusedWindowID, columnIDs.contains(fid),
-           windowsByID[fid]?.isTiled == true {
-            return fid
         }
         return ws.columns.lazy.flatMap(\.windows).first { id in
             windowsByID[id]?.isTiled == true
