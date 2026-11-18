@@ -313,7 +313,6 @@ extension WindowManager {
                 restoreWidth: col.restoreWidth
             )
         }
-        mergeRecentlyClosedSlots(into: &columns, workspaceID: wsID)
         let existing = runtimeState.workspaceLayout(for: wsID)
         let newTileCount = columns.reduce(0) { $0 + $1.windows.count }
         let existingTileCount = existing?.columns.reduce(0) { $0 + $1.windows.count } ?? 0

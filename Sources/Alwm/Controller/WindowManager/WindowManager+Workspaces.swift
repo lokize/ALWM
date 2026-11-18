@@ -1045,48 +1045,48 @@ extension WindowManager {
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
             self.pendingClosedCleanup.removeValue(forKey: slot.id)
-            guard self.pendingClosedSlots.contains(where: { $0.id == slot.id }) else { return }
             self.pendingClosedSlots.removeAll { $0.id == slot.id }
-            self.removePersistedWindowRefs(slot.ref, fromWorkspace: slot.workspaceID)
-            self.persistRuntimeState(forceWorkspaceLayouts: [slot.workspaceID])
         }
         pendingClosedCleanup[slot.id] = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 90, execute: work)
     }
 
-    func mergeRecentlyClosedSlots(into columns: inout [RuntimeStateStore.ColumnSnapshot], workspaceID: String) {
-        // A reopened window makes the tombstone unnecessary; cancel its cleanup.
-        let live = windowsByID.values
-        pendingClosedSlots.removeAll { slot in
-            guard slot.workspaceID == workspaceID, slot.expiresAt > Date() else { return false }
-            let reopened = live.contains { win in
-                guard let bid = slot.ref.bundleID, !bid.isEmpty, bid == win.bundleID else { return false }
-                return slot.ref.title.isEmpty || win.title.isEmpty || slot.ref.title == win.title
-            }
-            if reopened, let work = pendingClosedCleanup.removeValue(forKey: slot.id) {
-                work.cancel()
-            }
-            return reopened
+    /// Puts a reopened window back into the column/row it occupied before closing.
+    /// The persisted slot is gone; this tombstone lives only in memory for 90 s.
+    func placeWindowFromClosedSlot(_ id: WindowID, into workspaceID: String, usable: Rect) -> Bool {
+        guard let win = windowsByID[id], var ws = workspaces.workspaces[workspaceID] else { return false }
+        let now = Date()
+        pendingClosedSlots.removeAll { $0.expiresAt <= now && $0.workspaceID == workspaceID }
+        guard let idx = pendingClosedSlots.firstIndex(where: { slot in
+            guard slot.workspaceID == workspaceID,
+                  let bid = slot.ref.bundleID, !bid.isEmpty,
+                  bid == win.bundleID else { return false }
+            return slot.ref.title.isEmpty || win.title.isEmpty || slot.ref.title == win.title
+        }) else { return false }
+        let slot = pendingClosedSlots.remove(at: idx)
+        if let work = pendingClosedCleanup.removeValue(forKey: slot.id) { work.cancel() }
+
+        var target = ws.columns.firstIndex { col in
+            col.windows.contains { slot.columnTokens.contains($0.token) }
         }
-        for slot in pendingClosedSlots where slot.workspaceID == workspaceID && slot.expiresAt > Date() {
-            guard !columns.contains(where: { col in
-                col.windows.contains { $0.token == slot.ref.token }
-            }) else { continue }
-            var target = columns.firstIndex { col in
-                col.windows.contains { slot.columnTokens.contains($0.token) }
-            }
-            if target == nil, columns.indices.contains(slot.columnIndex) {
-                target = slot.columnIndex
-            }
-            if let target, columns.indices.contains(target) {
-                var col = columns[target]
-                let row = min(max(0, slot.rowIndex), col.windows.count)
-                col.windows.insert(slot.ref, at: row)
-                columns[target] = col
-            } else {
-                columns.append(.init(windows: [slot.ref], width: 0))
-            }
+        if target == nil, ws.columns.indices.contains(slot.columnIndex) {
+            target = slot.columnIndex
         }
+        if let target, ws.columns.indices.contains(target) {
+            var col = ws.columns[target]
+            let row = min(max(0, slot.rowIndex), col.windows.count)
+            col.windows.insert(id, at: row)
+            ws.columns[target] = col
+            ws.focusedColumn = target
+            ws.focusedWindowInColumn[target] = row
+        } else {
+            let width = engine.niri.defaultColumnWidth(usable: usable, columnCount: ws.columns.count + 1)
+            ws.columns.append(Column(windows: [id], width: width))
+            ws.focusedColumn = ws.columns.count - 1
+            ws.focusedWindowInColumn[ws.focusedColumn] = 0
+        }
+        workspaces.setWorkspace(ws)
+        return true
     }
 
     func moveWindow(requestedID: WindowID, to workspaceID: String, follow: Bool = false) {
@@ -1399,21 +1399,26 @@ extension WindowManager {
     }
 
     func monitorForTileAction() -> MonitorInfo? {
-        if let axID = ax.frontmostFocusedWindowID() ?? axFocusedWindowID,
-           let home = authoritativeHome(for: axID) ?? workspaces.workspaceID(containing: axID) {
-            let underMouse = monitorForWorkspaceCycle()
-            let mon = displayMonitor(forHome: home, fallback: underMouse)
-            if actionTargetTileWindow(on: mon) != nil {
-                primaryMonitorID = mon.id
-                return mon
-            }
-        }
-        let underMouse = monitorForWorkspaceCycle()
-        if let activeWS = workspaces.activeWorkspaceByMonitor[underMouse.id],
+        // Geometry/focus actions must target the workspace the user is looking at.
+        // Following the AX-focused window across workspaces made move up/down act on
+        // a window on WS5 while the user was organizing WS1.
+        let underMouse = monitorUnderMouse() ?? primaryMonitor() ?? monitors.monitors.first
+        if let underMouse,
+           let activeWS = workspaces.activeWorkspaceByMonitor[underMouse.id],
            workspaces.workspaces[activeWS] != nil,
            actionTargetTileWindow(on: underMouse) != nil {
             primaryMonitorID = underMouse.id
             return underMouse
+        }
+        if let axID = ax.frontmostFocusedWindowID() ?? axFocusedWindowID,
+           let home = authoritativeHome(for: axID) ?? workspaces.workspaceID(containing: axID),
+           let fallbackMon = underMouse ?? monitors.monitors.first {
+            let mon = displayMonitor(forHome: home, fallback: fallbackMon)
+            if workspaces.activeWorkspaceByMonitor[mon.id] == home,
+               actionTargetTileWindow(on: mon) != nil {
+                primaryMonitorID = mon.id
+                return mon
+            }
         }
         for mon in monitors.monitors {
             if actionTargetTileWindow(on: mon) != nil {
@@ -1431,10 +1436,14 @@ extension WindowManager {
         }
         let columnIDs = Set(ws.columns.flatMap(\.windows))
 
-        if let axID = ax.frontmostFocusedWindowID() ?? axFocusedWindowID,
-           columnIDs.contains(axID),
-           windowsByID[axID]?.isTiled == true {
-            return axID
+        // Cached FFM/AX focus first — `frontmostFocusedWindowID()` can point at a
+        // window on another workspace and made move.up/down target the wrong tile.
+        let candidates = [axFocusedWindowID, mouseFocusedWindowID, ax.frontmostFocusedWindowID()]
+            .compactMap { $0 }
+        for candidate in candidates {
+            if columnIDs.contains(candidate), windowsByID[candidate]?.isTiled == true {
+                return candidate
+            }
         }
         if let fid = ws.focusedWindowID, columnIDs.contains(fid),
            windowsByID[fid]?.isTiled == true {
@@ -1822,6 +1831,10 @@ extension WindowManager {
         // close path deleted its saved stack slot.
         if let home, let closedRef {
             rememberRecentlyClosedSlot(id: id, ref: closedRef, workspaceID: home)
+            // Remove the persisted slot now; the in-memory tombstone is what allows
+            // a quick reopen to reclaim the same column/stack. Keeping it on disk
+            // made closed windows look like ghosts during later layout writes.
+            removePersistedWindowRefs(closedRef, fromWorkspace: home)
         }
 
         cancelSameBundleSiblingSettle(id)

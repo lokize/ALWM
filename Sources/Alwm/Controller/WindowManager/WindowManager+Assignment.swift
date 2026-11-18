@@ -161,7 +161,8 @@ extension WindowManager {
             }
             return
         }
-        if placeWindowFromSnapshot(id, into: workspaceID, usable: usable) {
+        if placeWindowFromClosedSlot(id, into: workspaceID, usable: usable)
+            || placeWindowFromSnapshot(id, into: workspaceID, usable: usable) {
             windowWorkspace[id] = workspaceID
             runtimeState.setAssignment(workspaceID, for: id)
             return

@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "2.5.2",
+      "items": [
+        "Target move and resize actions at the active workspace under the pointer",
+        "Keep quick-reopen stack slots in memory so closed windows do not disturb layouts"
+      ]
+    },
+    {
       "version": "2.5.1",
       "items": [
         "Move only the focused window when an app has multiple windows",
