@@ -839,6 +839,7 @@ extension WindowManager {
         guard let mon = monitorForWorkspaceLayout(workspaceID) else { return }
         let usable = engine.usableArea(monitor: mon.layoutFrame)
         fillZeroColumnWidths(workspace: &workspace, workspaceID: workspaceID)
+        engine.niri.fitColumnsToUsableIfPossible(workspace: &workspace, usable: usable)
         let contentW = engine.niri.contentWidth(workspace: workspace, usable: usable)
         // Never expand columns just because they are narrower than the display.
         // That pass was making windows grow on their own after a persist/switch.

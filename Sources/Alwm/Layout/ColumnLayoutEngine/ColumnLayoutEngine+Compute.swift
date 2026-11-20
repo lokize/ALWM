@@ -211,6 +211,7 @@ extension ColumnLayoutEngine {
         for i in workspace.columns.indices where workspace.columns[i].width <= 0 {
             workspace.columns[i].width = defaultW
         }
+        fitColumnsToUsableIfPossible(workspace: &workspace, usable: usable)
         if occupied <= 1, n == 1 {
             // A single column created by insertWindow already gets the full usable
             // width. Preserve a user-resized/saved width on switch-back instead of

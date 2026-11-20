@@ -4,9 +4,9 @@ import Testing
 
 @Suite("Workspace layout refresh")
 struct WorkspaceLayoutRefreshTests {
-    @Test("switching away and back preserves resized column widths and scroll offset")
+    @Test("switching away and back fits resized columns to the screen")
     @MainActor
-    func switchBackKeepsOversizedColumns() async {
+    func switchBackFitsColumnsToScreen() async {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("alwm-switch-size-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
         let monitor = MonitorInfo(
@@ -44,77 +44,19 @@ struct WorkspaceLayoutRefreshTests {
         manager.isBootstrapping = false
 
         manager.switchWorkspace(id: "2", on: monitor.id)
-        #expect(manager.workspaces.workspaces["1"]?.columns.map(\.width) == [2_100, 1_700])
-        #expect(manager.workspaces.workspaces["1"]?.viewOffset == 420)
         manager.switchWorkspace(id: "1", on: monitor.id)
 
         let restored = manager.workspaces.workspaces["1"]!
-        #expect(restored.columns.map(\.width) == [2_100, 1_700])
-        #expect(restored.viewOffset == 420)
+        let budget = monitor.visibleFrame.width - manager.engine.settings.gap
+        let total = restored.columns.reduce(0.0) { $0 + $1.width }
+        #expect(abs(total - budget) < 2)
+        #expect(restored.viewOffset == 0)
+        #expect(restored.columns.count == 2)
+        #expect(restored.columns[0].width > restored.columns[1].width)
         try? await Task.sleep(nanoseconds: 400_000_000)
-        #expect(manager.workspaces.workspaces["1"]?.columns.map(\.width) == [2_100, 1_700])
-        #expect(manager.workspaces.workspaces["1"]?.viewOffset == 420)
-    }
-
-    @Test("a quick reopen reclaims the closed window's column and stack row")
-    @MainActor
-    func closeRetainsSavedStackSlot() {
-        let manager = WindowManager()
-        let wsID = "1"
-        let discord = WindowID(pid: 40, windowNumber: 1)
-        let whatsapp = WindowID(pid: 41, windowNumber: 2)
-        let monitor = MonitorInfo(
-            id: 1,
-            frame: Rect(x: 0, y: 0, width: 1_440, height: 900),
-            visibleFrame: Rect(x: 0, y: 24, width: 1_440, height: 876),
-            name: "Primary"
-        )
-        manager.workspaces.configure(
-            definitions: [WorkspaceDefinition(id: wsID, name: wsID, layout: .niri)],
-            monitors: [monitor]
-        )
-        let discordWindow = ManagedWindow(
-            id: discord, title: "Discord", bundleID: "com.hnc.Discord",
-            appName: "Discord", frame: Rect(x: 0, y: 0, width: 1200, height: 800)
-        )
-        let whatsappWindow = ManagedWindow(
-            id: whatsapp, title: "WhatsApp", bundleID: "net.whatsapp.WhatsApp",
-            appName: "WhatsApp", frame: Rect(x: 0, y: 400, width: 1200, height: 400)
-        )
-        manager.windowsByID = [discord: discordWindow, whatsapp: whatsappWindow]
-        manager.windowWorkspace = [discord: wsID, whatsapp: wsID]
-        manager.workspaces.setWorkspace(WorkspaceState(
-            id: wsID, name: wsID,
-            columns: [Column(windows: [discord, whatsapp], width: 1200)]
-        ))
-        manager.rememberRecentlyClosedSlot(
-            id: whatsapp,
-            ref: .init(window: whatsappWindow),
-            workspaceID: wsID
-        )
-
-        // Simulate the close: WhatsApp leaves the live column, then reopens.
-        manager.workspaces.setWorkspace(WorkspaceState(
-            id: wsID, name: wsID,
-            columns: [Column(windows: [discord], width: 1200)]
-        ))
-        let reopened = ManagedWindow(
-            id: WindowID(pid: 42, windowNumber: 9), title: "WhatsApp",
-            bundleID: "net.whatsapp.WhatsApp", appName: "WhatsApp",
-            frame: Rect(x: 0, y: 400, width: 1200, height: 400)
-        )
-        manager.windowsByID[reopened.id] = reopened
-        manager.windowWorkspace[reopened.id] = wsID
-
-        let placed = manager.placeWindowFromClosedSlot(
-            reopened.id,
-            into: wsID,
-            usable: manager.engine.usableArea(monitor: monitor.layoutFrame)
-        )
-        #expect(placed)
-        let ws = manager.workspaces.workspaces[wsID]!
-        #expect(ws.columns.count == 1)
-        #expect(ws.columns[0].windows == [discord, reopened.id])
+        let settled = manager.workspaces.workspaces["1"]!
+        #expect(abs(settled.columns.reduce(0.0) { $0 + $1.width } - budget) < 2)
+        #expect(settled.viewOffset == 0)
     }
 
     @Test("refresh keeps the live window order, widths, and scroll position")

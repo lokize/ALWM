@@ -41,6 +41,22 @@ public struct ColumnLayoutEngine: Sendable {
         return max(Self.fixedMinColumnWidth, usable.width * ratio)
     }
 
+    /// Fit every column into the usable width when the minimum sizes allow it.
+    /// Off-screen scrolling is reserved for workspaces that genuinely have no room.
+    public func fitColumnsToUsableIfPossible(workspace: inout WorkspaceState, usable: Rect) {
+        let n = workspace.columns.count
+        guard n > 0 else { return }
+        let gaps = settings.gap * Double(max(0, n - 1))
+        let minTotal = Double(n) * Self.fixedMinColumnWidth + gaps
+        guard minTotal <= usable.width + 1.0 else { return }
+        workspace.viewOffset = 0
+        normalizeWidthsToFill(workspace: &workspace, usable: usable)
+        if contentWidth(workspace: workspace, usable: usable) > usable.width + 1.0 {
+            fitAllColumnsOnScreen(workspace: &workspace, usable: usable)
+        }
+        workspace.viewOffset = 0
+    }
+
     /// Total width available for column boxes (usable minus inner gaps between them).
     public func fillWidthBudget(columnCount: Int, usable: Rect) -> Double {
         let n = max(1, columnCount)

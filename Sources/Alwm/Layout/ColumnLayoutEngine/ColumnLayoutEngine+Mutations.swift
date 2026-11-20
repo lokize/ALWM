@@ -42,6 +42,7 @@ extension ColumnLayoutEngine {
         workspace.focusedColumn = workspace.columns.count - 1
         workspace.focusedWindowInColumn[workspace.focusedColumn] = 0
         ensureColumnWidths(workspace: &workspace, usable: usable)
+        fitColumnsToUsableIfPossible(workspace: &workspace, usable: usable)
         if contentWidth(workspace: workspace, usable: usable) > usable.width + 1.0 {
             fitAllColumnsOnScreen(workspace: &workspace, usable: usable)
         } else {

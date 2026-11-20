@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "version": "2.5.6",
+      "items": [
+        "Fit columns to the screen instead of pushing them off-screen",
+        "Shrink or expand columns proportionally when there is room",
+        "Keep scrolling only when the workspace genuinely has no space"
+      ]
+    },
+    {
       "version": "2.5.5",
       "items": [
         "Verify and keep stack reordering bound to the active workspace",

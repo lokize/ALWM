@@ -111,6 +111,7 @@ extension ColumnLayoutEngine {
             workspace.focusedWindowInColumn[col] = row + 1
             swapLeafWeights(&workspace, above, below)
         }
+        fitColumnsToUsableIfPossible(workspace: &workspace, usable: usable)
         if columnsShouldFillUsable(count: workspace.columns.count) {
             ensureColumnWidths(workspace: &workspace, usable: usable)
             workspace.viewOffset = 0
