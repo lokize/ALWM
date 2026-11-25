@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "version": "2.5.7",
+      "items": [
+        "Keep stacked windows together when moving at screen edges",
+        "Preserve the last good session across system shutdown and restart",
+        "Auto-fit columns to the screen when space allows"
+      ]
+    },
+    {
       "version": "2.5.6",
       "items": [
         "Fit columns to the screen instead of pushing them off-screen",

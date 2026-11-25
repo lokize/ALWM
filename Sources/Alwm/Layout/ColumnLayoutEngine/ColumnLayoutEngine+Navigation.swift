@@ -58,7 +58,10 @@ extension ColumnLayoutEngine {
         switch direction {
         case .left:
             if col == 0 {
-                // Peel focused tile into a new left column (stack split).
+                // In a multi-column workspace, moving past the left edge must not
+                // peel a stacked window out into an off-screen/extra column; that
+                // undid stacking attempts. Only a lone-column workspace can split.
+                guard workspace.columns.count == 1 else { return }
                 guard workspace.columns[col].windows.count > 1 else { return }
                 workspace.columns[col].windows.remove(at: row)
                 let width = defaultColumnWidth(
@@ -78,7 +81,7 @@ extension ColumnLayoutEngine {
             }
         case .right:
             if col >= workspace.columns.count - 1 {
-                // Peel focused tile into a new right column (stack split).
+                guard workspace.columns.count == 1 else { return }
                 guard workspace.columns[col].windows.count > 1 else { return }
                 workspace.columns[col].windows.remove(at: row)
                 let width = defaultColumnWidth(

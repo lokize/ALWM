@@ -329,6 +329,19 @@ extension WindowManager {
         }
         systemObservers.append(screensWake)
 
+        let powerOff = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.willPowerOffNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.isSystemPoweringOff = true
+                self.prepareForSystemSleep()
+            }
+        }
+        systemObservers.append(powerOff)
+
         let active = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification,
             object: nil,

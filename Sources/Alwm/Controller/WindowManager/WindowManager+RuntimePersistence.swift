@@ -175,6 +175,13 @@ extension WindowManager {
 
     func persistRuntimeStateBeforeQuit() {
         settingsUI.flushPendingChanges()
+        if isSystemPoweringOff {
+            // willPowerOff already soft-persisted the good snapshot. Forcing all
+            // layouts here would write apps that macOS closed during shutdown as
+            // empty/partial layouts and lose the session on next boot.
+            NSLog("ALWM: skipping destructive persist during system power off")
+            return
+        }
         let wasBootstrapping = isBootstrapping
         let wasResume = isResumeRecovering
         let wasDestructive = allowDestructiveLayoutFlush

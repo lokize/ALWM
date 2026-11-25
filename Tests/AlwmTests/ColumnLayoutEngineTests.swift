@@ -8,6 +8,28 @@ struct ColumnLayoutEngineTests {
     let monitor = Rect(x: 0, y: 0, width: 1200, height: 800)
     var engine: ColumnLayoutEngine { ColumnLayoutEngine(settings: .default) }
 
+    @Test("horizontal move at the edge does not split a stack in a multi-column workspace")
+    func edgeMoveKeepsStack() {
+        let usable = engine.usableArea(monitor: monitor)
+        let a = WindowID(pid: 1, windowNumber: 1)
+        let b = WindowID(pid: 1, windowNumber: 2)
+        let c = WindowID(pid: 1, windowNumber: 3)
+        var ws = WorkspaceState(
+            id: "1", name: "1",
+            columns: [Column(windows: [a, b], width: 600), Column(windows: [c], width: 600)],
+            focusedColumn: 0,
+            focusedWindowInColumn: [0: 1]
+        )
+        engine.moveFocused(.left, workspace: &ws, usable: usable)
+        #expect(ws.columns.count == 2)
+        #expect(ws.columns[0].windows == [a, b])
+
+        engine.moveFocused(.right, workspace: &ws, usable: usable)
+        #expect(ws.columns.count == 2)
+        #expect(ws.columns[0].windows == [a])
+        #expect(ws.columns[1].windows == [c, b])
+    }
+
     @Test("inserts windows into columns and focuses them")
     func insertAndFocus() {
         var ws = WorkspaceState(id: "1", name: "1")

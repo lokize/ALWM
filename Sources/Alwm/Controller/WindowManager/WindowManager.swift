@@ -96,6 +96,9 @@ public final class WindowManager: NSObject, AXTrackerDelegate {
     /// Guard against duplicate toggle deliveries right after showing overlays.
     var quakeShownAt = Date.distantPast
     var notepadShownAt = Date.distantPast
+    /// Set by NSWorkspace.willPowerOff so quit-time persistence cannot replace the
+    /// last good snapshot with layouts from apps macOS already closed.
+    var isSystemPoweringOff = false
     var suppressNotepadDismissUntil = Date.distantPast
     enum OverlayFocusTarget { case quake, notepad }
 
